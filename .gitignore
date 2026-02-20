@@ -1,0 +1,19 @@
+node_modules/
+dist/
+client/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Legacy platform configs
+.railway/
+attached_assets/
