@@ -752,7 +752,7 @@ export async function registerRoutes(
   app.get("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
-      const org = await storage.getOrganizationByOwnerId(userId);
+      const org = await storage.getOrganizationByOwner(userId);
       if (!org) return res.status(404).json({ error: "No organization found" });
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
@@ -774,7 +774,7 @@ export async function registerRoutes(
   app.post("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
-      const org = await storage.getOrganizationByOwnerId(userId);
+      const org = await storage.getOrganizationByOwner(userId);
       if (!org) return res.status(404).json({ error: "No organization found" });
 
       const { packType, date } = req.body;

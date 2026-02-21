@@ -27,7 +27,7 @@ export interface PrintfulProduct {
 export const PRINTFUL_PRODUCTS: Record<string, PrintfulProduct> = {
   // --- UNFRAMED MATTE PRINT ---
   print_8x10: {
-    variantId: 1, // TODO: confirm variant ID via Printful catalog API
+    variantId: 4463,
     name: "Enhanced Matte Print — 8×10",
     category: "print",
     size: "8x10",
