@@ -59,12 +59,51 @@ const catBreeds: string[] = [
   "Turkish Angora", "Turkish Van",
 ];
 
+// Common breed aliases — map shorthand names to official AKC names
+const breedAliases: Record<string, string> = {
+  "German Shepherd": "German Shepherd Dog",
+  "Pit Bull": "American Staffordshire Terrier",
+  "Pitbull": "American Staffordshire Terrier",
+  "Lab": "Labrador Retriever",
+  "Golden": "Golden Retriever",
+  "Husky": "Siberian Husky",
+  "Yorkie": "Yorkshire Terrier",
+  "GSD": "German Shepherd Dog",
+  "Doodle": "Poodle Mix",
+  "Goldendoodle": "Golden Retriever Mix",
+  "Labradoodle": "Labrador Retriever Mix",
+  "Cockapoo": "Cocker Spaniel Mix",
+  "Maltipoo": "Maltese Mix",
+  "Bernedoodle": "Bernese Mountain Dog Mix",
+  "Aussiedoodle": "Australian Shepherd Mix",
+  "Cavapoo": "Cavalier King Charles Spaniel Mix",
+  "Pomsky": "Pomeranian Mix",
+  "Sheepadoodle": "Old English Sheepdog Mix",
+  "Shorkie": "Shih Tzu Mix",
+  "Morkie": "Maltese Mix",
+  "Puggle": "Pug Mix",
+  "Frenchie": "French Bulldog",
+  "Staffy": "Staffordshire Bull Terrier",
+  "Staffie": "Staffordshire Bull Terrier",
+  "Weiner Dog": "Dachshund",
+  "Wiener Dog": "Dachshund",
+  "Corgi": "Pembroke Welsh Corgi",
+  "Sheltie": "Shetland Sheepdog",
+  "Westie": "West Highland White Terrier",
+  "Scottie": "Scottish Terrier",
+};
+
 function buildValidBreeds(breeds: string[]): Set<string> {
   const set = new Set<string>();
   set.add("Mixed Breed");
   for (const b of breeds) {
     set.add(b);
     set.add(`${b} Mix`);
+  }
+  // Add all aliases
+  for (const alias of Object.keys(breedAliases)) {
+    set.add(alias);
+    set.add(`${alias} Mix`);
   }
   return set;
 }
@@ -77,4 +116,9 @@ export function isValidBreed(breed: string, species?: string): boolean {
   if (species === "cat") return validCatBreeds.has(breed);
   if (species === "dog") return validDogBreeds.has(breed);
   return validDogBreeds.has(breed) || validCatBreeds.has(breed);
+}
+
+/** Normalize a breed name to its official AKC equivalent if an alias was used */
+export function normalizeBreed(breed: string): string {
+  return breedAliases[breed] || breed;
 }
