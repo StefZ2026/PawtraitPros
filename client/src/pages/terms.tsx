@@ -21,14 +21,14 @@ export default function Terms() {
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">1. Acceptance of Terms</h2>
             <p className="text-muted-foreground leading-relaxed">
-              By accessing or using Pawtrait Pros ("the Service") at pawtraitpros.com, you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service. These Terms apply to all users, including rescue organizations, administrators, and visitors.
+              By accessing or using Pawtrait Pros ("the Service") at pawtraitpros.com, you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, you may not use the Service. These Terms apply to all users, including pet professionals, administrators, and visitors.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">2. Description of Service</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Pawtrait Pros is a platform that helps animal rescue organizations showcase pets available for adoption through AI-generated artistic portraits. The Service includes pet profile management, AI portrait generation, public rescue showcase pages, social media sharing tools, and direct Instagram posting integration.
+              Pawtrait Pros is a platform that helps pet professionals create and showcase AI-generated artistic pet portraits. The Service includes pet profile management, AI portrait generation, public showcase pages, social media sharing tools, and direct Instagram posting integration.
             </p>
           </section>
 
@@ -72,7 +72,7 @@ export default function Terms() {
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">6. AI-Generated Portraits</h2>
             <p className="text-muted-foreground leading-relaxed">
-              AI portraits are generated using Google's Gemini AI service. While we strive for quality results, AI generation is inherently variable and we do not guarantee specific artistic outcomes. Generated portraits are provided for use in connection with the Service, including sharing on social media to promote pet adoption. You may use generated portraits for non-commercial purposes related to pet adoption promotion.
+              AI portraits are generated using Google's Gemini AI service. While we strive for quality results, AI generation is inherently variable and we do not guarantee specific artistic outcomes. Generated portraits are provided for use in connection with the Service, including sharing on social media to promote your business. You may use generated portraits for purposes related to promoting your business and pet services.
             </p>
           </section>
 
@@ -83,7 +83,7 @@ export default function Terms() {
               <li>Use the Service for any unlawful purpose</li>
               <li>Upload content that is harmful, abusive, or violates the rights of others</li>
               <li>Attempt to gain unauthorized access to the Service or other users' accounts</li>
-              <li>Use the Service to misrepresent animals or adoption availability</li>
+              <li>Use the Service to misrepresent animals or services</li>
               <li>Interfere with or disrupt the Service's infrastructure</li>
               <li>Scrape, crawl, or use automated means to access the Service without permission</li>
               <li>Use the Service to promote animal cruelty or illegal animal trade</li>
@@ -121,7 +121,7 @@ export default function Terms() {
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">11. Disclaimer of Warranties</h2>
             <p className="text-muted-foreground leading-relaxed">
-              The Service is provided "as is" and "as available" without warranties of any kind, whether express or implied. We do not warrant that the Service will be uninterrupted, error-free, or secure. We are not responsible for the accuracy of AI-generated content. We do not guarantee any specific outcome from using the Service, including but not limited to pet adoption rates.
+              The Service is provided "as is" and "as available" without warranties of any kind, whether express or implied. We do not warrant that the Service will be uninterrupted, error-free, or secure. We are not responsible for the accuracy of AI-generated content. We do not guarantee any specific outcome from using the Service, including but not limited to business outcomes.
             </p>
           </section>
 

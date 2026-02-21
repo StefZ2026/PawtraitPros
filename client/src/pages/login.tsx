@@ -26,6 +26,15 @@ export default function Login() {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
+  // Store edition param for onboarding auto-selection
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const edition = params.get("edition");
+    if (edition && ["groomer", "boarding", "daycare"].includes(edition)) {
+      sessionStorage.setItem("pawtrait-pros-edition", edition);
+    }
+  }, []);
+
   // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
@@ -99,7 +108,7 @@ export default function Login() {
             <Dog className="h-8 w-8" /><Cat className="h-8 w-8" />
             Pawtrait Pros
           </div>
-          <p className="text-muted-foreground">AI-Powered Pet Portraits for Rescue Organizations</p>
+          <p className="text-muted-foreground">AI-Powered Pet Portraits for Pet Professionals</p>
         </div>
 
         <Card>
@@ -119,7 +128,7 @@ export default function Login() {
                     <Input
                       id="login-email"
                       type="email"
-                      placeholder="you@rescue.org"
+                      placeholder="you@business.com"
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       required
@@ -184,7 +193,7 @@ export default function Login() {
                     <Input
                       id="signup-email"
                       type="email"
-                      placeholder="you@rescue.org"
+                      placeholder="you@business.com"
                       value={signupEmail}
                       onChange={(e) => setSignupEmail(e.target.value)}
                       required

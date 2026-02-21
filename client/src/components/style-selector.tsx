@@ -13,7 +13,7 @@ const categoryIcons: Record<string, typeof Palette> = {
   "Sci-Fi": Rocket,
   Adventure: Compass,
   Fun: Sparkles,
-  Adoption: Dog,
+  Showcase: Dog,
   Humanizing: Sparkles,
   Seasonal: Sparkles,
   Celebration: Sparkles,

@@ -128,7 +128,7 @@ export async function generateShowcaseMockup(orgId: number): Promise<Buffer> {
   const topBar = await sharp(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
   composites.push({ input: topBar, top: 0, left: 0 });
 
-  // Rescue org logo at top
+  // Business logo at top
   const orgLogoSize = 70;
   let orgLogoWidth = 0;
   if (org.logoUrl) {
@@ -144,8 +144,8 @@ export async function generateShowcaseMockup(orgId: number): Promise<Buffer> {
   const orgNameText = textSvg(org.name, 36, `rgb(${DARK_TEXT.r},${DARK_TEXT.g},${DARK_TEXT.b})`, 700);
   composites.push({ input: orgNameText, top: 25, left: 30 + orgLogoWidth });
 
-  // "Available for Adoption" pill
-  const adoptPill = pillSvg("Available for Adoption", 16, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`, "white", 16, 8);
+  // "Featured Pet" pill
+  const adoptPill = pillSvg("Featured Pet", 16, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`, "white", 16, 8);
   composites.push({ input: adoptPill.svg, top: 70, left: 30 + orgLogoWidth });
 
   // Pet portraits area
@@ -223,7 +223,7 @@ export async function generatePawfileMockup(dogId: number): Promise<Buffer> {
   // Right side: info
   const infoLeft = portraitLeft + portraitW + 40;
 
-  // Rescue org logo at top right
+  // Business logo at top right
   const orgLogoSize = 60;
   if (org.logoUrl) {
     try {
@@ -253,8 +253,8 @@ export async function generatePawfileMockup(dogId: number): Promise<Buffer> {
   const speciesPill = pillSvg(speciesLabel, 16, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`, "white", 16, 8);
   composites.push({ input: speciesPill.svg, top: 240, left: infoLeft });
 
-  // "Available for Adoption" pill
-  const adoptPill = pillSvg("Available for Adoption", 16, `rgb(34,139,34)`, "white", 16, 8);
+  // "Featured Pet" pill
+  const adoptPill = pillSvg("Featured Pet", 16, `rgb(34,139,34)`, "white", 16, 8);
   composites.push({ input: adoptPill.svg, top: 240, left: infoLeft + speciesPill.width + 12 });
 
   // Org name

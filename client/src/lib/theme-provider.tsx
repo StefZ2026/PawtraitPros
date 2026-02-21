@@ -12,7 +12,7 @@ const ThemeProviderContext = createContext<ThemeProviderContextType | undefined>
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  storageKey = "pawportraits-theme",
+  storageKey = "pawtrait-pros-theme",
 }: {
   children: React.ReactNode;
   defaultTheme?: Theme;

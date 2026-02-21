@@ -1,5 +1,5 @@
-import { Link, useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useParams, useRoute } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,12 +7,14 @@ import {
   Dog,
   Cat,
   ArrowLeft,
-  ExternalLink,
   Heart,
+  Phone,
+  Mail,
   Printer,
   Pencil,
   Download,
   Loader2,
+  ShoppingBag,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ShareButtons } from "@/components/share-buttons";
@@ -23,35 +25,77 @@ import type { Dog as DogType, Portrait, Organization } from "@shared/schema";
 
 interface DogWithPortrait extends DogType {
   portrait?: Portrait;
+  portraits?: Portrait[];
   organizationName?: string | null;
   organizationLogoUrl?: string | null;
   organizationWebsiteUrl?: string | null;
 }
 
 export default function DogProfile() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; petCode: string }>();
+  const [isCodeRoute] = useRoute("/pawfile/code/:petCode");
   const { user, isAuthenticated, isAdmin } = useAuth();
   const { toast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
+  const [activePortraitIdx, setActivePortraitIdx] = useState(0);
+
+  // Determine access mode
+  const isCustomerView = !!isCodeRoute;
+  const petCode = params.petCode;
   const dogId = params.id;
 
+  // Fetch by pet code (public) or by ID (auth)
   const { data: dog, isLoading, error } = useQuery<DogWithPortrait>({
-    queryKey: ["/api/dogs", dogId],
+    queryKey: isCustomerView ? ["/api/dogs/code", petCode] : ["/api/dogs", dogId],
+    queryFn: async () => {
+      const url = isCustomerView ? `/api/dogs/code/${petCode}` : `/api/dogs/${dogId}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
   });
 
   const { data: myOrg } = useQuery<Organization>({
     queryKey: ["/api/my-organization"],
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isCustomerView,
   });
 
-  const canEdit = isAuthenticated && (isAdmin || (myOrg && dog?.organizationId === myOrg.id));
+  const canEdit = !isCustomerView && isAuthenticated && (isAdmin || (myOrg && dog?.organizationId === myOrg.id));
+
+  // Create customer session for "Order a Keepsake" (uses public endpoint for customer view)
+  const orderSessionMutation = useMutation({
+    mutationFn: async () => {
+      if (!dog?.petCode) throw new Error("No pet code available");
+      const res = await fetch("/api/customer-session/from-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ petCode: dog.petCode }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed to create session" }));
+        throw new Error(data.error);
+      }
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      if (data.token) {
+        window.location.href = `/order/${data.token}`;
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const isCat = dog?.species === "cat";
-  const speciesWord = isCat ? "cat" : "dog";
   const rescueName = dog?.organizationName;
-  const shareTitle = `${dog?.name}'s Pawfile${rescueName ? ` from ${rescueName}` : ''} - Available for Adoption`;
-  const shareText = `Meet ${dog?.name}, a beautiful ${dog?.breed || (isCat ? "cat" : "dog")} looking for a forever home${rescueName ? ` through ${rescueName}` : ''}!`;
+  const shareTitle = `${dog?.name}'s Pawfile${rescueName ? ` from ${rescueName}` : ''}`;
+  const shareText = `Check out ${dog?.name}'s beautiful portrait${rescueName ? ` from ${rescueName}` : ''}! A gorgeous ${dog?.breed || (isCat ? "cat" : "dog")}.`;
+
+  // Multiple portraits support
+  const allPortraits = dog?.portraits || (dog?.portrait ? [dog.portrait] : []);
+  const activePortrait = allPortraits[activePortraitIdx] || allPortraits[0];
 
   const handlePrint = () => {
     window.print();
@@ -115,17 +159,26 @@ export default function DogProfile() {
           <Heart className="h-20 w-20 mx-auto mb-6 text-muted-foreground/50" />
           <h1 className="text-2xl font-serif font-bold mb-3">Pet Not Found</h1>
           <p className="text-muted-foreground mb-6">
-            This pet might have already found their forever home!
+            {isCustomerView
+              ? "This pet code may be incorrect or expired. Check your text/email for the correct link."
+              : "This pet could not be found."
+            }
           </p>
-          <Button data-testid="button-back-to-gallery" asChild>
-            <Link href="/dashboard">Back to My Rescue</Link>
-          </Button>
+          {isCustomerView ? (
+            <Button data-testid="button-try-portal" asChild>
+              <Link href="/portal">Try Another Code</Link>
+            </Button>
+          ) : (
+            <Button data-testid="button-back-to-gallery" asChild>
+              <Link href="/dashboard">Back to Dashboard</Link>
+            </Button>
+          )}
         </div>
       </div>
     );
   }
 
-  const imageUrl = dog.portrait?.generatedImageUrl || dog.originalPhotoUrl;
+  const imageUrl = activePortrait?.generatedImageUrl || dog.originalPhotoUrl;
 
   return (
     <div className="min-h-screen bg-muted/50 dark:bg-background">
@@ -135,22 +188,34 @@ export default function DogProfile() {
             <span className="flex items-center gap-0.5"><Dog className="h-5 w-5" /><Cat className="h-5 w-5" /></span>Pawtrait Pros
           </Link>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" data-testid="link-gallery-profile" asChild>
-              <Link href="/gallery">Gallery</Link>
-            </Button>
+            {!isCustomerView && (
+              <Button variant="ghost" size="sm" data-testid="link-gallery-profile" asChild>
+                <Link href="/gallery">Gallery</Link>
+              </Button>
+            )}
             <ThemeToggle />
           </div>
         </div>
       </header>
-      <AdminFloatingButton />
+      {!isCustomerView && <AdminFloatingButton />}
 
       <div className="container mx-auto px-4 py-6 print:py-0 print:px-0">
-        <Button variant="ghost" size="sm" className="gap-1 -ml-2 mb-4 print:hidden" data-testid="button-back-dashboard" asChild>
-          <Link href={isAdmin ? `/dashboard?org=${dog.organizationId}` : "/dashboard"}>
-            <ArrowLeft className="h-4 w-4" />
-            Back to My Rescue
-          </Link>
-        </Button>
+        {!isCustomerView && (
+          <Button variant="ghost" size="sm" className="gap-1 -ml-2 mb-4 print:hidden" data-testid="button-back-dashboard" asChild>
+            <Link href={isAdmin ? `/dashboard?org=${dog.organizationId}` : "/dashboard"}>
+              <ArrowLeft className="h-4 w-4" />
+              Back to Dashboard
+            </Link>
+          </Button>
+        )}
+        {isCustomerView && (
+          <Button variant="ghost" size="sm" className="gap-1 -ml-2 mb-4 print:hidden" asChild>
+            <Link href="/portal">
+              <ArrowLeft className="h-4 w-4" />
+              Look up another pet
+            </Link>
+          </Button>
+        )}
 
         <div className="max-w-lg mx-auto">
           <div
@@ -162,7 +227,7 @@ export default function DogProfile() {
               <div className="flex items-center justify-center py-5 px-6 border-b border-primary/10">
                 <img
                   src={dog.organizationLogoUrl}
-                  alt={dog.organizationName || "Rescue"}
+                  alt={dog.organizationName || "Business"}
                   className="max-h-16 max-w-[200px] object-contain"
                   data-testid="img-org-logo"
                 />
@@ -195,6 +260,27 @@ export default function DogProfile() {
               </div>
             </div>
 
+            {/* Portrait carousel thumbnails (when multiple portraits) */}
+            {allPortraits.length > 1 && (
+              <div className="px-3 pb-2 flex gap-2 overflow-x-auto">
+                {allPortraits.map((p, idx) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setActivePortraitIdx(idx)}
+                    className={`w-14 h-14 rounded border-2 overflow-hidden shrink-0 transition-colors ${
+                      idx === activePortraitIdx ? "border-primary" : "border-transparent opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    <img
+                      src={p.generatedImageUrl || dog.originalPhotoUrl || ""}
+                      alt={`Style ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="px-6 pb-2 pt-1 text-center">
               <h1 className="font-serif text-3xl font-bold text-foreground" data-testid="text-dog-name">
                 {dog.name}
@@ -214,26 +300,30 @@ export default function DogProfile() {
               </div>
             )}
 
-            {dog.isAvailable && (
-              <div className="px-6 pb-4 text-center">
-                {dog.adoptionUrl ? (
-                  <a
-                    href={dog.adoptionUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground px-6 py-3 rounded-lg text-base font-semibold hover:bg-primary/90 transition-colors cursor-pointer shadow-sm"
-                    data-testid="link-adopt"
-                  >
-                    <Heart className="h-4 w-4" />
-                    Learn More & Adopt
-                    <ExternalLink className="h-3.5 w-3.5" />
+            {/* Owner contact info (staff view only) */}
+            {canEdit && (dog.ownerEmail || dog.ownerPhone) && (
+              <div className="px-6 pb-3 flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
+                {dog.ownerPhone && (
+                  <a href={`tel:${dog.ownerPhone}`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+                    <Phone className="h-3.5 w-3.5" />
+                    {dog.ownerPhone}
                   </a>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium">
-                    <Heart className="h-3.5 w-3.5" />
-                    Available for Adoption
-                  </div>
                 )}
+                {dog.ownerEmail && (
+                  <a href={`mailto:${dog.ownerEmail}`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
+                    <Mail className="h-3.5 w-3.5" />
+                    {dog.ownerEmail}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Pet code badge */}
+            {dog.petCode && (
+              <div className="px-6 pb-4 text-center">
+                <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium font-mono">
+                  {dog.petCode}
+                </div>
               </div>
             )}
 
@@ -245,6 +335,29 @@ export default function DogProfile() {
             </div>
           </div>
 
+          {/* Customer-facing: Order a Keepsake CTA */}
+          {isCustomerView && activePortrait?.generatedImageUrl && (
+            <div className="mt-4 print:hidden">
+              <Button
+                size="lg"
+                className="w-full gap-2"
+                onClick={() => orderSessionMutation.mutate()}
+                disabled={orderSessionMutation.isPending}
+              >
+                {orderSessionMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <ShoppingBag className="h-5 w-5" />
+                )}
+                Order a Keepsake
+              </Button>
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Framed prints, mugs, tote bags, and more
+              </p>
+            </div>
+          )}
+
+          {/* Staff: Edit button */}
           {canEdit && (
             <div className="mt-4 print:hidden">
               <Button variant="outline" className="w-full gap-2" data-testid="button-edit-dog" asChild>
@@ -259,17 +372,20 @@ export default function DogProfile() {
           <div className="flex flex-wrap gap-2 mt-2 print:hidden">
             <Button variant="outline" onClick={handleSavePawfile} disabled={saving} className="gap-2" data-testid="button-save-pawfile">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Save Pawfile
+              {isCustomerView ? "Download Portrait" : "Save Pawfile"}
             </Button>
             <Button variant="outline" onClick={handlePrint} className="gap-2" data-testid="button-print">
               <Printer className="h-4 w-4" />
               Print
             </Button>
           </div>
-          <div className="mt-3 print:hidden">
-            <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-            <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} adoptionUrl={dog.adoptionUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} />
-          </div>
+
+          {!isCustomerView && (
+            <div className="mt-3 print:hidden">
+              <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} />
+            </div>
+          )}
         </div>
       </div>
     </div>

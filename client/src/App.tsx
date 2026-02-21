@@ -23,6 +23,11 @@ import Login from "@/pages/login";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import SmsOptIn from "@/pages/sms-opt-in";
+import CustomerOrder from "@/pages/customer-order";
+import BatchUpload from "@/pages/batch-upload";
+import EditionLanding from "@/pages/edition-landing";
+import CustomerPortal from "@/pages/customer-portal";
+import CounterDisplay from "@/pages/counter-display";
 
 function Router() {
   return (
@@ -45,6 +50,14 @@ function Router() {
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />
       <Route path="/sms-opt-in" component={SmsOptIn} />
+      <Route path="/order/:token" component={CustomerOrder} />
+      <Route path="/batch" component={BatchUpload} />
+      <Route path="/for-groomers">{() => <EditionLanding edition="groomer" />}</Route>
+      <Route path="/for-boarding">{() => <EditionLanding edition="boarding" />}</Route>
+      <Route path="/for-daycares">{() => <EditionLanding edition="daycare" />}</Route>
+      <Route path="/portal" component={CustomerPortal} />
+      <Route path="/pawfile/code/:petCode" component={DogProfile} />
+      <Route path="/counter/:slug" component={CounterDisplay} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -64,7 +77,7 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="pawtrait-pals-theme">
+      <ThemeProvider defaultTheme="light" storageKey="pawtrait-pros-theme">
         <TooltipProvider>
           <AccessGate>
             <Toaster />

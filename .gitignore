@@ -17,3 +17,7 @@ Thumbs.db
 # Legacy platform configs
 .railway/
 attached_assets/
+
+# Asset folders
+tote bags/
+*.docx

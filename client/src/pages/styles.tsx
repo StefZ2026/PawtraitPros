@@ -16,7 +16,7 @@ const categoryIcons: Record<string, typeof Palette> = {
   "Sci-Fi": Rocket,
   Adventure: Compass,
   Fun: Sparkles,
-  Adoption: Dog,
+  Showcase: Dog,
   Humanizing: Sparkles,
   Seasonal: Sparkles,
   Celebration: Sparkles,
@@ -62,7 +62,7 @@ export default function StylesPage() {
             40+ Artistic Portrait Styles
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            From Renaissance masters to modern pop art, find the perfect style to showcase your rescue pets
+            From Renaissance masters to modern pop art, find the perfect style for your clients' pets
           </p>
         </div>
 
@@ -156,7 +156,7 @@ export default function StylesPage() {
       <footer className="py-8 border-t mt-12">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Helping rescue pets find their furever homes through beautiful AI art
+            Beautiful AI art portraits for your clients' pets
           </p>
         </div>
       </footer>

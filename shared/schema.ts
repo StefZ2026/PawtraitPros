@@ -48,6 +48,9 @@ export const organizations = pgTable("organizations", {
   locationZip: text("location_zip"),
   locationCountry: text("location_country"),
   notes: text("notes"),
+  industryType: text("industry_type"), // "groomer" | "boarding" | "daycare"
+  captureMode: text("capture_mode"), // "hero" | "batch" — hero=single photo, batch=multi-upload
+  deliveryMode: text("delivery_mode").default("receipt"), // "receipt" | "receipt_sms" | "receipt_sms_pod"
   speciesHandled: text("species_handled"), // dogs, cats, both — must be explicitly chosen during onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
@@ -77,7 +80,10 @@ export const dogs = pgTable("dogs", {
   age: text("age"),
   description: text("description"),
   originalPhotoUrl: text("original_photo_url"),
-  adoptionUrl: text("adoption_url"),
+  adoptionUrl: text("adoption_url"), // Pals uses this; Pros uses ownerEmail/ownerPhone instead
+  ownerEmail: text("owner_email"), // pet owner's email (Pros only)
+  ownerPhone: text("owner_phone"), // pet owner's phone (Pros only)
+  petCode: varchar("pet_code", { length: 10 }), // short lookup code e.g. "BEL-2847"
   isAvailable: boolean("is_available").default(true).notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -101,6 +107,83 @@ export const portraits = pgTable("portraits", {
   previousImageUrl: text("previous_image_url"),
   isSelected: boolean("is_selected").default(false).notNull(),
   editCount: integer("edit_count").default(0).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Merch orders (Printful fulfillment)
+export const merchOrders = pgTable("merch_orders", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  dogId: integer("dog_id").references(() => dogs.id),
+  portraitId: integer("portrait_id").references(() => portraits.id),
+  customerName: text("customer_name").notNull(),
+  customerEmail: text("customer_email"),
+  customerPhone: text("customer_phone"),
+  shippingStreet: text("shipping_street").notNull(),
+  shippingCity: text("shipping_city").notNull(),
+  shippingState: text("shipping_state").notNull(),
+  shippingZip: text("shipping_zip").notNull(),
+  shippingCountry: text("shipping_country").default("US").notNull(),
+  printfulOrderId: text("printful_order_id"),
+  printfulStatus: text("printful_status"), // synced from Printful webhooks
+  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  totalCents: integer("total_cents").notNull(),
+  shippingCents: integer("shipping_cents").default(0).notNull(),
+  status: text("status").default("pending").notNull(), // pending, paid, submitted, fulfilled, shipped, failed
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Individual items within a merch order
+export const merchOrderItems = pgTable("merch_order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => merchOrders.id, { onDelete: "cascade" }),
+  productKey: text("product_key").notNull(), // maps to PRINTFUL_PRODUCTS key
+  variantId: integer("variant_id").notNull(), // Printful variant ID
+  quantity: integer("quantity").default(1).notNull(),
+  priceCents: integer("price_cents").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Customer sessions (QR/short link for ordering)
+export const customerSessions = pgTable("customer_sessions", {
+  id: serial("id").primaryKey(),
+  token: varchar("token", { length: 8 }).notNull().unique(), // short code for URL
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  dogId: integer("dog_id").notNull().references(() => dogs.id),
+  portraitId: integer("portrait_id").notNull().references(() => portraits.id),
+  packType: text("pack_type"), // "seasonal" | "fun" | "artistic"
+  customerPhone: text("customer_phone"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Batch upload sessions (for candid batch capture mode)
+export const batchSessions = pgTable("batch_sessions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  staffUserId: varchar("staff_user_id"),
+  status: text("status").default("uploading").notNull(), // uploading, assigning, generating, complete
+  photoCount: integer("photo_count").default(0).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Individual photos within a batch session
+export const batchPhotos = pgTable("batch_photos", {
+  id: serial("id").primaryKey(),
+  batchSessionId: integer("batch_session_id").notNull().references(() => batchSessions.id, { onDelete: "cascade" }),
+  photoUrl: text("photo_url").notNull(), // base64 data URI
+  dogId: integer("dog_id").references(() => dogs.id), // null until assigned
+  assignedAt: timestamp("assigned_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Daily pack selections — which pack the org chose for each day
+export const dailyPackSelections = pgTable("daily_pack_selections", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  date: text("date").notNull(), // YYYY-MM-DD format (text to avoid timezone issues)
+  packType: text("pack_type").notNull(), // "seasonal" | "fun" | "artistic"
+  selectedBy: varchar("selected_by"), // staff userId who selected
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -129,6 +212,36 @@ export const insertPortraitSchema = createInsertSchema(portraits).omit({
   createdAt: true,
 });
 
+export const insertMerchOrderSchema = createInsertSchema(merchOrders).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMerchOrderItemSchema = createInsertSchema(merchOrderItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertCustomerSessionSchema = createInsertSchema(customerSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBatchSessionSchema = createInsertSchema(batchSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBatchPhotoSchema = createInsertSchema(batchPhotos).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertDailyPackSelectionSchema = createInsertSchema(dailyPackSelections).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
@@ -144,3 +257,21 @@ export type InsertPortraitStyle = z.infer<typeof insertPortraitStyleSchema>;
 
 export type Portrait = typeof portraits.$inferSelect;
 export type InsertPortrait = z.infer<typeof insertPortraitSchema>;
+
+export type MerchOrder = typeof merchOrders.$inferSelect;
+export type InsertMerchOrder = z.infer<typeof insertMerchOrderSchema>;
+
+export type MerchOrderItem = typeof merchOrderItems.$inferSelect;
+export type InsertMerchOrderItem = z.infer<typeof insertMerchOrderItemSchema>;
+
+export type CustomerSession = typeof customerSessions.$inferSelect;
+export type InsertCustomerSession = z.infer<typeof insertCustomerSessionSchema>;
+
+export type BatchSession = typeof batchSessions.$inferSelect;
+export type InsertBatchSession = z.infer<typeof insertBatchSessionSchema>;
+
+export type BatchPhoto = typeof batchPhotos.$inferSelect;
+export type InsertBatchPhoto = z.infer<typeof insertBatchPhotoSchema>;
+
+export type DailyPackSelection = typeof dailyPackSelections.$inferSelect;
+export type InsertDailyPackSelection = z.infer<typeof insertDailyPackSelectionSchema>;

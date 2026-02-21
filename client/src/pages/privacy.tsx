@@ -54,11 +54,11 @@ export default function Privacy() {
             </p>
             <h3 className="text-lg font-semibold mb-2">Organization Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              Rescue organizations provide information including organization name, description, location, website, logo, and contact details. This information is displayed publicly on your rescue showcase page to help adopters find and connect with your organization.
+              Business users provide information including organization name, description, location, website, logo, and contact details. This information is displayed publicly on your business showcase page to help clients find and connect with your business.
             </p>
             <h3 className="text-lg font-semibold mb-2">Pet Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              You may upload pet photos, names, breeds, ages, species, descriptions, and other details about animals available for adoption. Pet photos are used to generate AI-powered artistic portraits.
+              You may upload pet photos, names, breeds, ages, species, descriptions, and other details about animals in your care. Pet photos are used to generate AI-powered artistic portraits.
             </p>
             <h3 className="text-lg font-semibold mb-2">Payment Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
@@ -82,7 +82,7 @@ export default function Privacy() {
               <li>To provide and maintain the Service, including generating AI portraits of your pets</li>
               <li>To create and manage your account and organization profile</li>
               <li>To process subscription payments through Stripe</li>
-              <li>To display your rescue organization and available pets on public showcase pages</li>
+              <li>To display your business and pet portraits on public showcase pages</li>
               <li>To enable sharing of pet profiles via social media (including Instagram posting), text messaging, and link sharing</li>
               <li>To send transactional communications related to your account</li>
               <li>To monitor and improve the security and performance of the Service</li>
@@ -119,7 +119,7 @@ export default function Privacy() {
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li><strong>Service providers:</strong> Supabase (authentication and database), Stripe (payments), Google Gemini (AI portrait generation), Meta/Instagram (social posting), Telnyx (SMS), and Render (hosting) — each acting as data processors bound by their own privacy policies and data processing agreements</li>
-              <li><strong>Public showcase pages:</strong> Organization name, description, location, logo, and pet profiles (including portraits) that you choose to make public are visible to anyone visiting your rescue's showcase page</li>
+              <li><strong>Public showcase pages:</strong> Organization name, description, location, logo, and pet profiles (including portraits) that you choose to make public are visible to anyone visiting your business showcase page</li>
               <li><strong>Social media platforms:</strong> When you use Instagram posting or other social sharing features, the content you choose to share is transmitted to those platforms</li>
               <li><strong>Legal requirements:</strong> We may disclose information if required by law, court order, or in response to valid legal process</li>
             </ul>

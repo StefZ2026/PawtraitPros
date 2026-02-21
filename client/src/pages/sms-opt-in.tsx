@@ -17,7 +17,7 @@ export default function SmsOptIn() {
               <div>
                 <h2 className="font-semibold text-lg mb-2">How It Works</h2>
                 <p className="text-muted-foreground">
-                  Pawtrait Pros allows rescue organizations to share pet portraits via text message.
+                  Pawtrait Pros allows pet professionals to share pet portraits via text message.
                   When viewing a pet portrait, users can click "Send via Text" to share the portrait
                   link with a phone number of their choice.
                 </p>

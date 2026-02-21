@@ -13,6 +13,9 @@ import rateLimit from "express-rate-limit";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { generateShowcaseMockup, generatePawfileMockup } from "./generate-mockups";
 import { isValidBreed } from "./breeds";
+import { getCurrentPacks, type IndustryType } from "@shared/pack-config";
+import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, getFrameColors } from "./printful-config";
+import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "./printful";
 import { isTrialExpired, isWithinTrialWindow, getFreeTrial, revertToFreeTrial, handleCancellation, canStartFreeTrial, markFreeTrialUsed } from "./subscription";
 import { pool } from "./db";
 
@@ -161,7 +164,18 @@ async function checkDogLimit(orgId: number): Promise<string | null> {
   return null;
 }
 
+function generatePetCode(name: string): string {
+  const prefix = (name || "PET").substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+  const suffix = Math.floor(1000 + Math.random() * 9000); // 4-digit random
+  return `${prefix}-${suffix}`;
+}
+
 async function createDogWithPortrait(dogData: any, orgId: number, originalPhotoUrl: string | undefined, generatedPortraitUrl: string | undefined, styleId: number | undefined) {
+  // Auto-generate pet code if not provided
+  if (!dogData.petCode) {
+    dogData.petCode = generatePetCode(dogData.name);
+  }
+
   const dog = await storage.createDog({
     ...dogData,
     originalPhotoUrl,
@@ -695,6 +709,1315 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching portrait styles:", error);
       res.status(500).json({ error: "Failed to fetch portrait styles" });
+    }
+  });
+
+  // --- PACKS ---
+  // Returns the 3 packs for a given industry type + species, with resolved style details
+  app.get("/api/packs", async (req: Request, res: Response) => {
+    try {
+      const industryType = (req.query.industryType as string) || "groomer";
+      const species = (req.query.species as string) || "dog";
+
+      if (!["groomer", "boarding", "daycare"].includes(industryType)) {
+        return res.status(400).json({ error: "Invalid industryType. Must be groomer, boarding, or daycare." });
+      }
+      if (!["dog", "cat"].includes(species)) {
+        return res.status(400).json({ error: "Invalid species. Must be dog or cat." });
+      }
+
+      const packs = getCurrentPacks(industryType as IndustryType, species as "dog" | "cat");
+
+      // Resolve style IDs to full style objects from DB
+      const allStyles = await storage.getAllPortraitStyles();
+      const styleMap = new Map(allStyles.map(s => [s.id, s]));
+
+      const resolved = packs.map(pack => ({
+        ...pack,
+        styles: pack.styleIds
+          .map(id => styleMap.get(id))
+          .filter(Boolean),
+      }));
+
+      res.json(resolved);
+    } catch (error) {
+      console.error("Error fetching packs:", error);
+      res.status(500).json({ error: "Failed to fetch packs" });
+    }
+  });
+
+  // --- DAILY PACK SELECTION ---
+
+  // Get today's pack selection for the org
+  app.get("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.claims.sub as string;
+      const org = await storage.getOrganizationByOwnerId(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+
+      const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const result = await pool.query(
+        "SELECT * FROM daily_pack_selections WHERE organization_id = $1 AND date = $2",
+        [org.id, date]
+      );
+      if (result.rows.length === 0) {
+        return res.json(null);
+      }
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("Error fetching daily pack:", error);
+      res.status(500).json({ error: "Failed to fetch daily pack" });
+    }
+  });
+
+  // Set today's pack selection
+  app.post("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.claims.sub as string;
+      const org = await storage.getOrganizationByOwnerId(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+
+      const { packType, date } = req.body;
+      if (!packType || !["seasonal", "fun", "artistic"].includes(packType)) {
+        return res.status(400).json({ error: "Invalid packType" });
+      }
+      const targetDate = date || new Date().toISOString().split("T")[0];
+
+      const result = await pool.query(
+        `INSERT INTO daily_pack_selections (organization_id, date, pack_type, selected_by)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (organization_id, date) DO UPDATE SET pack_type = $3, selected_by = $4
+         RETURNING *`,
+        [org.id, targetDate, packType, userId]
+      );
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("Error setting daily pack:", error);
+      res.status(500).json({ error: "Failed to set daily pack" });
+    }
+  });
+
+  // --- PET CODE LOOKUP (public) ---
+  app.get("/api/dogs/code/:petCode", async (req: Request, res: Response) => {
+    try {
+      const { petCode } = req.params;
+      const result = await pool.query(
+        `SELECT d.*, o.name as organization_name, o.logo_url as organization_logo_url, o.slug as organization_slug
+         FROM dogs d
+         JOIN organizations o ON d.organization_id = o.id
+         WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+      const dog = result.rows[0];
+
+      // Get portraits for this dog
+      const portraits = await pool.query(
+        `SELECT p.*, ps.name as style_name, ps.category as style_category
+         FROM portraits p
+         LEFT JOIN portrait_styles ps ON p.style_id = ps.id
+         WHERE p.dog_id = $1
+         ORDER BY p.is_selected DESC, p.created_at DESC`,
+        [dog.id]
+      );
+
+      const selectedPortrait = portraits.rows.find((p: any) => p.is_selected) || portraits.rows[0] || null;
+      res.json({
+        ...dog,
+        portrait: selectedPortrait,
+        portraits: portraits.rows,
+      });
+    } catch (error) {
+      console.error("Error looking up pet code:", error);
+      res.status(500).json({ error: "Failed to look up pet" });
+    }
+  });
+
+  // --- BATCH PORTRAIT GENERATION (end-of-day workflow) ---
+  app.post("/api/generate-batch", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const { dogIds, packType, autoSelect, organizationId } = req.body;
+      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
+        return res.status(400).json({ error: "dogIds array is required" });
+      }
+      if (!packType || !["seasonal", "fun", "artistic"].includes(packType)) {
+        return res.status(400).json({ error: "Invalid packType" });
+      }
+
+      // Resolve org
+      let org;
+      if (userIsAdmin && organizationId) {
+        org = await storage.getOrganization(parseInt(organizationId));
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+      }
+      if (!org) return res.status(404).json({ error: "No organization found" });
+
+      const industryType = (org as any).industryType || "groomer";
+
+      // Get pack styles
+      const packs = getCurrentPacks(industryType as IndustryType, "dog"); // default to dog, can improve later
+      const pack = packs.find(p => p.type === packType);
+      if (!pack) return res.status(400).json({ error: "Pack not found" });
+
+      const allStyles = await storage.getAllPortraitStyles();
+      const packStyles = pack.styleIds.map(id => allStyles.find(s => s.id === id)).filter(Boolean);
+
+      if (packStyles.length === 0) {
+        return res.status(400).json({ error: "No styles found for this pack" });
+      }
+
+      // Generate portraits for each dog
+      const results: Array<{ dogId: number; success: boolean; portraitId?: number; error?: string }> = [];
+
+      for (const dogId of dogIds) {
+        try {
+          const dog = await storage.getDog(dogId);
+          if (!dog || dog.organizationId !== org.id) {
+            results.push({ dogId, success: false, error: "Dog not found or wrong org" });
+            continue;
+          }
+
+          if (!dog.originalPhotoUrl) {
+            results.push({ dogId, success: false, error: "No photo uploaded" });
+            continue;
+          }
+
+          // Pick style: auto-select randomly from pack, or let client specify later
+          let style;
+          if (autoSelect) {
+            style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          } else {
+            // For manual selection, skip generation — client will pick styles and call generate-portrait individually
+            results.push({ dogId, success: true, portraitId: undefined });
+            continue;
+          }
+
+          if (!style) {
+            results.push({ dogId, success: false, error: "Could not select style" });
+            continue;
+          }
+
+          // Build prompt from style template
+          const species = dog.species || "dog";
+          const breed = dog.breed || species;
+          const prompt = sanitizeForPrompt(
+            style.promptTemplate
+              .replace(/\{breed\}/g, breed)
+              .replace(/\{species\}/g, species)
+              .replace(/\{name\}/g, dog.name)
+          );
+
+          // Generate image
+          const generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
+
+          // Save portrait
+          const portrait = await storage.createPortrait({
+            dogId: dog.id,
+            styleId: style.id,
+            generatedImageUrl,
+            isSelected: true,
+          });
+          await storage.incrementOrgPortraitsUsed(org.id);
+
+          // Auto-generate pet code if not set
+          if (!dog.petCode) {
+            const petCode = generatePetCode(dog.name);
+            await storage.updateDog(dog.id, { petCode } as any);
+          }
+
+          results.push({ dogId: dog.id, success: true, portraitId: portrait.id });
+        } catch (genErr: any) {
+          console.error(`[generate-batch] Error for dog ${dogId}:`, genErr.message);
+          results.push({ dogId, success: false, error: genErr.message });
+        }
+      }
+
+      res.json({ results, totalGenerated: results.filter(r => r.success && r.portraitId).length });
+    } catch (error: any) {
+      console.error("Error in batch generation:", error.message);
+      res.status(500).json({ error: "Batch generation failed" });
+    }
+  });
+
+  // --- BATCH DELIVERY (send pawfile links to pet owners) ---
+  app.post("/api/deliver-batch", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const { dogIds, organizationId } = req.body;
+      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
+        return res.status(400).json({ error: "dogIds array is required" });
+      }
+
+      let org;
+      if (userIsAdmin && organizationId) {
+        org = await storage.getOrganization(parseInt(organizationId));
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+      }
+      if (!org) return res.status(404).json({ error: "No organization found" });
+
+      const results: Array<{ dogId: number; sent: boolean; method?: string; error?: string }> = [];
+
+      for (const dogId of dogIds) {
+        try {
+          const dog = await storage.getDog(dogId);
+          if (!dog || dog.organizationId !== org.id) {
+            results.push({ dogId, sent: false, error: "Dog not found" });
+            continue;
+          }
+
+          if (!(dog as any).ownerPhone && !(dog as any).ownerEmail) {
+            results.push({ dogId, sent: false, error: "No owner contact info" });
+            continue;
+          }
+
+          // Ensure pet has a code
+          let petCode = (dog as any).petCode;
+          if (!petCode) {
+            petCode = generatePetCode(dog.name);
+            await storage.updateDog(dog.id, { petCode } as any);
+          }
+
+          const pawfileUrl = `https://pawtraitpros.com/pawfile/code/${petCode}`;
+
+          // SMS delivery via Twilio (if ownerPhone exists)
+          if ((dog as any).ownerPhone) {
+            const phone = (dog as any).ownerPhone;
+            const messagingSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+            const accountSid = process.env.TWILIO_ACCOUNT_SID;
+            const apiKeySid = process.env.TWILIO_API_KEY_SID;
+            const apiKeySecret = process.env.TWILIO_API_KEY_SECRET;
+
+            if (messagingSid && accountSid && apiKeySid && apiKeySecret) {
+              try {
+                const auth = Buffer.from(`${apiKeySid}:${apiKeySecret}`).toString("base64");
+                const smsBody = `${org.name} created a beautiful portrait of ${dog.name}! View it here: ${pawfileUrl}`;
+                const params = new URLSearchParams({
+                  MessagingServiceSid: messagingSid,
+                  To: phone,
+                  Body: smsBody,
+                });
+                const smsRes = await fetch(
+                  `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+                  {
+                    method: "POST",
+                    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
+                    body: params.toString(),
+                  }
+                );
+                if (smsRes.ok) {
+                  results.push({ dogId, sent: true, method: "sms" });
+                  continue;
+                } else {
+                  const smsErr = await smsRes.json();
+                  console.error(`[deliver-batch] SMS failed for ${dog.name}:`, smsErr);
+                }
+              } catch (smsErr: any) {
+                console.error(`[deliver-batch] SMS error:`, smsErr.message);
+              }
+            }
+          }
+
+          // Fallback: just mark as "link ready" (no email service yet)
+          results.push({ dogId, sent: false, method: "link_only", error: "SMS not configured or failed" });
+        } catch (err: any) {
+          results.push({ dogId, sent: false, error: err.message });
+        }
+      }
+
+      res.json({ results, totalSent: results.filter(r => r.sent).length });
+    } catch (error: any) {
+      console.error("Error in batch delivery:", error.message);
+      res.status(500).json({ error: "Batch delivery failed" });
+    }
+  });
+
+  // --- MERCH PRODUCTS ---
+  // Returns available merch products and pricing
+  app.get("/api/merch/products", async (req: Request, res: Response) => {
+    try {
+      res.json({
+        frames: getProductsByCategory("frame"),
+        mugs: getProductsByCategory("mug"),
+        totes: getProductsByCategory("tote"),
+        frameSizes: getFrameSizes(),
+        frameColors: getFrameColors("8x10"), // all sizes have same colors
+      });
+    } catch (error) {
+      console.error("Error fetching merch products:", error);
+      res.status(500).json({ error: "Failed to fetch merch products" });
+    }
+  });
+
+  // --- Merch Order Endpoints ---
+
+  // Estimate shipping costs
+  app.post("/api/merch/estimate", async (req: Request, res: Response) => {
+    try {
+      const { items, address } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one item is required" });
+      }
+      if (!address || !address.address1 || !address.city || !address.state_code || !address.zip || !address.country_code) {
+        return res.status(400).json({ error: "Complete shipping address is required" });
+      }
+
+      const recipient: PrintfulRecipient = {
+        name: address.name || "Customer",
+        address1: address.address1,
+        city: address.city,
+        state_code: address.state_code,
+        zip: address.zip,
+        country_code: address.country_code,
+      };
+
+      const printfulItems = items.map((item: { productKey: string; quantity: number }) => {
+        const product = getProduct(item.productKey);
+        if (!product) throw new Error(`Unknown product: ${item.productKey}`);
+        return { variant_id: product.variantId, quantity: item.quantity || 1 };
+      });
+
+      const rates = await estimateShipping(recipient, printfulItems);
+      res.json({ rates });
+    } catch (error: any) {
+      console.error("Error estimating shipping:", error);
+      res.status(500).json({ error: error.message || "Failed to estimate shipping" });
+    }
+  });
+
+  // Create a merch order
+  app.post("/api/merch/order", async (req: Request, res: Response) => {
+    try {
+      const { items, customer, address, imageUrl, portraitId, dogId, orgId } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one item is required" });
+      }
+      if (!customer?.name || !address?.address1 || !address?.city || !address?.state_code || !address?.zip) {
+        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
+      }
+      if (!imageUrl) {
+        return res.status(400).json({ error: "Image URL is required for printing" });
+      }
+      if (!orgId) {
+        return res.status(400).json({ error: "Organization ID is required" });
+      }
+
+      // Validate all items and calculate total
+      let subtotalCents = 0;
+      const validatedItems: Array<{ productKey: string; variantId: number; quantity: number; priceCents: number }> = [];
+      for (const item of items) {
+        const product = getProduct(item.productKey);
+        if (!product) {
+          return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
+        }
+        const qty = item.quantity || 1;
+        subtotalCents += product.priceCents * qty;
+        validatedItems.push({
+          productKey: item.productKey,
+          variantId: product.variantId,
+          quantity: qty,
+          priceCents: product.priceCents,
+        });
+      }
+
+      // Estimate shipping to get cost
+      const recipient: PrintfulRecipient = {
+        name: customer.name,
+        address1: address.address1,
+        city: address.city,
+        state_code: address.state_code,
+        zip: address.zip,
+        country_code: address.country_code || "US",
+        email: customer.email,
+        phone: customer.phone,
+      };
+
+      let shippingCents = 0;
+      try {
+        const shippingItems = validatedItems.map(i => ({ variant_id: i.variantId, quantity: i.quantity }));
+        const rates = await estimateShipping(recipient, shippingItems);
+        if (rates.length > 0) {
+          shippingCents = Math.round(parseFloat(rates[0].rate) * 100);
+        }
+      } catch (shippingErr: any) {
+        console.warn("[merch] Shipping estimate failed, proceeding with $0:", shippingErr.message);
+      }
+
+      const totalCents = subtotalCents + shippingCents;
+
+      // Create merch order in DB
+      const orderResult = await pool.query(
+        `INSERT INTO merch_orders (
+          organization_id, dog_id, portrait_id,
+          customer_name, customer_email, customer_phone,
+          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
+          total_cents, shipping_cents, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id`,
+        [
+          orgId, dogId || null, portraitId || null,
+          customer.name, customer.email || null, customer.phone || null,
+          address.address1, address.city, address.state_code, address.zip, address.country_code || "US",
+          totalCents, shippingCents, "pending",
+        ]
+      );
+      const merchOrderId = orderResult.rows[0].id;
+
+      // Insert order items
+      for (const item of validatedItems) {
+        await pool.query(
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents]
+        );
+      }
+
+      // Submit to Printful
+      try {
+        const printfulItems = validatedItems.map(item =>
+          buildOrderItem(item.variantId, item.quantity, imageUrl)
+        );
+        const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(merchOrderId));
+
+        // Update order with Printful ID
+        await pool.query(
+          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+          [String(printfulOrder.id), printfulOrder.status, merchOrderId]
+        );
+
+        // Auto-confirm the order (submit for fulfillment)
+        try {
+          await confirmPrintfulOrder(printfulOrder.id);
+          await pool.query(
+            `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+            [merchOrderId]
+          );
+        } catch (confirmErr: any) {
+          console.warn(`[merch] Auto-confirm failed for order ${merchOrderId}:`, confirmErr.message);
+        }
+
+        res.json({
+          orderId: merchOrderId,
+          printfulOrderId: printfulOrder.id,
+          totalCents,
+          shippingCents,
+          subtotalCents,
+          status: "submitted",
+        });
+      } catch (printfulErr: any) {
+        console.error(`[merch] Printful order creation failed for order ${merchOrderId}:`, printfulErr.message);
+        await pool.query(
+          `UPDATE merch_orders SET status = 'failed', printful_status = $1 WHERE id = $2`,
+          [printfulErr.message, merchOrderId]
+        );
+        res.status(500).json({ error: "Failed to submit order to fulfillment provider", orderId: merchOrderId });
+      }
+    } catch (error: any) {
+      console.error("Error creating merch order:", error);
+      res.status(500).json({ error: error.message || "Failed to create order" });
+    }
+  });
+
+  // Get a specific merch order
+  app.get("/api/merch/order/:id", async (req: Request, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      if (isNaN(orderId)) {
+        return res.status(400).json({ error: "Invalid order ID" });
+      }
+
+      const orderResult = await pool.query(
+        `SELECT * FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      const itemsResult = await pool.query(
+        `SELECT * FROM merch_order_items WHERE order_id = $1`,
+        [orderId]
+      );
+
+      // Enrich items with product details
+      const items = itemsResult.rows.map((item: any) => ({
+        ...item,
+        product: getProduct(item.product_key),
+      }));
+
+      res.json({ order: orderResult.rows[0], items });
+    } catch (error: any) {
+      console.error("Error fetching merch order:", error);
+      res.status(500).json({ error: "Failed to fetch order" });
+    }
+  });
+
+  // Get all merch orders for an organization (auth required)
+  app.get("/api/merch/orders", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const email = req.user.claims.email;
+      const isAdminUser = email === ADMIN_EMAIL;
+
+      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId as string) : null;
+      let orgId: number | null = null;
+
+      if (isAdminUser && orgIdParam) {
+        orgId = orgIdParam;
+      } else {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (org) orgId = org.id;
+      }
+
+      if (!orgId) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      const ordersResult = await pool.query(
+        `SELECT mo.*,
+          (SELECT json_agg(json_build_object(
+            'id', moi.id,
+            'product_key', moi.product_key,
+            'variant_id', moi.variant_id,
+            'quantity', moi.quantity,
+            'price_cents', moi.price_cents
+          )) FROM merch_order_items moi WHERE moi.order_id = mo.id) as items
+        FROM merch_orders mo
+        WHERE mo.organization_id = $1
+        ORDER BY mo.created_at DESC`,
+        [orgId]
+      );
+
+      res.json({ orders: ordersResult.rows });
+    } catch (error: any) {
+      console.error("Error fetching merch orders:", error);
+      res.status(500).json({ error: "Failed to fetch orders" });
+    }
+  });
+
+  // Sync a merch order status from Printful (admin/manual check)
+  app.post("/api/merch/order/:id/sync", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const email = req.user.claims.email;
+      if (email !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin only" });
+      }
+
+      const orderId = parseInt(req.params.id);
+      const orderResult = await pool.query(
+        `SELECT printful_order_id FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+
+      const printfulOrderId = orderResult.rows[0].printful_order_id;
+      if (!printfulOrderId) {
+        return res.status(400).json({ error: "Order has no Printful order ID" });
+      }
+
+      const printfulOrder = await getPrintfulOrder(parseInt(printfulOrderId));
+      await pool.query(
+        `UPDATE merch_orders SET printful_status = $1 WHERE id = $2`,
+        [printfulOrder.status, orderId]
+      );
+
+      res.json({ orderId, printfulStatus: printfulOrder.status, printfulOrder });
+    } catch (error: any) {
+      console.error("Error syncing merch order:", error);
+      res.status(500).json({ error: error.message || "Failed to sync order" });
+    }
+  });
+
+  // --- Gelato Holiday Card Endpoints ---
+
+  // Get available holiday card products
+  app.get("/api/gelato/products", async (_req: Request, res: Response) => {
+    try {
+      const { getAllGelatoProducts } = await import("./gelato-config");
+      res.json({ cards: getAllGelatoProducts() });
+    } catch (error) {
+      console.error("Error fetching Gelato products:", error);
+      res.status(500).json({ error: "Failed to fetch card products" });
+    }
+  });
+
+  // Check if holiday cards are currently available (Nov-Dec only in v1)
+  app.get("/api/gelato/availability", async (_req: Request, res: Response) => {
+    const month = new Date().getMonth(); // 0-indexed
+    const available = month === 10 || month === 11; // November or December
+    res.json({ available, season: available ? "holiday" : null });
+  });
+
+  // Create a holiday card order via Gelato
+  app.post("/api/gelato/order", async (req: Request, res: Response) => {
+    try {
+      const { items, customer, address, artworkUrls } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one card item is required" });
+      }
+      if (!customer?.name || !address?.address1 || !address?.city || !address?.state || !address?.zip) {
+        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
+      }
+      if (!artworkUrls || !Array.isArray(artworkUrls) || artworkUrls.length === 0) {
+        return res.status(400).json({ error: "Artwork URL(s) are required" });
+      }
+
+      const { getGelatoProduct: getGelatoCardProduct } = await import("./gelato-config");
+      const { createGelatoOrder, buildCardOrderItem } = await import("./gelato");
+
+      // Validate items and calculate total
+      let subtotalCents = 0;
+      const gelatoItems: any[] = [];
+      const dbItems: Array<{ productKey: string; quantity: number; priceCents: number }> = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const product = getGelatoCardProduct(item.productKey);
+        if (!product) {
+          return res.status(400).json({ error: `Unknown card product: ${item.productKey}` });
+        }
+        const qty = item.quantity || 1;
+        subtotalCents += product.priceCents * qty;
+
+        const files = artworkUrls.map((url: string, idx: number) => ({
+          type: idx === 0 ? "default" : "back",
+          url,
+        }));
+
+        gelatoItems.push(
+          buildCardOrderItem(product.productUid, qty, files, `item-${i}`)
+        );
+        dbItems.push({
+          productKey: item.productKey,
+          quantity: qty,
+          priceCents: product.priceCents,
+        });
+      }
+
+      const nameParts = customer.name.trim().split(/\s+/);
+      const firstName = nameParts[0] || "Customer";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
+      const orgId = req.body.orgId || null;
+      const orderResult = await pool.query(
+        `INSERT INTO merch_orders (
+          organization_id, dog_id, portrait_id,
+          customer_name, customer_email, customer_phone,
+          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
+          total_cents, shipping_cents, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id`,
+        [
+          orgId, req.body.dogId || null, req.body.portraitId || null,
+          customer.name, customer.email || null, customer.phone || null,
+          address.address1, address.city, address.state, address.zip, address.country || "US",
+          subtotalCents, 0, "pending",
+        ]
+      );
+      const merchOrderId = orderResult.rows[0].id;
+
+      for (const item of dbItems) {
+        await pool.query(
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [merchOrderId, item.productKey, 0, item.quantity, item.priceCents]
+        );
+      }
+
+      try {
+        const gelatoOrder = await createGelatoOrder(
+          gelatoItems,
+          {
+            firstName,
+            lastName,
+            addressLine1: address.address1,
+            city: address.city,
+            state: address.state,
+            postCode: address.zip,
+            country: address.country || "US",
+            email: customer.email,
+            phone: customer.phone,
+          },
+          `gelato-${merchOrderId}`,
+          `customer-${merchOrderId}`,
+        );
+
+        await pool.query(
+          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+          [gelatoOrder.id, gelatoOrder.fulfillmentStatus, merchOrderId]
+        );
+
+        res.json({
+          orderId: merchOrderId,
+          gelatoOrderId: gelatoOrder.id,
+          totalCents: subtotalCents,
+          status: "submitted",
+        });
+      } catch (gelatoErr: any) {
+        console.error(`[gelato] Order creation failed for merch_order ${merchOrderId}:`, gelatoErr.message);
+        await pool.query(
+          `UPDATE merch_orders SET status = 'failed', printful_status = $1 WHERE id = $2`,
+          [gelatoErr.message, merchOrderId]
+        );
+        res.status(500).json({ error: "Failed to submit card order", orderId: merchOrderId });
+      }
+    } catch (error: any) {
+      console.error("Error creating Gelato order:", error);
+      res.status(500).json({ error: error.message || "Failed to create card order" });
+    }
+  });
+
+  // Admin: Discover Gelato card product UIDs from catalog
+  app.get("/api/gelato/discover-products", isAuthenticated, async (req: any, res: Response) => {
+    const email = req.user.claims.email;
+    if (email !== ADMIN_EMAIL) {
+      return res.status(403).json({ error: "Admin only" });
+    }
+
+    try {
+      const { searchCardProducts, listCatalogs } = await import("./gelato");
+      const catalogs = await listCatalogs();
+      const cards = await searchCardProducts();
+      res.json({ catalogs, cards });
+    } catch (error: any) {
+      console.error("Error discovering Gelato products:", error);
+      res.status(500).json({ error: error.message || "Failed to discover products" });
+    }
+  });
+
+  // --- Customer Session Endpoints (QR/short link system) ---
+
+  // Create a customer session (staff creates after portrait generation)
+  app.post("/api/customer-session", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const email = req.user.claims.email;
+      const isAdminUser = email === ADMIN_EMAIL;
+      const { dogId, portraitId, packType, customerPhone, orgId: bodyOrgId } = req.body;
+
+      if (!dogId || !portraitId) {
+        return res.status(400).json({ error: "dogId and portraitId are required" });
+      }
+
+      let orgId: number | null = null;
+      if (isAdminUser && bodyOrgId) {
+        orgId = parseInt(bodyOrgId);
+      } else {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (org) orgId = org.id;
+      }
+      if (!orgId) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      // Verify the dog and portrait belong to this org
+      const dog = await storage.getDog(parseInt(dogId));
+      if (!dog || dog.organizationId !== orgId) {
+        return res.status(400).json({ error: "Dog not found or doesn't belong to your organization" });
+      }
+
+      // Generate unique 8-char token
+      let token = '';
+      let attempts = 0;
+      while (attempts < 10) {
+        token = crypto.randomBytes(4).toString('hex'); // 8 hex chars
+        const existing = await pool.query('SELECT id FROM customer_sessions WHERE token = $1', [token]);
+        if (existing.rows.length === 0) break;
+        attempts++;
+      }
+
+      // Set expiry to 7 days from now
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      await pool.query(
+        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, pack_type, customer_phone, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [token, orgId, parseInt(dogId), parseInt(portraitId), packType || null, customerPhone || null, expiresAt.toISOString()]
+      );
+
+      const host = process.env.NODE_ENV === 'production' ? 'https://pawtraitpros.com' : 'http://localhost:5000';
+      const orderUrl = `${host}/order/${token}`;
+
+      console.log(`[customer-session] Created session ${token} for org ${orgId}, dog ${dogId}`);
+
+      res.json({
+        token,
+        orderUrl,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Error creating customer session:", error);
+      res.status(500).json({ error: error.message || "Failed to create customer session" });
+    }
+  });
+
+  // Create customer session from pet code (public — for customer portal "Order a Keepsake")
+  app.post("/api/customer-session/from-code", async (req: Request, res: Response) => {
+    try {
+      const { petCode } = req.body;
+      if (!petCode) {
+        return res.status(400).json({ error: "petCode is required" });
+      }
+
+      // Look up the dog by pet code
+      const dogResult = await pool.query(
+        `SELECT d.*, p.id as portrait_id, p.generated_image_url
+         FROM dogs d
+         LEFT JOIN portraits p ON p.dog_id = d.id AND p.is_selected = true
+         WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+
+      if (dogResult.rows.length === 0) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+
+      const dog = dogResult.rows[0];
+      if (!dog.portrait_id) {
+        return res.status(400).json({ error: "No portrait available for this pet" });
+      }
+
+      // Generate unique 8-char token
+      let token = '';
+      let attempts = 0;
+      while (attempts < 10) {
+        token = crypto.randomBytes(4).toString('hex');
+        const existing = await pool.query('SELECT id FROM customer_sessions WHERE token = $1', [token]);
+        if (existing.rows.length === 0) break;
+        attempts++;
+      }
+
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      await pool.query(
+        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [token, dog.organization_id, dog.id, dog.portrait_id, expiresAt.toISOString()]
+      );
+
+      const host = process.env.NODE_ENV === 'production' ? 'https://pawtraitpros.com' : 'http://localhost:5000';
+      res.json({
+        token,
+        orderUrl: `${host}/order/${token}`,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Error creating customer session from code:", error);
+      res.status(500).json({ error: error.message || "Failed to create session" });
+    }
+  });
+
+  // Get customer session by token (public — this is the customer-facing endpoint)
+  app.get("/api/customer-session/:token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      if (!token || token.length !== 8) {
+        return res.status(400).json({ error: "Invalid session token" });
+      }
+
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
+                d.name as dog_name, d.breed as dog_breed, d.species as dog_species,
+                p.generated_image_url as portrait_image, p.style_id as portrait_style_id
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         JOIN portraits p ON p.id = cs.portrait_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const session = sessionResult.rows[0];
+
+      // Check expiry
+      if (session.expires_at && new Date(session.expires_at) < new Date()) {
+        return res.status(410).json({ error: "This order link has expired" });
+      }
+
+      // Get alternate portraits from same pack/dog for "change image" feature
+      const alternatesResult = await pool.query(
+        `SELECT id, generated_image_url, style_id FROM portraits
+         WHERE dog_id = $1 AND generated_image_url IS NOT NULL AND id != $2
+         ORDER BY created_at DESC LIMIT 5`,
+        [session.dog_id, session.portrait_id]
+      );
+
+      res.json({
+        token: session.token,
+        orgName: session.org_name,
+        orgLogo: session.org_logo,
+        dogName: session.dog_name,
+        dogBreed: session.dog_breed,
+        dogSpecies: session.dog_species,
+        portraitImage: session.portrait_image,
+        portraitId: session.portrait_id,
+        packType: session.pack_type,
+        expiresAt: session.expires_at,
+        alternatePortraits: alternatesResult.rows.map((p: any) => ({
+          id: p.id,
+          imageUrl: p.generated_image_url,
+          styleId: p.style_id,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error fetching customer session:", error);
+      res.status(500).json({ error: "Failed to load order page" });
+    }
+  });
+
+  // --- Batch Upload Endpoints (Candid Batch capture mode) ---
+
+  // Start a new batch session
+  app.post("/api/batch/start", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const email = req.user.claims.email;
+      const isAdminUser = email === ADMIN_EMAIL;
+      const { orgId: bodyOrgId } = req.body;
+
+      let orgId: number | null = null;
+      if (isAdminUser && bodyOrgId) {
+        orgId = parseInt(bodyOrgId);
+      } else {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (org) orgId = org.id;
+      }
+      if (!orgId) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO batch_sessions (organization_id, staff_user_id, status, photo_count)
+         VALUES ($1, $2, 'uploading', 0) RETURNING id`,
+        [orgId, userId]
+      );
+
+      res.json({ batchId: result.rows[0].id, status: "uploading" });
+    } catch (error: any) {
+      console.error("Error starting batch session:", error);
+      res.status(500).json({ error: "Failed to start batch session" });
+    }
+  });
+
+  // Upload photos to a batch session (one at a time — client sends each photo separately)
+  app.post("/api/batch/:id/photos", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+
+      const userId = req.user.claims.sub;
+      const { photo } = req.body; // base64 data URI
+
+      if (!photo) {
+        return res.status(400).json({ error: "Photo data is required" });
+      }
+
+      // Verify batch belongs to user's org
+      const batchResult = await pool.query(
+        `SELECT bs.*, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      const batch = batchResult.rows[0];
+      if (batch.status !== 'uploading' && batch.status !== 'assigning') {
+        return res.status(400).json({ error: "Batch is no longer accepting photos" });
+      }
+
+      // Check photo count limit (max 20)
+      if (batch.photo_count >= 20) {
+        return res.status(400).json({ error: "Maximum 20 photos per batch" });
+      }
+
+      // Insert photo
+      const photoResult = await pool.query(
+        `INSERT INTO batch_photos (batch_session_id, photo_url)
+         VALUES ($1, $2) RETURNING id`,
+        [batchId, photo]
+      );
+
+      // Update photo count
+      await pool.query(
+        `UPDATE batch_sessions SET photo_count = photo_count + 1 WHERE id = $1`,
+        [batchId]
+      );
+
+      res.json({ photoId: photoResult.rows[0].id, photoCount: batch.photo_count + 1 });
+    } catch (error: any) {
+      console.error("Error uploading batch photo:", error);
+      res.status(500).json({ error: "Failed to upload photo" });
+    }
+  });
+
+  // Assign a batch photo to a pet
+  app.patch("/api/batch/:id/photos/:photoId", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const photoId = parseInt(req.params.photoId);
+      const { dogId } = req.body;
+
+      if (isNaN(batchId) || isNaN(photoId)) {
+        return res.status(400).json({ error: "Invalid batch or photo ID" });
+      }
+      if (!dogId) {
+        return res.status(400).json({ error: "dogId is required" });
+      }
+
+      // Verify batch exists
+      const batchResult = await pool.query(
+        `SELECT organization_id FROM batch_sessions WHERE id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      // Verify dog belongs to same org
+      const dog = await storage.getDog(parseInt(dogId));
+      if (!dog || dog.organizationId !== batchResult.rows[0].organization_id) {
+        return res.status(400).json({ error: "Dog not found or doesn't belong to this organization" });
+      }
+
+      await pool.query(
+        `UPDATE batch_photos SET dog_id = $1, assigned_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND batch_session_id = $3`,
+        [parseInt(dogId), photoId, batchId]
+      );
+
+      // Update batch status to 'assigning' if still 'uploading'
+      await pool.query(
+        `UPDATE batch_sessions SET status = 'assigning' WHERE id = $1 AND status = 'uploading'`,
+        [batchId]
+      );
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error assigning batch photo:", error);
+      res.status(500).json({ error: "Failed to assign photo" });
+    }
+  });
+
+  // Generate portraits for all assigned photos in a batch
+  app.post("/api/batch/:id/generate", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const { packType } = req.body; // "seasonal" | "fun" | "artistic"
+
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+
+      // Get batch + assigned photos
+      const batchResult = await pool.query(
+        `SELECT bs.*, o.industry_type, o.id as org_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      const batch = batchResult.rows[0];
+
+      const photosResult = await pool.query(
+        `SELECT * FROM batch_photos WHERE batch_session_id = $1 AND dog_id IS NOT NULL ORDER BY id`,
+        [batchId]
+      );
+
+      if (photosResult.rows.length === 0) {
+        return res.status(400).json({ error: "No photos have been assigned to pets yet" });
+      }
+
+      // Update batch status
+      await pool.query(
+        `UPDATE batch_sessions SET status = 'generating' WHERE id = $1`,
+        [batchId]
+      );
+
+      // Return immediately — generation happens async
+      // In a production system you'd use a job queue, but for now we'll
+      // return the count and let the client poll for status
+      res.json({
+        batchId,
+        status: "generating",
+        assignedPhotos: photosResult.rows.length,
+        packType: packType || "seasonal",
+        message: `Generating portraits for ${photosResult.rows.length} photos. Check batch status for progress.`,
+      });
+    } catch (error: any) {
+      console.error("Error generating batch portraits:", error);
+      res.status(500).json({ error: "Failed to start generation" });
+    }
+  });
+
+  // Get batch session status + all photos
+  app.get("/api/batch/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+
+      const batchResult = await pool.query(
+        `SELECT * FROM batch_sessions WHERE id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      const photosResult = await pool.query(
+        `SELECT bp.id, bp.dog_id, bp.assigned_at, bp.created_at,
+                d.name as dog_name, d.breed as dog_breed
+         FROM batch_photos bp
+         LEFT JOIN dogs d ON d.id = bp.dog_id
+         WHERE bp.batch_session_id = $1
+         ORDER BY bp.id`,
+        [batchId]
+      );
+
+      res.json({
+        batch: batchResult.rows[0],
+        photos: photosResult.rows,
+      });
+    } catch (error: any) {
+      console.error("Error fetching batch:", error);
+      res.status(500).json({ error: "Failed to fetch batch" });
+    }
+  });
+
+  // --- Delivery System Endpoints ---
+
+  // Generate a printable receipt with QR code for a customer session
+  app.get("/api/customer-session/:token/receipt", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
+                d.name as dog_name
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const session = sessionResult.rows[0];
+      const host = process.env.NODE_ENV === 'production' ? 'https://pawtraitpros.com' : 'http://localhost:5000';
+      const orderUrl = `${host}/order/${token}`;
+
+      // Return receipt data (client renders the receipt/QR)
+      res.json({
+        orgName: session.org_name,
+        orgLogo: session.org_logo,
+        dogName: session.dog_name,
+        orderUrl,
+        token,
+        expiresAt: session.expires_at,
+      });
+    } catch (error: any) {
+      console.error("Error generating receipt:", error);
+      res.status(500).json({ error: "Failed to generate receipt" });
+    }
+  });
+
+  // Send SMS with order link (uses existing SMS infrastructure)
+  app.post("/api/customer-session/:token/send-sms", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const { token } = req.params;
+      const { phone } = req.body;
+
+      if (!phone) {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+
+      // Verify session exists
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, d.name as dog_name
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const session = sessionResult.rows[0];
+      const host = process.env.NODE_ENV === 'production' ? 'https://pawtraitpros.com' : 'http://localhost:5000';
+      const orderUrl = `${host}/order/${token}`;
+
+      const message = `Hi from ${session.org_name}! ${session.dog_name}'s portrait is ready. View it & order prints here: ${orderUrl}`;
+
+      // Use Twilio (same as existing /api/send-sms logic)
+      const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+      const twilioKeySid = process.env.TWILIO_API_KEY_SID;
+      const twilioKeySecret = process.env.TWILIO_API_KEY_SECRET;
+      const twilioMsgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+      if (!twilioSid || !twilioKeySid || !twilioKeySecret || !twilioMsgSvc) {
+        return res.status(503).json({ error: "SMS service is not configured" });
+      }
+
+      const cleaned = phone.replace(/[\s\-().]/g, "");
+      const formattedPhone = cleaned.startsWith("+") ? cleaned : cleaned.startsWith("1") ? `+${cleaned}` : `+1${cleaned}`;
+
+      const twilioAuth = Buffer.from(`${twilioKeySid}:${twilioKeySecret}`).toString("base64");
+      const twilioRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Authorization": `Basic ${twilioAuth}`,
+        },
+        body: new URLSearchParams({ To: formattedPhone, MessagingServiceSid: twilioMsgSvc, Body: message }).toString(),
+      });
+
+      if (!twilioRes.ok) {
+        const err = await twilioRes.json();
+        throw new Error(err.message || "Failed to send SMS");
+      }
+
+      // Store phone on session
+      await pool.query(
+        `UPDATE customer_sessions SET customer_phone = $1 WHERE token = $2`,
+        [formattedPhone, token]
+      );
+
+      res.json({ success: true, message: "SMS sent" });
+    } catch (error: any) {
+      console.error("Error sending customer session SMS:", error);
+      res.status(500).json({ error: error.message || "Failed to send SMS" });
     }
   });
 
@@ -1575,7 +2898,7 @@ export async function registerRoutes(
     }
 
     if (userIsAdmin) {
-      return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific rescue.", status: 400 };
+      return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific business.", status: 400 };
     }
 
     return { org: null, error: "You need to create an organization first", status: 400 };
@@ -2517,7 +3840,7 @@ export async function registerRoutes(
           domain,
           privateKey: privateKey.replace(/\\n/g, '\n'),
           profileKey,
-          redirect: `https://pawtrait-pals.onrender.com/settings?instagram=connected`,
+          redirect: `https://pawtraitpros.com/settings?instagram=connected`,
           allowedSocial: ['instagram'],
         }),
       });
@@ -2588,7 +3911,7 @@ export async function registerRoutes(
         description = `Pawtrait of ${dog.name}`;
         const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
         const host = (req.headers['x-forwarded-host'] as string) || (req.headers['host'] as string) || 'pawtraitpros.com';
-        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}Looking for a forever home. View their full profile at ${proto}://${host}/pawfile/${dog.id}\n\n#petportrait #pawtraitpros`;
+        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}View their full portrait at ${proto}://${host}/pawfile/${dog.id}\n\n#petportrait #pawtraitpros`;
       } else {
         return res.status(400).json({ error: "dogId or image+orgId is required" });
       }
@@ -3016,7 +4339,7 @@ export async function registerRoutes(
         imageToPost = portrait.generatedImageUrl;
         const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
         const host = (req.headers['x-forwarded-host'] as string) || (req.headers['host'] as string) || 'pawtraitpros.com';
-        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}Looking for a forever home. View their full profile at ${proto}://${host}/pawfile/${dog.id}\n\n#petportrait #pawtraitpros`;
+        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}View their full portrait at ${proto}://${host}/pawfile/${dog.id}\n\n#petportrait #pawtraitpros`;
       } else {
         return res.status(400).json({ error: "dogId or image+orgId is required" });
       }

@@ -72,7 +72,8 @@ export default function Create() {
   const [petName, setPetName] = useState("");
   const [petBreed, setPetBreed] = useState("");
   const [petAge, setPetAge] = useState("");
-  const [adoptionUrl, setAdoptionUrl] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
   const [petDescription, setPetDescription] = useState("");
   const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || null);
   const [speciesConfirmed, setSpeciesConfirmed] = useState(false);
@@ -102,7 +103,8 @@ export default function Create() {
       setPetName(existingDog.name || "");
       setPetBreed(existingDog.breed || "");
       setPetAge(existingDog.age || "");
-      setAdoptionUrl(existingDog.adoptionUrl || "");
+      setOwnerEmail(existingDog.ownerEmail || "");
+      setOwnerPhone(existingDog.ownerPhone || "");
       setPetDescription(existingDog.description || "");
       setSpecies(existingDog.species || "dog");
       setSpeciesConfirmed(true);
@@ -286,7 +288,8 @@ export default function Create() {
 
       const data: Record<string, any> = {
         name: petName, breed: petBreed || undefined, age: petAge || undefined,
-        adoptionUrl: adoptionUrl, description: petDescription || undefined,
+        ownerEmail: ownerEmail || undefined, ownerPhone: ownerPhone || undefined,
+        description: petDescription || undefined,
         originalPhotoUrl: uploadedImage, species: effectiveSpecies,
       };
 
@@ -326,10 +329,9 @@ export default function Create() {
     const nameCheck = validatePetName(petName);
     if (!nameCheck.valid) return toast({ title: nameCheck.error || "Invalid name", variant: "destructive" });
     if (!petBreed) return toast({ title: "Select a breed", variant: "destructive" });
-    if (!adoptionUrl.trim()) return toast({ title: "Add an adoption page URL", description: "This is where people will go to learn more and adopt this pet.", variant: "destructive" });
     if (!selectedStyle) return toast({ title: "Pick an art style", variant: "destructive" });
     generateMutation.mutate();
-  }, [uploadedImage, selectedStyle, petName, petBreed, adoptionUrl, generateMutation, toast]);
+  }, [uploadedImage, selectedStyle, petName, petBreed, generateMutation, toast]);
 
   const handleDownload = useCallback(() => {
     if (!activeView) return;
@@ -391,7 +393,7 @@ export default function Create() {
           <Button variant="ghost" size="sm" className="gap-1 -ml-2" data-testid="button-back" asChild>
             <Link href={backUrl}>
               <ArrowLeft className="h-4 w-4" />
-              {orgParam ? "Back to Admin" : "Back to My Rescue"}
+              {orgParam ? "Back to Admin" : "Back to Dashboard"}
             </Link>
           </Button>
         </div>
@@ -495,7 +497,10 @@ export default function Create() {
                   <BreedSelector species={effectiveSpecies} value={petBreed} onChange={setPetBreed} />
                   <Input placeholder="Age (optional)" value={petAge} onChange={(e) => setPetAge(e.target.value)} data-testid="input-pet-age" />
                 </div>
-                <Input placeholder="Adoption page URL *" value={adoptionUrl} onChange={(e) => setAdoptionUrl(e.target.value)} data-testid="input-adoption-url" />
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <Input placeholder="Owner email (optional)" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} data-testid="input-owner-email" />
+                  <Input placeholder="Owner phone (optional)" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} data-testid="input-owner-phone" />
+                </div>
                 <Textarea
                   placeholder="Tell people about this pet — personality, quirks, likes... (optional)"
                   value={petDescription}
@@ -612,7 +617,6 @@ export default function Create() {
               isEditing={editMutation.isPending}
               selectedStyle={generateMutation.isPending ? selectedStyle : displayStyle}
               dogName={petName}
-              adoptionUrl={adoptionUrl}
               onRegenerate={handleGenerate}
               onDownload={handleDownload}
               onEdit={(prompt) => editMutation.mutate(prompt)}

@@ -1,9 +1,39 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Heart, Palette, Share2, Sparkles, Dog, Cat, Building2, LogOut, LayoutDashboard, LayoutGrid } from "lucide-react";
+import {
+  Heart, Palette, Sparkles, Dog, Cat, Building2, LogOut,
+  LayoutDashboard, Scissors, Sun, Camera, Send, ShoppingBag, ArrowRight
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const EDITIONS = [
+  {
+    key: "groomer",
+    title: "For Groomers",
+    icon: Scissors,
+    tagline: "Delight clients at checkout with stunning pet portraits",
+    href: "/for-groomers",
+    accent: "from-pink-500/20 to-rose-500/10",
+  },
+  {
+    key: "boarding",
+    title: "For Boarding",
+    icon: Building2,
+    tagline: "Send \"while you were away\" portraits that wow pet parents",
+    href: "/for-boarding",
+    accent: "from-blue-500/20 to-sky-500/10",
+  },
+  {
+    key: "daycare",
+    title: "For Daycares",
+    icon: Sun,
+    tagline: "Keep pet parents engaged with daily portrait drops",
+    href: "/for-daycares",
+    accent: "from-amber-500/20 to-yellow-500/10",
+  },
+];
 
 export default function Home() {
   const { user, isLoading, isAuthenticated, logout, isLoggingOut } = useAuth();
@@ -35,9 +65,9 @@ export default function Home() {
                     <AvatarImage src={user?.profileImageUrl || undefined} alt={user?.firstName || "User"} />
                     <AvatarFallback>{user?.firstName?.[0] || user?.email?.[0] || "U"}</AvatarFallback>
                   </Avatar>
-                    <Button variant="ghost" size="icon" data-testid="button-logout" onClick={() => logout()} disabled={isLoggingOut}>
-                      <LogOut className="h-4 w-4" />
-                    </Button>
+                  <Button variant="ghost" size="icon" data-testid="button-logout" onClick={() => logout()} disabled={isLoggingOut}>
+                    <LogOut className="h-4 w-4" />
+                  </Button>
                 </div>
               </>
             ) : (
@@ -54,131 +84,91 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="relative pt-32 pb-20 overflow-hidden">
+      {/* Hero */}
+      <section className="relative pt-32 pb-16 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10" />
         <div className="container mx-auto px-4 relative">
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full mb-6">
               <Sparkles className="h-4 w-4" />
-              <span className="text-sm font-medium">AI-Powered Pet Portraits</span>
+              <span className="text-sm font-medium">AI-Powered Pet Portraits for Professionals</span>
             </div>
             <h1 className="text-4xl md:text-6xl font-serif font-bold mb-6 leading-tight">
-              Delight Your Clients with{" "}
-              <span className="text-primary">Stunning Pet Portraits</span>
+              Delight Your Clients.{" "}
+              <span className="text-primary">Grow Your Revenue.</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Beautiful AI-generated portraits for groomers, boarders, and daycares.
-              Wow your clients and create new revenue with 40+ artistic styles.
+              Snap a photo, tap a button, and send your clients a beautiful AI portrait of their pet
+              — plus keepsakes they can order on the spot.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              {isAuthenticated ? (
-                <>
-                  <Button size="lg" className="gap-2" data-testid="button-go-to-dashboard" asChild>
-                    <Link href="/dashboard">
-                      <LayoutDashboard className="h-5 w-5" />
-                      Go to Dashboard
-                    </Link>
-                  </Button>
-                  <Button size="lg" variant="outline" className="gap-2" data-testid="button-view-gallery" asChild>
-                    <Link href="/gallery">
-                      View Gallery
-                    </Link>
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <a href="/login">
-                    <Button size="lg" className="gap-2" data-testid="button-create-portrait">
-                      <Palette className="h-5 w-5" />
-                      Create a Portrait
-                    </Button>
-                  </a>
-                  <Button size="lg" variant="outline" className="gap-2" data-testid="button-view-gallery" asChild>
-                    <Link href="/gallery">
-                      View Gallery
-                    </Link>
-                  </Button>
-                </>
-              )}
-            </div>
-            <div className="mt-4 flex items-center justify-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Heart className="h-4 w-4 text-primary" />
-                Free 30-day trial
-              </span>
-              <span>No credit card required</span>
-            </div>
-          </div>
-
-          <div className="mt-16 grid grid-cols-2 md:grid-cols-5 gap-4 max-w-5xl mx-auto">
-            {[
-              { style: "Renaissance Noble", image: "/images/styles/renaissance-noble.jpg" },
-              { style: "Egyptian Royalty", image: "/images/styles/egyptian-royalty.jpg" },
-              { style: "Tutu Princess", image: "/images/styles/tutu-princess.jpg" },
-              { style: "Tea Party Guest", image: "/images/styles/tea-party-guest.jpg" },
-              { style: "Cozy Cabin", image: "/images/styles/cozy-cabin.jpg" },
-            ].map((item, index) => (
-              <Link key={index} href="/styles">
-                <div
-                  className="group relative aspect-square rounded-lg overflow-hidden border border-border/50 hover-elevate"
-                  data-testid={`style-preview-${index}`}
-                >
-                  <img
-                    src={item.image}
-                    alt={item.style}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-2 text-center">
-                    <span className="text-xs font-medium text-white drop-shadow-lg">{item.style}</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-          <div className="text-center mt-6">
-            <p className="text-muted-foreground mb-4">
-              Elegant portraits that showcase each pet's unique personality and charm
-            </p>
-            <Button variant="outline" size="sm" className="gap-2" data-testid="button-view-all-styles" asChild>
-              <Link href="/styles">
-                <Palette className="h-4 w-4" />
-                View All Styles
-              </Link>
-            </Button>
           </div>
         </div>
       </section>
 
+      {/* Three Editions */}
+      <section className="py-16">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-serif font-bold mb-4">Choose Your Edition</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              Tailored workflows for every type of pet business
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {EDITIONS.map((edition) => {
+              const Icon = edition.icon;
+              return (
+                <Link key={edition.key} href={edition.href}>
+                  <Card className="h-full hover-elevate cursor-pointer group overflow-hidden">
+                    <div className={`h-2 bg-gradient-to-r ${edition.accent}`} />
+                    <CardContent className="pt-8 pb-6 text-center">
+                      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 group-hover:bg-primary/20 transition-colors">
+                        <Icon className="h-8 w-8 text-primary" />
+                      </div>
+                      <h3 className="text-xl font-serif font-bold mb-3">{edition.title}</h3>
+                      <p className="text-sm text-muted-foreground mb-4">{edition.tagline}</p>
+                      <div className="inline-flex items-center gap-1 text-primary text-sm font-medium group-hover:gap-2 transition-all">
+                        Learn More <ArrowRight className="h-4 w-4" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
       <section className="py-20 bg-card/50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-serif font-bold mb-4">How It Works</h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Create beautiful portraits for your clients in four simple steps
+              Under a minute per pet. Repeat daily.
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
             {[
               {
-                icon: Dog,
-                title: "Upload a Photo",
-                description: "Upload a photo of your client's pet. We work with any breed or mix!",
+                icon: Camera,
+                title: "Snap a Photo",
+                description: "Take a quick photo of each pet — any breed, any pose.",
               },
               {
                 icon: Palette,
-                title: "Choose a Style",
-                description: "Select from 40+ stunning artistic styles from Classical to Fun.",
+                title: "Pick a Pack",
+                description: "Choose from Seasonal, Fun, or Artistic portrait packs.",
               },
               {
                 icon: Sparkles,
-                title: "Generate Portrait",
-                description: "Our AI creates a unique, beautiful portrait your clients will love.",
+                title: "Generate All",
+                description: "One tap at end of day — AI creates portraits for every pet.",
               },
               {
-                icon: LayoutGrid,
-                title: "Build Your Showcase",
-                description: "Showcase your work with a beautiful gallery of portraits for your clients.",
+                icon: Send,
+                title: "Text the Owner",
+                description: "Clients get a portrait link + a shop for keepsakes.",
               },
             ].map((step, index) => (
               <Card key={index} className="text-center hover-elevate">
@@ -196,54 +186,41 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Keepsakes */}
       <section className="py-20">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-serif font-bold mb-4">Why Choose Pawtrait Pros?</h2>
+            <h2 className="text-3xl font-serif font-bold mb-4">Revenue on Autopilot</h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Built specifically for pet professionals to delight their clients
+              Every portrait is a sales opportunity. Clients order keepsakes directly — you earn on every sale with zero inventory.
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+          <div className="flex flex-wrap justify-center gap-4">
             {[
-              {
-                icon: Heart,
-                title: "Made for Pros",
-                description: "Designed for groomers, boarders, and daycares to wow their clients",
-              },
-              {
-                icon: Palette,
-                title: "40+ Art Styles",
-                description: "From Renaissance nobles to Egyptian Royalty - find the perfect personality match",
-              },
-              {
-                icon: Building2,
-                title: "Business Galleries",
-                description: "Create stunning showcases of your work to attract new clients",
-              },
-              {
-                icon: Share2,
-                title: "Easy Sharing",
-                description: "Each pet gets a unique profile page ready to share on social media",
-              },
-            ].map((feature, index) => (
-              <Card key={index} className="hover-elevate">
-                <CardContent className="pt-6">
-                  <feature.icon className="h-8 w-8 text-primary mb-4" />
-                  <h3 className="font-semibold mb-2">{feature.title}</h3>
-                  <p className="text-sm text-muted-foreground">{feature.description}</p>
-                </CardContent>
-              </Card>
+              { name: "Framed Prints", desc: "3 sizes, 3 frame colors" },
+              { name: "Mugs", desc: "11oz & 15oz" },
+              { name: "Tote Bags", desc: "Natural canvas" },
+              { name: "Holiday Cards", desc: "Seasonal (Nov-Dec)" },
+            ].map((item) => (
+              <div key={item.name} className="flex items-center gap-3 bg-card border rounded-lg px-5 py-3">
+                <ShoppingBag className="h-5 w-5 text-primary shrink-0" />
+                <div>
+                  <p className="font-medium text-sm">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
+      {/* CTA */}
       <section className="py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-3xl font-serif font-bold mb-4">Ready to Wow Your Clients?</h2>
           <p className="text-primary-foreground/80 mb-8 max-w-xl mx-auto">
-            Join pet professionals using beautiful AI portraits to delight their clients and grow their business.
+            Join pet professionals using AI portraits to delight clients and grow revenue.
+            Free 30-day trial — no credit card required.
           </p>
           {isAuthenticated ? (
             <Button size="lg" variant="secondary" className="gap-2" data-testid="button-start-creating" asChild>

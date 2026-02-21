@@ -30,17 +30,15 @@ interface ShareButtonsProps {
   dogName?: string;
   dogBreed?: string;
   orgId?: number;
-  /** Pet's adoption page URL (e.g. Petfinder, Adopt-a-Pet, rescue site) */
-  adoptionUrl?: string;
-  /** Rescue organization's website URL */
+  /** Organization's website URL */
   orgWebsiteUrl?: string;
   /** Ref to a DOM element to capture as image for Instagram (used on showcase) */
   captureRef?: RefObject<HTMLDivElement | null>;
-  /** Caption context for showcase posts (e.g. rescue name) */
+  /** Caption context for showcase posts (e.g. business name) */
   showcaseName?: string;
 }
 
-export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, adoptionUrl, orgWebsiteUrl, captureRef, showcaseName }: ShareButtonsProps) {
+export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, orgWebsiteUrl, captureRef, showcaseName }: ShareButtonsProps) {
   const { toast } = useToast();
   const { session, isAuthenticated } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -124,8 +122,8 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
       });
       setCapturedImage(dataUrl);
       const defaultCaption = dogId
-        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed} ` : ''}Looking for a forever home. View their full profile at ${shareUrl}\n\n#adoptdontshop #rescuepets #pawtraitpros #fosteringsaveslives`
-        : `Check out the adorable pets available for adoption at ${showcaseName || 'our rescue'}! Visit ${shareUrl} to learn more.\n\n#adoptdontshop #rescuepets #pawtraitpros #fosteringsaveslives`;
+        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${shareUrl}\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`
+        : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${shareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`;
       setIgCaption(defaultCaption);
       setIgOpen(true);
     } catch (err) {

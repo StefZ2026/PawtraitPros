@@ -121,11 +121,11 @@ export function setupOgMetaRoutes(app: Express) {
         ? Array.from(speciesSet).join(' and ')
         : 'pets';
       const description = org.description
-        || `Meet ${petCount} adorable ${species} available for adoption at ${org.name}! View their beautiful artistic portraits and find your new best friend.`;
+        || `Meet ${petCount} adorable ${species} at ${org.name}! View their beautiful artistic portraits.`;
 
       const template = getHtmlTemplate();
       const html = buildOgHtml(template, {
-        title: `${org.name} - Adoptable Pets | ${SITE_NAME}`,
+        title: `${org.name} - Pet Portraits | ${SITE_NAME}`,
         description,
         imageUrl: ogImageUrl,
         url: `${baseUrl}/rescue/${slug}`,
@@ -159,9 +159,9 @@ export function setupOgMetaRoutes(app: Express) {
       const orgStr = org ? ` at ${org.name}` : '';
       const speciesLabel = dog.species === 'cat' ? 'Cat' : 'Dog';
 
-      const title = `${dog.name} - Adoptable ${breedStr}${speciesLabel}${orgStr} | ${SITE_NAME}`;
+      const title = `${dog.name} - ${breedStr}${speciesLabel} Portrait${orgStr} | ${SITE_NAME}`;
       const description = dog.description
-        || `Meet ${dog.name}, an adorable ${breedStr}${speciesLabel.toLowerCase()}${ageStr} looking for a furever home${orgStr}. View ${dog.name}'s beautiful artistic portrait!`;
+        || `Meet ${dog.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgStr}. View ${dog.name}'s stunning artistic portrait!`;
 
       const template = getHtmlTemplate();
       const html = buildOgHtml(template, {

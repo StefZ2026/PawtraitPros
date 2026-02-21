@@ -99,12 +99,12 @@ export default function Gallery() {
 
         <div className="text-center mb-10">
           <h1 className="text-3xl md:text-4xl font-serif font-bold mb-3">
-            {isLoggedIn ? "View Adoptable Pets" : "Adoptable Portraits Gallery"}
+            {isLoggedIn ? "Pet Portraits" : "Portrait Gallery"}
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            {isLoggedIn 
-              ? "Your rescue's adorable pets looking for their furever homes"
-              : "Beautiful AI-generated portraits of rescue pets looking for their furever homes"
+            {isLoggedIn
+              ? "Beautiful AI portraits of your clients' pets"
+              : "Stunning AI-generated pet portraits by Pawtrait Pros"
             }
           </p>
         </div>
@@ -174,7 +174,7 @@ export default function Gallery() {
             <p className="text-muted-foreground mb-6 max-w-md mx-auto">
               {speciesFilter !== "all"
                 ? `No ${speciesFilter === "dog" ? "dog" : "cat"} portraits yet. Try viewing all pets!`
-                : "Start creating beautiful AI portraits for your rescue pets to help them find loving homes."
+                : "Start creating stunning AI portraits for your clients' pets."
               }
             </p>
             {speciesFilter !== "all" ? (
@@ -253,26 +253,12 @@ export default function Gallery() {
                       </p>
                     )}
                     <div className="mt-3 pt-3 border-t flex items-center gap-2">
-                      <Button variant="outline" size="sm" className="w-full gap-1 flex-1" data-testid={`button-view-${dog.id}`} asChild>
+                      <Button variant="outline" size="sm" className="w-full gap-1" data-testid={`button-view-${dog.id}`} asChild>
                         <Link href={`/pawfile/${dog.id}`}>
                           <SpeciesIcon className="h-3 w-3" />
                           View Portrait
                         </Link>
                       </Button>
-                      {dog.adoptionUrl && (
-                        <a 
-                          href={dog.adoptionUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`link-adopt-${dog.id}`}
-                        >
-                          <Button size="sm" className="gap-1">
-                            <ExternalLink className="h-3 w-3" />
-                            Adopt Me
-                          </Button>
-                        </a>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -285,7 +271,7 @@ export default function Gallery() {
       <footer className="py-8 border-t mt-12">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Helping rescue pets find their furever homes through beautiful AI art
+            Beautiful AI pet portraits by Pawtrait Pros
           </p>
         </div>
       </footer>

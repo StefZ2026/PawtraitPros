@@ -95,9 +95,9 @@ export default function ChoosePlan() {
         queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations", orgId] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-        toast({ title: "Plan selected!", description: "Plan has been set for this rescue." });
+        toast({ title: "Plan selected!", description: "Plan has been set for this business." });
       } else {
-        toast({ title: "Plan activated!", description: "You're all set. Let's complete your rescue details." });
+        toast({ title: "Plan activated!", description: "You're all set. Let's complete your business details." });
       }
       navigateNext();
     },
@@ -255,7 +255,7 @@ export default function ChoosePlan() {
             <p className="text-muted-foreground max-w-lg mx-auto text-base" data-testid="text-choose-plan-subtitle">
               {isExistingSubscriber
                 ? "Select a new plan below. Upgrades take effect immediately. Downgrades take effect at your next billing cycle."
-                : "Start with a free trial or pick the plan that fits your rescue. You can upgrade or change plans anytime."}
+                : "Start with a free trial or pick the plan that fits your business. You can upgrade or change plans anytime."}
             </p>
           </div>
 

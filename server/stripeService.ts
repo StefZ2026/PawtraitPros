@@ -101,7 +101,7 @@ export class StripeService {
     } else {
       product = await stripe.products.create({
         name: 'Extra Pet Slot',
-        description: 'Additional pet slot for your rescue organization ($3/month per slot)',
+        description: 'Additional pet slot for your business ($3/month per slot)',
         metadata: { type: 'pet_slot_addon' },
       });
     }

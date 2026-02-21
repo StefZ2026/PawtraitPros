@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, RefreshCw, Sparkles, ExternalLink, Wand2 } from "lucide-react";
+import { Download, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import type { StyleOption } from "@/lib/portrait-styles";
 
 interface PortraitPreviewProps {
@@ -11,7 +11,6 @@ interface PortraitPreviewProps {
   isEditing?: boolean;
   selectedStyle: StyleOption | null;
   dogName: string;
-  adoptionUrl?: string;
   onRegenerate: () => void;
   onDownload: () => void;
   onEdit?: (editPrompt: string) => void;
@@ -25,7 +24,6 @@ export function PortraitPreview({
   isEditing = false,
   selectedStyle,
   dogName,
-  adoptionUrl,
   onRegenerate,
   onDownload,
   onEdit,
@@ -122,14 +120,6 @@ export function PortraitPreview({
           <RefreshCw className="h-4 w-4" />
           Regenerate
         </Button>
-        {adoptionUrl && (
-          <Button variant="outline" asChild className="gap-2">
-            <a href={adoptionUrl} target="_blank" rel="noopener noreferrer" data-testid="link-adoption-page">
-              <ExternalLink className="h-4 w-4" />
-              Adopt Me
-            </a>
-          </Button>
-        )}
       </div>
 
       {onEdit && (

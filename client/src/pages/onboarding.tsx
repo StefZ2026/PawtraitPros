@@ -13,21 +13,23 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Dog, Cat, Heart, Upload, MapPin, Globe,
   Mail, ArrowRight, ArrowLeft, PawPrint,
-  Check, Sparkles, PartyPopper, Zap, Plus
+  Check, Sparkles, PartyPopper, Zap, Plus,
+  Scissors, Building2, Sun,
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
 import type { Organization, SubscriptionPlan } from "@shared/schema";
 
-type Step = "welcome" | "logo" | "species" | "contact" | "social" | "location" | "billing" | "plan" | "finish";
+type Step = "welcome" | "industry" | "logo" | "species" | "contact" | "social" | "location" | "billing" | "plan" | "finish";
 
-const STEPS: Step[] = ["welcome", "logo", "species", "contact", "social", "location", "billing", "plan", "finish"];
+const STEPS: Step[] = ["welcome", "industry", "logo", "species", "contact", "social", "location", "billing", "plan", "finish"];
 
 type AddressPrefix = "location" | "billing";
 type AddressField = "Street" | "City" | "State" | "Zip" | "Country";
 
 type FormData = {
+  industryType: string;
   speciesHandled: string;
   websiteUrl: string;
   contactEmail: string;
@@ -48,6 +50,30 @@ type FormData = {
   billingSameAsLocation: boolean;
   billingLater: boolean;
 };
+
+const INDUSTRY_OPTIONS = [
+  {
+    value: "groomer",
+    label: "Grooming",
+    description: "Capture the perfect 'after' shot",
+    icon: <Scissors className="h-10 w-10 text-primary" />,
+    captureMode: "hero" as const,
+  },
+  {
+    value: "boarding",
+    label: "Boarding",
+    description: "Share candid moments while they're away",
+    icon: <Building2 className="h-10 w-10 text-primary" />,
+    captureMode: "batch" as const,
+  },
+  {
+    value: "daycare",
+    label: "Daycare",
+    description: "Daily snapshots that keep owners smiling",
+    icon: <Sun className="h-10 w-10 text-primary" />,
+    captureMode: "batch" as const,
+  },
+];
 
 const SPECIES_OPTIONS = [
   { value: "dogs", label: "Dogs Only", icon: <Dog className="h-10 w-10 text-primary" /> },
@@ -215,6 +241,7 @@ export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
+    industryType: "",
     speciesHandled: "",
     websiteUrl: "",
     contactEmail: "",
@@ -287,11 +314,21 @@ export default function Onboarding() {
     }
   }, [org, navigate, isAdminFlow, adminOrgId]);
 
+  // Auto-fill industry from edition landing page (stored in sessionStorage)
+  useEffect(() => {
+    const storedEdition = sessionStorage.getItem("pawtrait-pros-edition");
+    if (storedEdition && ["groomer", "boarding", "daycare"].includes(storedEdition)) {
+      setFormData((prev: FormData) => prev.industryType ? prev : { ...prev, industryType: storedEdition });
+      sessionStorage.removeItem("pawtrait-pros-edition");
+    }
+  }, []);
+
   useEffect(() => {
     if (!org || initialized) return;
 
     setFormData((prev) => ({
       ...prev,
+      industryType: (org as any).industryType || prev.industryType || "",
       speciesHandled: org.speciesHandled || "",
       websiteUrl: org.websiteUrl || "",
       contactEmail: org.contactEmail || "",
@@ -315,6 +352,7 @@ export default function Onboarding() {
       setLogoPreview(org.logoUrl);
     }
 
+    const hasIndustry = Boolean((org as any).industryType);
     const hasSpecies = Boolean(org.speciesHandled);
     const hasContact = Boolean(org.websiteUrl || org.contactEmail);
     const hasSocial = Boolean(org.socialFacebook || org.socialInstagram || org.socialTwitter || org.socialNextdoor);
@@ -322,7 +360,7 @@ export default function Onboarding() {
     const hasBilling = Boolean(org.billingStreet);
     const hasPlan = Boolean(org.planId);
 
-    const alreadyStarted = hasSpecies || hasContact || hasLocation || hasBilling || Boolean(org.logoUrl);
+    const alreadyStarted = hasIndustry || hasSpecies || hasContact || hasLocation || hasBilling || Boolean(org.logoUrl);
     setIsResuming(alreadyStarted);
 
     let startStep: Step = "welcome";
@@ -338,6 +376,8 @@ export default function Onboarding() {
       startStep = "social";
     } else if (hasSpecies) {
       startStep = "contact";
+    } else if (hasIndustry) {
+      startStep = "logo";
     }
 
     setCurrentStep(startStep);
@@ -371,7 +411,7 @@ export default function Onboarding() {
         queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       }
-      toast({ title: "Plan selected!", description: "Your rescue is ready to go." });
+      toast({ title: "Plan selected!", description: "Your business is ready to go." });
       goNext();
     },
     onError: (error: Error) => {
@@ -464,9 +504,22 @@ export default function Onboarding() {
     updateMutation.mutate(data, { onSuccess: goNext });
   };
 
+  const saveIndustryAndNext = () => {
+    if (!formData.industryType) {
+      toast({ title: "Please select one", description: "Let us know what type of business you run.", variant: "destructive" });
+      return;
+    }
+    const option = INDUSTRY_OPTIONS.find(o => o.value === formData.industryType);
+    saveAndNext({
+      industryType: formData.industryType,
+      captureMode: option?.captureMode || "hero",
+      deliveryMode: "receipt",
+    });
+  };
+
   const saveSpeciesAndNext = () => {
     if (!formData.speciesHandled) {
-      toast({ title: "Please select one", description: "Let us know which animals your rescue handles.", variant: "destructive" });
+      toast({ title: "Please select one", description: "Let us know which animals your business works with.", variant: "destructive" });
       return;
     }
     saveAndNext({ speciesHandled: formData.speciesHandled });
@@ -543,7 +596,7 @@ export default function Onboarding() {
                 <p className="text-muted-foreground max-w-sm mx-auto">
                   {isResuming
                     ? "We noticed there are a few things you didn't fill in last time. Let's finish getting you set up — it'll only take a moment."
-                    : "Let's get your rescue set up so you can start creating beautiful portraits of your adoptable pets."}
+                    : "Let's get your business set up so you can start creating beautiful portraits for your clients' pets."}
                 </p>
               </div>
               {!isResuming && (
@@ -552,6 +605,49 @@ export default function Onboarding() {
               <Button className="gap-2" onClick={goNext} data-testid="button-get-started">
                 {isResuming ? "Let's Finish Up" : "Let's Go"} <ArrowRight className="h-4 w-4" />
               </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {currentStep === "industry" && (
+          <Card data-testid="step-industry">
+            <CardContent className="pt-8 pb-8 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-serif font-bold" data-testid="text-industry-title">
+                  What type of business do you run?
+                </h2>
+                <p className="text-muted-foreground">
+                  This helps us tailor the experience — from the styles we show to how photos are captured.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {INDUSTRY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={`flex flex-col items-center gap-3 p-6 rounded-md border-2 transition-colors cursor-pointer ${
+                      formData.industryType === option.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover-elevate"
+                    }`}
+                    onClick={() => updateField("industryType", option.value)}
+                    data-testid={`button-industry-${option.value}`}
+                  >
+                    {option.icon}
+                    <span className="font-medium text-sm">{option.label}</span>
+                    <span className="text-xs text-muted-foreground text-center">{option.description}</span>
+                  </button>
+                ))}
+              </div>
+
+              <StepNavigation
+                onBack={goBack}
+                onNext={saveIndustryAndNext}
+                nextLabel="Continue"
+                nextDisabled={updateMutation.isPending || !formData.industryType}
+                backTestId="button-back-industry"
+                nextTestId="button-next-industry"
+              />
             </CardContent>
           </Card>
         )}
@@ -631,7 +727,7 @@ export default function Onboarding() {
             <CardContent className="pt-8 pb-8 space-y-6">
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-serif font-bold" data-testid="text-species-title">
-                  {org.speciesHandled ? "Confirm your species" : "What kind of animals does your rescue handle?"}
+                  {org.speciesHandled ? "Confirm your species" : "What kind of animals does your business work with?"}
                 </h2>
                 <p className="text-muted-foreground">
                   {org.speciesHandled
@@ -675,12 +771,12 @@ export default function Onboarding() {
             <CardContent className="pt-8 pb-8 space-y-6">
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-serif font-bold" data-testid="text-contact-title">
-                  {hasContactData ? "Your contact info" : "How can people reach your rescue?"}
+                  {hasContactData ? "Your contact info" : "How can clients reach your business?"}
                 </h2>
                 <p className="text-muted-foreground">
                   {hasContactData
                     ? "Here's what we have. Feel free to update anything."
-                    : "We'll include this on your pet listings so adopters know how to get in touch. You can always update these later."}
+                    : "We'll include this on your profile so clients know how to get in touch. You can always update these later."}
                 </p>
               </div>
 
@@ -690,7 +786,7 @@ export default function Onboarding() {
                     <Globe className="h-4 w-4 text-muted-foreground" /> Website
                   </label>
                   <Input
-                    placeholder="https://www.yourrescue.org"
+                    placeholder="https://www.yourbusiness.com"
                     value={formData.websiteUrl}
                     onChange={(e) => updateField("websiteUrl", e.target.value)}
                     data-testid="input-onboarding-website"
@@ -701,7 +797,7 @@ export default function Onboarding() {
                     <Mail className="h-4 w-4 text-muted-foreground" /> Contact Email
                   </label>
                   <Input
-                    placeholder="info@yourrescue.org"
+                    placeholder="info@yourbusiness.com"
                     type="email"
                     value={formData.contactEmail}
                     onChange={(e) => updateField("contactEmail", e.target.value)}
@@ -733,7 +829,7 @@ export default function Onboarding() {
                   Social Media Profiles
                 </h2>
                 <p className="text-muted-foreground">
-                  Help adopters follow your rescue on social media. All fields are optional.
+                  Help clients follow your business on social media. All fields are optional.
                 </p>
               </div>
 
@@ -743,7 +839,7 @@ export default function Onboarding() {
                     <SiFacebook className="h-4 w-4 text-muted-foreground" /> Facebook
                   </label>
                   <Input
-                    placeholder="https://facebook.com/yourrescue"
+                    placeholder="https://facebook.com/yourbusiness"
                     value={formData.socialFacebook}
                     onChange={(e) => updateField("socialFacebook", e.target.value)}
                     data-testid="input-onboarding-facebook"
@@ -754,7 +850,7 @@ export default function Onboarding() {
                     <SiInstagram className="h-4 w-4 text-muted-foreground" /> Instagram
                   </label>
                   <Input
-                    placeholder="https://instagram.com/yourrescue"
+                    placeholder="https://instagram.com/yourbusiness"
                     value={formData.socialInstagram}
                     onChange={(e) => updateField("socialInstagram", e.target.value)}
                     data-testid="input-onboarding-instagram"
@@ -765,7 +861,7 @@ export default function Onboarding() {
                     <FaXTwitter className="h-4 w-4 text-muted-foreground" /> X (Twitter)
                   </label>
                   <Input
-                    placeholder="https://x.com/yourrescue"
+                    placeholder="https://x.com/yourbusiness"
                     value={formData.socialTwitter}
                     onChange={(e) => updateField("socialTwitter", e.target.value)}
                     data-testid="input-onboarding-twitter"
@@ -776,7 +872,7 @@ export default function Onboarding() {
                     <NextdoorIcon className="h-4 w-4 text-muted-foreground" /> Nextdoor
                   </label>
                   <Input
-                    placeholder="https://nextdoor.com/pages/yourrescue"
+                    placeholder="https://nextdoor.com/pages/yourbusiness"
                     value={formData.socialNextdoor}
                     onChange={(e) => updateField("socialNextdoor", e.target.value)}
                     data-testid="input-onboarding-nextdoor"
@@ -814,12 +910,12 @@ export default function Onboarding() {
             <CardContent className="pt-8 pb-8 space-y-6">
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-serif font-bold" data-testid="text-location-title">
-                  {hasLocationData ? "Your rescue location" : "Where is your rescue located?"}
+                  {hasLocationData ? "Your business location" : "Where is your business located?"}
                 </h2>
                 <p className="text-muted-foreground">
                   {hasLocationData
                     ? "Here's the address we have. Feel free to update anything."
-                    : "This helps potential adopters find you. You can skip this for now if you'd prefer."}
+                    : "This helps clients find you. You can skip this for now if you'd prefer."}
                 </p>
               </div>
 
@@ -847,7 +943,7 @@ export default function Onboarding() {
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-serif font-bold" data-testid="text-billing-title">Billing Address</h2>
                 <p className="text-muted-foreground">
-                  Is your billing address the same as your rescue location?
+                  Is your billing address the same as your business location?
                 </p>
               </div>
 
@@ -933,7 +1029,7 @@ export default function Onboarding() {
                   </div>
                   <div className="space-y-2">
                     <h2 className="text-xl font-serif font-bold" data-testid="text-plan-already">Plan Already Selected</h2>
-                    <p className="text-muted-foreground">This rescue already has a plan. You're good to go!</p>
+                    <p className="text-muted-foreground">This business already has a plan. You're good to go!</p>
                   </div>
                   <StepNavigation
                     onBack={goBack}
@@ -951,7 +1047,7 @@ export default function Onboarding() {
                   <Sparkles className="h-10 w-10 mx-auto text-primary" />
                   <h2 className="text-2xl font-serif font-bold" data-testid="text-choose-plan-title">Choose a Plan</h2>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    Start with a free trial or pick the plan that fits your rescue. You can upgrade or change plans anytime.
+                    Start with a free trial or pick the plan that fits your business. You can upgrade or change plans anytime.
                   </p>
                 </div>
 
@@ -1055,7 +1151,7 @@ export default function Onboarding() {
                 <p className="text-muted-foreground max-w-sm mx-auto">
                   {isAdminFlow
                     ? `${org.name} is ready to go! What would you like to do next?`
-                    : "What would you like to do next? You can add your first rescue pet or review your organization details."}
+                    : "What would you like to do next? You can add your first pet or review your organization details."}
                 </p>
               </div>
 
@@ -1064,7 +1160,7 @@ export default function Onboarding() {
                   <PawPrint className="h-4 w-4" /> Add Your First Pet
                 </Button>
                 <Button variant="outline" className="gap-2 w-full sm:w-auto" onClick={() => finishOnboarding("settings")} disabled={finishing} data-testid="button-finish-review">
-                  {isAdminFlow ? "View Rescue Info" : "Review My Info"}
+                  {isAdminFlow ? "View Business Info" : "Review My Info"}
                 </Button>
               </div>
 

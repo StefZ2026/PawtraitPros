@@ -146,11 +146,11 @@ export const portraitStyles: StyleOption[] = [
   },
   {
     id: 4,
-    name: "Adopt Me Bandana",
-    description: "Heartwarming adoption appeal with colorful bandana",
-    category: "Adoption",
+    name: "Bandana Portrait",
+    description: "Charming portrait with a colorful bandana",
+    category: "Showcase",
     species: "dog",
-    promptTemplate: "A heartwarming portrait of a {breed} dog wearing a bright colorful bandana that says ADOPT ME, sitting attentively with hopeful eyes, soft studio lighting, clean simple background, friendly and approachable expression, professional shelter photo style, captures the dog's sweet personality"
+    promptTemplate: "A charming portrait of a {breed} dog wearing a bright colorful bandana, sitting attentively with happy eyes, soft studio lighting, clean simple background, friendly and approachable expression, professional pet photo style, captures the dog's sweet personality"
   },
   {
     id: 7,
@@ -306,11 +306,11 @@ export const portraitStyles: StyleOption[] = [
   },
   {
     id: 110,
-    name: "Adopt Me Bow Tie",
-    description: "Charming adoption appeal with dapper bow tie",
-    category: "Adoption",
+    name: "Bow Tie Portrait",
+    description: "Dapper portrait with a charming bow tie",
+    category: "Showcase",
     species: "cat",
-    promptTemplate: "A heartwarming portrait of a {breed} cat wearing a cute bow tie with an ADOPT ME tag on the collar, sitting with wide hopeful eyes, soft studio lighting, clean simple background, friendly and approachable expression, professional shelter photo style, captures the cat's sweet personality"
+    promptTemplate: "A charming portrait of a {breed} cat wearing a cute bow tie, sitting with wide bright eyes, soft studio lighting, clean simple background, friendly and approachable expression, professional pet photo style, captures the cat's sweet personality"
   },
   {
     id: 111,
@@ -380,7 +380,7 @@ export const stylePreviewImages: Record<string, string> = {
   "Baroque Aristocrat": "/images/styles/baroque-aristocrat.jpg",
   "Victorian Gentleman": "/images/styles/victorian-gentleman.jpg",
   "Royal Monarch": "/images/styles/royal-monarch.jpg",
-  "Adopt Me Bandana": "/images/styles/adopt-me-bandana.jpg",
+  "Bandana Portrait": "/images/styles/adopt-me-bandana.jpg",
   "Art Nouveau Beauty": "/images/styles/art-nouveau.jpg",
   "Impressionist Garden": "/images/styles/impressionist-garden.jpg",
   "Steampunk Explorer": "/images/styles/steampunk-explorer.jpg",
@@ -411,7 +411,7 @@ export const stylePreviewImages: Record<string, string> = {
   "Midnight Prowler": "/images/styles/midnight-prowler.jpg",
   "Bookshelf Scholar": "/images/styles/bookshelf-scholar.jpg",
   "Garden Explorer": "/images/styles/garden-explorer.jpg",
-  "Adopt Me Bow Tie": "/images/styles/adopt-me-bow-tie.jpg",
+  "Bow Tie Portrait": "/images/styles/adopt-me-bow-tie.jpg",
   "Cozy Blanket": "/images/styles/cozy-blanket.jpg",
   "Halloween Black Cat": "/images/styles/halloween-black-cat.jpg",
   "Holiday Stocking": "/images/styles/holiday-stocking.jpg",

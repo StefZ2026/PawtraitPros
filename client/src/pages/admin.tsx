@@ -131,7 +131,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       form.reset();
       setShowCreateForm(false);
-      toast({ title: "Rescue created!", description: "Let's get them set up." });
+      toast({ title: "Business created!", description: "Let's get them set up." });
       if (data?.id) {
         navigate(`/onboarding/${data.id}`);
       }
@@ -226,7 +226,7 @@ export default function Admin() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b text-left text-sm text-muted-foreground">
-                        <th className="pb-3 font-medium">Rescue</th>
+                        <th className="pb-3 font-medium">Business</th>
                         <th className="pb-3 font-medium">Contact</th>
                         <th className="pb-3 font-medium">Plan</th>
                         <th className="pb-3 font-medium text-right">Plan Rev</th>
@@ -281,7 +281,7 @@ export default function Admin() {
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Past Due Accounts</h1>
-              <p className="text-muted-foreground">Rescues with overdue payments</p>
+              <p className="text-muted-foreground">Businesses with overdue payments</p>
             </div>
           </div>
           <Card className="bg-background">
@@ -293,7 +293,7 @@ export default function Admin() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b text-left text-sm text-muted-foreground">
-                        <th className="pb-3 font-medium">Rescue</th>
+                        <th className="pb-3 font-medium">Business</th>
                         <th className="pb-3 font-medium">Contact</th>
                         <th className="pb-3 font-medium">Plan</th>
                         <th className="pb-3 font-medium">Amount Due</th>
@@ -367,7 +367,7 @@ export default function Admin() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">Pawtrait Pros Admin</h1>
-            <p className="text-muted-foreground">Rescue overview and billing</p>
+            <p className="text-muted-foreground">Business overview and billing</p>
           </div>
         </div>
 
@@ -380,7 +380,7 @@ export default function Admin() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{stats?.totalOrgs ?? organizations.length}</p>
-                  <p className="text-sm text-muted-foreground">Rescues</p>
+                  <p className="text-sm text-muted-foreground">Businesses</p>
                 </div>
               </div>
             </CardContent>
@@ -466,7 +466,7 @@ export default function Admin() {
         {showCreateForm && (
           <Card className="mb-6 bg-background">
             <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
-              <CardTitle className="text-base font-semibold">Add New Rescue</CardTitle>
+              <CardTitle className="text-base font-semibold">Add New Business</CardTitle>
               <Button size="icon" variant="ghost" onClick={() => { setShowCreateForm(false); form.reset(); }} data-testid="button-close-create-form">
                 <X className="h-4 w-4" />
               </Button>
@@ -481,7 +481,7 @@ export default function Admin() {
                     render={({ field }: any) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          <Input placeholder="Rescue name" {...field} data-testid="input-new-rescue-name" />
+                          <Input placeholder="Business name" {...field} data-testid="input-new-rescue-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -521,15 +521,15 @@ export default function Admin() {
         <Card className="bg-background">
           <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
             <div>
-              <CardTitle className="text-base font-semibold">All Rescues</CardTitle>
+              <CardTitle className="text-base font-semibold">All Businesses</CardTitle>
               <p className="text-sm text-muted-foreground">
-                {organizations.length} registered rescue{organizations.length !== 1 ? "s" : ""}
+                {organizations.length} registered business{organizations.length !== 1 ? "es" : ""}
               </p>
             </div>
             {!showCreateForm && (
               <Button size="sm" className="gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-rescue">
                 <Plus className="h-4 w-4" />
-                Add Rescue
+                Add Business
               </Button>
             )}
           </CardHeader>
@@ -543,10 +543,10 @@ export default function Admin() {
             ) : organizations.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No rescues yet</p>
+                <p>No businesses yet</p>
                 <Button className="mt-4 gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-first-rescue">
                   <Plus className="h-4 w-4" />
-                  Add Your First Rescue
+                  Add Your First Business
                 </Button>
               </div>
             ) : (
@@ -554,7 +554,7 @@ export default function Admin() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 font-medium">Rescue</th>
+                      <th className="pb-3 font-medium">Business</th>
                       <th className="pb-3 font-medium text-center">
                         <div className="flex items-center justify-center gap-0.5">
                           <Dog className="h-4 w-4 inline-block" /><Cat className="h-4 w-4 inline-block" />

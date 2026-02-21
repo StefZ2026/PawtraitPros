@@ -157,7 +157,7 @@ export default function RescueInfo() {
         queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       }
-      toast({ title: "Updated", description: `Rescue ${org?.isActive ? "deactivated" : "activated"}.` });
+      toast({ title: "Updated", description: `Business ${org?.isActive ? "deactivated" : "activated"}.` });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -305,7 +305,7 @@ export default function RescueInfo() {
     : 0;
 
   const backLink = isAdminView ? "/admin" : "/dashboard";
-  const backLabel = isAdminView ? "Back to Admin" : "Back to My Rescue";
+  const backLabel = isAdminView ? "Back to Admin" : "Back to Dashboard";
 
   const editButton = (section: SectionName, testId: string) => {
     if (editingSection === section) {
@@ -388,7 +388,7 @@ export default function RescueInfo() {
                 {isAdminView && getStatusBadge()}
               </h1>
               <p className="text-muted-foreground mt-1">
-                {isAdminView ? "Manage rescue details and billing" : "Manage your rescue profile and settings"}
+                {isAdminView ? "Manage business details and billing" : "Manage your business profile and settings"}
               </p>
             </div>
           </div>
@@ -398,7 +398,7 @@ export default function RescueInfo() {
                 <Button variant="outline" className="gap-2" data-testid="button-view-pups" asChild>
                   <Link href={`/dashboard?stay=1&org=${org.id}`}>
                     <PawPrint className="h-4 w-4" />
-                    {org.speciesHandled === "cats" ? "Adoptable Kitties" : org.speciesHandled === "both" ? "Adoptable Pets" : "Adoptable Pups"}
+                    {org.speciesHandled === "cats" ? "Kitties" : org.speciesHandled === "both" ? "Pets" : "Pups"}
                   </Link>
                 </Button>
                 <div className="flex items-center gap-2">
@@ -426,7 +426,7 @@ export default function RescueInfo() {
                   <div className="flex-1 text-center sm:text-left">
                     <h3 className="font-semibold text-lg" data-testid="text-next-step-title">You're all set! Add your first pet</h3>
                     <p className="text-muted-foreground text-sm mt-1">
-                      Fill in your rescue details below if you'd like, then head over to add your first rescue pet and create a beautiful portrait.
+                      Fill in your business details below, then add your first pet and create a beautiful portrait.
                     </p>
                   </div>
                   <Button className="gap-2 shrink-0" data-testid="button-add-first-pet-settings" asChild>
@@ -600,7 +600,7 @@ export default function RescueInfo() {
               {editingSection === "business" ? (
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-sm font-medium mb-1.5 block">Rescue Name</label>
+                    <label className="text-sm font-medium mb-1.5 block">Business Name</label>
                     <Input
                       value={editValues.name || ""}
                       onChange={(e) => setEditValues({ ...editValues, name: e.target.value })}
@@ -651,7 +651,7 @@ export default function RescueInfo() {
               ) : (
                 <div className="grid sm:grid-cols-2 gap-x-8 gap-y-3">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-0.5">Rescue Name</p>
+                    <p className="text-sm font-medium text-muted-foreground mb-0.5">Business Name</p>
                     <p className="flex items-center gap-1.5" data-testid="text-business-name">
                       <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                       {org.name}
@@ -768,7 +768,7 @@ export default function RescueInfo() {
                     <Input
                       value={editValues.socialFacebook || ""}
                       onChange={(e) => setEditValues({ ...editValues, socialFacebook: e.target.value })}
-                      placeholder="https://facebook.com/yourrescue"
+                      placeholder="https://facebook.com/yourbusiness"
                       data-testid="input-social-facebook"
                     />
                   </div>
@@ -777,7 +777,7 @@ export default function RescueInfo() {
                     <Input
                       value={editValues.socialInstagram || ""}
                       onChange={(e) => setEditValues({ ...editValues, socialInstagram: e.target.value })}
-                      placeholder="https://instagram.com/yourrescue"
+                      placeholder="https://instagram.com/yourbusiness"
                       data-testid="input-social-instagram"
                     />
                   </div>
@@ -786,7 +786,7 @@ export default function RescueInfo() {
                     <Input
                       value={editValues.socialTwitter || ""}
                       onChange={(e) => setEditValues({ ...editValues, socialTwitter: e.target.value })}
-                      placeholder="https://x.com/yourrescue"
+                      placeholder="https://x.com/yourbusiness"
                       data-testid="input-social-twitter"
                     />
                   </div>
@@ -795,7 +795,7 @@ export default function RescueInfo() {
                     <Input
                       value={editValues.socialNextdoor || ""}
                       onChange={(e) => setEditValues({ ...editValues, socialNextdoor: e.target.value })}
-                      placeholder="https://nextdoor.com/pages/yourrescue"
+                      placeholder="https://nextdoor.com/pages/yourbusiness"
                       data-testid="input-social-nextdoor"
                     />
                   </div>
@@ -1001,7 +1001,7 @@ export default function RescueInfo() {
                   <StickyNote className="h-5 w-5 text-primary" />
                   <div>
                     <CardTitle className="text-base">Internal Notes</CardTitle>
-                    <CardDescription>Private notes (not visible to rescue)</CardDescription>
+                    <CardDescription>Private notes (not visible to business)</CardDescription>
                   </div>
                 </div>
                 {editButton("notes", "notes")}

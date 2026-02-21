@@ -105,7 +105,7 @@ export function PetLimitModal({
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm" data-testid="text-free-up-spot-title">Free up a spot</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Has a pet been adopted? Remove them from your roster to make room for a new one.
+                    Need to make room? Remove a pet from your roster to add a new one.
                   </p>
                   <Button
                     variant="outline"

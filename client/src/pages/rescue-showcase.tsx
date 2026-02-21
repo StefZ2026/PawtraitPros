@@ -54,8 +54,8 @@ export default function RescueShowcase() {
 
   const [speciesFilter, setSpeciesFilter] = useState<"all" | "dog" | "cat">("all");
 
-  const shareTitle = `${rescue?.name} - Adoptable Pets`;
-  const shareText = `Check out the adorable pets available for adoption at ${rescue?.name}!`;
+  const shareTitle = `${rescue?.name} - Pet Portraits`;
+  const shareText = `Check out the beautiful pet portraits from ${rescue?.name}!`;
 
   const handlePrint = () => {
     window.print();
@@ -99,9 +99,9 @@ export default function RescueShowcase() {
         </header>
         <div className="container mx-auto px-4 py-16 text-center">
           <Dog className="h-20 w-20 mx-auto mb-6 text-muted-foreground/50" />
-          <h1 className="text-2xl font-serif font-bold mb-3">Rescue Not Found</h1>
+          <h1 className="text-2xl font-serif font-bold mb-3">Business Not Found</h1>
           <p className="text-muted-foreground mb-6">
-            This rescue page doesn't exist or is no longer active.
+            This page doesn't exist or is no longer active.
           </p>
           <Button data-testid="button-back-home" asChild>
             <Link href="/">Back to Home</Link>
@@ -123,10 +123,10 @@ export default function RescueShowcase() {
   const dogsWithoutPortraits = filteredPets.filter(d => !d.portrait?.generatedImageUrl);
 
   const showcaseHeadline = speciesFilter === "dog"
-    ? "Pups Available for Adoption"
+    ? "Dog Portraits"
     : speciesFilter === "cat"
-    ? "Kitties Available for Adoption"
-    : "Available for Adoption";
+    ? "Cat Portraits"
+    : "Pet Portraits";
 
   return (
     <div className="min-h-screen bg-muted/50 dark:bg-background">
@@ -157,7 +157,7 @@ export default function RescueShowcase() {
         <Button variant="ghost" size="sm" className="gap-1 -ml-2 mb-4 print:hidden" data-testid="button-back" asChild>
           <Link href={isAdmin ? `/admin` : "/dashboard"}>
             <ArrowLeft className="h-4 w-4" />
-            {isAdmin ? "Back to Admin" : "Back to My Rescue"}
+            {isAdmin ? "Back to Admin" : "Back to Dashboard"}
           </Link>
         </Button>
 
@@ -277,7 +277,7 @@ export default function RescueShowcase() {
               <div className="py-16 px-6 text-center">
                 <Heart className="h-12 w-12 mx-auto mb-4 text-primary/40" />
                 <p className="text-muted-foreground font-serif text-lg">
-                  {rescue.dogs.length === 0 ? "No adoptable pets at the moment" : "No pets match this filter"}
+                  {rescue.dogs.length === 0 ? "No pet portraits at the moment" : "No pets match this filter"}
                 </p>
                 <p className="text-sm text-muted-foreground/70 mt-1">
                   {rescue.dogs.length === 0 ? "Check back soon!" : "Try viewing all pets instead"}

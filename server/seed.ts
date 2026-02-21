@@ -17,7 +17,7 @@ const planDefinitions = [
   {
     id: 6,
     name: "Starter",
-    description: "Perfect for small rescues with up to 15 pets.",
+    description: "Perfect for small businesses with up to 15 pets.",
     priceMonthly: 3900,
     dogsLimit: 15,
     monthlyPortraitCredits: 45,
@@ -29,7 +29,7 @@ const planDefinitions = [
   {
     id: 7,
     name: "Professional",
-    description: "Ideal for growing rescue organizations with up to 45 pets.",
+    description: "Ideal for growing businesses with up to 45 pets.",
     priceMonthly: 7900,
     dogsLimit: 45,
     monthlyPortraitCredits: 135,
@@ -41,7 +41,7 @@ const planDefinitions = [
   {
     id: 8,
     name: "Executive",
-    description: "Best value for large rescue networks with up to 200 pets.",
+    description: "Best value for large businesses with up to 200 pets.",
     priceMonthly: 34900,
     dogsLimit: 200,
     monthlyPortraitCredits: 600,
@@ -67,11 +67,102 @@ export async function seedDatabase() {
           console.log(`[migration] Set ${migResult.rowCount} existing org(s) to Stripe test mode`);
         }
         console.log('[migration] stripe_test_mode column ready');
+
+        // Pros columns on organizations
+        await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS industry_type TEXT');
+        await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS capture_mode TEXT');
+        await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS delivery_mode TEXT DEFAULT 'receipt'");
+        console.log('[migration] Pros org columns ready');
+
+        // Merch orders table
+        await pool.query(`CREATE TABLE IF NOT EXISTS merch_orders (
+          id SERIAL PRIMARY KEY,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          dog_id INTEGER REFERENCES dogs(id),
+          portrait_id INTEGER REFERENCES portraits(id),
+          customer_name TEXT NOT NULL,
+          customer_email TEXT,
+          customer_phone TEXT,
+          shipping_street TEXT NOT NULL,
+          shipping_city TEXT NOT NULL,
+          shipping_state TEXT NOT NULL,
+          shipping_zip TEXT NOT NULL,
+          shipping_country TEXT NOT NULL DEFAULT 'US',
+          printful_order_id TEXT,
+          printful_status TEXT,
+          stripe_payment_intent_id TEXT,
+          total_cents INTEGER NOT NULL,
+          shipping_cents INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+
+        // Merch order items table
+        await pool.query(`CREATE TABLE IF NOT EXISTS merch_order_items (
+          id SERIAL PRIMARY KEY,
+          order_id INTEGER NOT NULL REFERENCES merch_orders(id) ON DELETE CASCADE,
+          product_key TEXT NOT NULL,
+          variant_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL DEFAULT 1,
+          price_cents INTEGER NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+
+        // Customer sessions table (QR/short link for ordering)
+        await pool.query(`CREATE TABLE IF NOT EXISTS customer_sessions (
+          id SERIAL PRIMARY KEY,
+          token VARCHAR(8) NOT NULL UNIQUE,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          dog_id INTEGER NOT NULL REFERENCES dogs(id),
+          portrait_id INTEGER NOT NULL REFERENCES portraits(id),
+          pack_type TEXT,
+          customer_phone TEXT,
+          expires_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+
+        // Batch sessions table
+        await pool.query(`CREATE TABLE IF NOT EXISTS batch_sessions (
+          id SERIAL PRIMARY KEY,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          staff_user_id VARCHAR,
+          status TEXT NOT NULL DEFAULT 'uploading',
+          photo_count INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+
+        // Batch photos table
+        await pool.query(`CREATE TABLE IF NOT EXISTS batch_photos (
+          id SERIAL PRIMARY KEY,
+          batch_session_id INTEGER NOT NULL REFERENCES batch_sessions(id) ON DELETE CASCADE,
+          photo_url TEXT NOT NULL,
+          dog_id INTEGER REFERENCES dogs(id),
+          assigned_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+
+        // Dogs table — owner contact + pet code columns (Pros edition workflow)
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_email TEXT');
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_phone TEXT');
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS pet_code VARCHAR(10)');
+
+        // Daily pack selections table
+        await pool.query(`CREATE TABLE IF NOT EXISTS daily_pack_selections (
+          id SERIAL PRIMARY KEY,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          date TEXT NOT NULL,
+          pack_type TEXT NOT NULL,
+          selected_by VARCHAR,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          UNIQUE(organization_id, date)
+        )`);
+
+        console.log('[migration] Pros tables ready');
       })(),
       migTimeout,
     ]);
   } catch (migErr: any) {
-    console.log('[migration] stripe_test_mode:', migErr.message);
+    console.log('[migration] Pros migrations:', migErr.message);
   }
 
   await seedSubscriptionPlans();
