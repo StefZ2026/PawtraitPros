@@ -791,9 +791,9 @@ export async function registerRoutes(
         [org.id, targetDate, packType, userId]
       );
       res.json(result.rows[0]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error setting daily pack:", error);
-      res.status(500).json({ error: "Failed to set daily pack" });
+      res.status(500).json({ error: "Failed to set daily pack", detail: error?.message || String(error) });
     }
   });
 
