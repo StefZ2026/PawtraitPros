@@ -156,6 +156,16 @@ export async function seedDatabase() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
           UNIQUE(organization_id, date)
         )`);
+        // Ensure unique constraint exists (if table was created without it)
+        await pool.query(`
+          DO $$ BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'daily_pack_selections_organization_id_date_key'
+            ) THEN
+              ALTER TABLE daily_pack_selections ADD CONSTRAINT daily_pack_selections_organization_id_date_key UNIQUE (organization_id, date);
+            END IF;
+          END $$;
+        `);
 
         console.log('[migration] Pros tables ready');
       })(),

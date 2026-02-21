@@ -786,7 +786,7 @@ export async function registerRoutes(
       const result = await pool.query(
         `INSERT INTO daily_pack_selections (organization_id, date, pack_type, selected_by)
          VALUES ($1, $2, $3, $4)
-         ON CONFLICT (organization_id, date) DO UPDATE SET pack_type = $3, selected_by = $4
+         ON CONFLICT (organization_id, date) DO UPDATE SET pack_type = EXCLUDED.pack_type, selected_by = EXCLUDED.selected_by
          RETURNING *`,
         [org.id, targetDate, packType, userId]
       );
