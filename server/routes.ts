@@ -502,7 +502,7 @@ export async function registerRoutes(
         "socialFacebook", "socialInstagram", "socialTwitter", "socialNextdoor",
         "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
         "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
-        "speciesHandled", "onboardingCompleted"
+        "speciesHandled", "onboardingCompleted", "industryType"
       ];
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {
