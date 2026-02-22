@@ -657,12 +657,12 @@ export default function Onboarding() {
             <CardContent className="pt-8 pb-8 space-y-6">
               <div className="text-center space-y-2">
                 <h2 className="text-xl font-serif font-bold" data-testid="text-logo-title">
-                  {org.logoUrl && !logoPreview ? "Your current logo" : logoPreview ? "Looking good!" : "Do you have a logo?"}
+                  {org.logoUrl && !logoPreview ? "Your current logo" : logoPreview ? "Looking good!" : "Upload your business logo"}
                 </h2>
                 <p className="text-muted-foreground">
                   {org.logoUrl && !logoPreview
                     ? "This is the logo we have on file. You can keep it or upload a new one."
-                    : "We'll use it when we showcase your pets. You can always add one later if you'd like."}
+                    : "Your logo appears on pawfiles, customer portals, and everything your clients see. It's what makes it yours."}
                 </p>
               </div>
 
@@ -713,8 +713,8 @@ export default function Onboarding() {
                   const newLogo = logoPreview && logoPreview !== org.logoUrl;
                   newLogo ? saveAndNext({ logoUrl: logoPreview }) : goNext();
                 }}
-                nextLabel={logoPreview && logoPreview !== org.logoUrl ? "Save & Continue" : org.logoUrl ? "Looks Good" : "Skip for Now"}
-                nextDisabled={updateMutation.isPending}
+                nextLabel={logoPreview && logoPreview !== org.logoUrl ? "Save & Continue" : org.logoUrl ? "Looks Good" : "Upload to Continue"}
+                nextDisabled={updateMutation.isPending || (!logoPreview && !org.logoUrl)}
                 backTestId="button-back-logo"
                 nextTestId="button-next-logo"
               />

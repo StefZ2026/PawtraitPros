@@ -550,6 +550,14 @@ export async function registerRoutes(
         }
       }
 
+      // Require logo before completing onboarding
+      if (updates.onboardingCompleted === true) {
+        const hasLogo = updates.logoUrl || org.logoUrl;
+        if (!hasLogo) {
+          return res.status(400).json({ error: "A business logo is required to complete onboarding" });
+        }
+      }
+
       if (updates.name && updates.name !== org.name) {
         updates.slug = await generateUniqueSlug(updates.name, org.id);
       }
@@ -1001,7 +1009,7 @@ export async function registerRoutes(
             if (messagingSid && accountSid && apiKeySid && apiKeySecret) {
               try {
                 const auth = Buffer.from(`${apiKeySid}:${apiKeySecret}`).toString("base64");
-                const smsBody = `${org.name} created a beautiful portrait of ${dog.name}! View it here: ${pawfileUrl}`;
+                const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and grab a free digital download — or order a print, mug, or canvas: ${pawfileUrl}`;
                 const params = new URLSearchParams({
                   MessagingServiceSid: messagingSid,
                   To: phone,
