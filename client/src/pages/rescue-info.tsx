@@ -678,47 +678,47 @@ export default function BusinessSettings() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">Species Handled</p>
-                    <div className="flex items-center gap-1.5" data-testid="text-species-handled">
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Species Handled <span className="text-xs font-normal">(click to change)</span></p>
+                    <div className="flex items-center gap-2" data-testid="text-species-handled">
                       <button
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
                           org.speciesHandled === "dogs" || org.speciesHandled === "both"
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border text-muted-foreground/40 hover:border-primary/40 hover:text-muted-foreground"
+                            ? "border-2 border-primary bg-primary/10 text-primary shadow-sm"
+                            : "border-2 border-dashed border-muted-foreground/30 text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5"
                         }`}
                         onClick={() => {
                           const current = org.speciesHandled || "dogs";
-                          let next: string;
-                          if (current === "dogs") next = "both";
-                          else if (current === "both") next = "cats";
-                          else next = "dogs";
-                          updateMutation.mutate({ speciesHandled: next });
+                          const hasDogs = current === "dogs" || current === "both";
+                          updateMutation.mutate({ speciesHandled: hasDogs ? (current === "both" ? "cats" : "both") : "dogs" });
                         }}
                         disabled={updateMutation.isPending}
                         data-testid="button-toggle-dogs"
                       >
                         <Dog className="h-4 w-4" />
                         Dogs
+                        {!(org.speciesHandled === "dogs" || org.speciesHandled === "both") && (
+                          <Plus className="h-3 w-3 ml-0.5" />
+                        )}
                       </button>
                       <button
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
                           org.speciesHandled === "cats" || org.speciesHandled === "both"
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border text-muted-foreground/40 hover:border-primary/40 hover:text-muted-foreground"
+                            ? "border-2 border-primary bg-primary/10 text-primary shadow-sm"
+                            : "border-2 border-dashed border-muted-foreground/30 text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5"
                         }`}
                         onClick={() => {
                           const current = org.speciesHandled || "dogs";
-                          let next: string;
-                          if (current === "cats") next = "both";
-                          else if (current === "both") next = "dogs";
-                          else next = "cats";
-                          updateMutation.mutate({ speciesHandled: next });
+                          const hasCats = current === "cats" || current === "both";
+                          updateMutation.mutate({ speciesHandled: hasCats ? (current === "both" ? "dogs" : "both") : (current === "dogs" ? "both" : "cats") });
                         }}
                         disabled={updateMutation.isPending}
                         data-testid="button-toggle-cats"
                       >
                         <Cat className="h-4 w-4" />
                         Cats
+                        {!(org.speciesHandled === "cats" || org.speciesHandled === "both") && (
+                          <Plus className="h-3 w-3 ml-0.5" />
+                        )}
                       </button>
                     </div>
                   </div>
