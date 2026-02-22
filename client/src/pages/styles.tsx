@@ -4,32 +4,39 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ArrowLeft, Sparkles, Paintbrush, Dog, Cat, Palette, Sun } from "lucide-react";
 import { useState } from "react";
-import { portraitStyles, stylePreviewImages } from "@/lib/portrait-styles";
+import { stylePreviewImages } from "@/lib/portrait-styles";
 import { useAuth } from "@/hooks/use-auth";
 import { AdminFloatingButton } from "@/components/admin-button";
-import { getAllPackStyleIds } from "@shared/pack-config";
 import type { PackType } from "@shared/pack-config";
 
-const allPackIds = getAllPackStyleIds();
-const packStyles = portraitStyles.filter((s) => allPackIds.has(s.id));
-
-// Map each style's original category to a canonical pack type based on its theme
-const categoryToPackType: Record<string, PackType> = {
-  Classical: "artistic",
-  Artistic: "artistic",
-  Cozy: "artistic",
-  Seasonal: "seasonal",
-  "Sci-Fi": "fun",
-  Adventure: "fun",
-  Fun: "fun",
-  Humanizing: "fun",
-  Celebration: "fun",
-  Modern: "fun",
-};
-
-function getCanonicalPackType(style: { category: string }): PackType {
-  return categoryToPackType[style.category] ?? "fun";
+interface ShowcaseStyle {
+  name: string;
+  description: string;
+  species: "dog" | "cat";
+  pack: PackType;
 }
+
+// Curated 5 per pack — best images, mix of dog + cat
+const SHOWCASE_STYLES: ShowcaseStyle[] = [
+  // Seasonal
+  { name: "Holiday Spirit", description: "Festive seasonal celebration", species: "dog", pack: "seasonal" },
+  { name: "Autumn Leaves", description: "Fall season beauty", species: "dog", pack: "seasonal" },
+  { name: "Spring Flower Crown", description: "Whimsical garden beauty", species: "dog", pack: "seasonal" },
+  { name: "Halloween Pumpkin", description: "Whimsical spooky season costume", species: "dog", pack: "seasonal" },
+  { name: "Spring Blossoms", description: "Gentle beauty among cherry blossoms", species: "cat", pack: "seasonal" },
+  // Fun
+  { name: "Superhero", description: "Caped crusader ready to save the day", species: "dog", pack: "fun" },
+  { name: "Pirate Captain", description: "Swashbuckling adventure on the high seas", species: "dog", pack: "fun" },
+  { name: "Birthday Party", description: "Celebratory party pup with festive hat", species: "dog", pack: "fun" },
+  { name: "Space Explorer", description: "Futuristic astronaut among the stars", species: "dog", pack: "fun" },
+  { name: "Purrista Barista", description: "Your favorite feline coffee artist", species: "cat", pack: "fun" },
+  // Artistic
+  { name: "Renaissance Noble", description: "A dignified portrait in the style of Italian Renaissance masters", species: "dog", pack: "artistic" },
+  { name: "Art Nouveau Beauty", description: "Elegant flowing lines and natural motifs", species: "dog", pack: "artistic" },
+  { name: "Impressionist Garden", description: "Soft, light-filled garden scene", species: "dog", pack: "artistic" },
+  { name: "Victorian Gentleman", description: "Distinguished elegance of the Victorian era", species: "dog", pack: "artistic" },
+  { name: "Egyptian Royalty", description: "Ancient Egyptian deity with golden adornments", species: "cat", pack: "artistic" },
+];
 
 const PACK_TABS: Array<{ key: PackType | null; label: string; icon: typeof Sparkles }> = [
   { key: null, label: "All Styles", icon: Palette },
@@ -49,8 +56,8 @@ export default function StylesPage() {
   const { isAuthenticated } = useAuth();
 
   const filteredStyles = activePackType
-    ? packStyles.filter((s) => getCanonicalPackType(s) === activePackType)
-    : packStyles;
+    ? SHOWCASE_STYLES.filter((s) => s.pack === activePackType)
+    : SHOWCASE_STYLES;
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,14 +113,13 @@ export default function StylesPage() {
           })}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
           {filteredStyles.map((style) => {
             const previewImage = stylePreviewImages[style.name];
-            const packType = getCanonicalPackType(style);
 
             return (
               <Card
-                key={style.id}
+                key={style.name}
                 className="overflow-hidden hover-elevate group"
               >
                 <div className="aspect-square relative bg-muted protected-image-wrapper">
@@ -130,13 +136,8 @@ export default function StylesPage() {
                     </div>
                   )}
                   <div className="absolute top-2 right-2">
-                    <Badge variant="secondary" className={`text-xs ${packTypeColors[packType]}`}>
-                      {packType.charAt(0).toUpperCase() + packType.slice(1)}
-                    </Badge>
-                  </div>
-                  <div className="absolute top-2 left-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {style.species === "dog" ? "Dog" : "Cat"}
+                    <Badge variant="secondary" className={`text-xs ${packTypeColors[style.pack]}`}>
+                      {style.pack.charAt(0).toUpperCase() + style.pack.slice(1)}
                     </Badge>
                   </div>
                 </div>
