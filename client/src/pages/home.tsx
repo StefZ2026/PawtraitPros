@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
 import {
   Heart, Palette, Sparkles, Dog, Cat, Building2, LogOut,
-  LayoutDashboard, Scissors, Sun, Camera, Send, ShoppingBag, ArrowRight
+  LayoutDashboard, Scissors, Sun, Camera, Send, ShoppingBag, ArrowRight, Megaphone
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -148,7 +148,7 @@ export default function Home() {
               Under a minute per pet. Repeat daily.
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-5 max-w-6xl mx-auto">
             {[
               {
                 icon: Camera,
@@ -156,19 +156,24 @@ export default function Home() {
                 description: "Take a quick photo of each pet — any breed, any pose.",
               },
               {
-                icon: Palette,
-                title: "Pick a Pack",
-                description: "Choose from Seasonal, Fun, or Artistic portrait packs.",
-              },
-              {
                 icon: Sparkles,
-                title: "Generate All",
-                description: "One tap at end of day — AI creates portraits for every pet.",
+                title: "Generate Portraits",
+                description: "One tap — AI creates stunning portraits for every pet.",
               },
               {
                 icon: Send,
-                title: "Text the Owner",
-                description: "Clients get a portrait link + a shop for keepsakes.",
+                title: "Send to Clients",
+                description: "Pet parents get their portrait via text, email, or both.",
+              },
+              {
+                icon: Megaphone,
+                title: "Market Your Business",
+                description: "Share portraits on social media to attract new clients and keep existing ones coming back.",
+              },
+              {
+                icon: ShoppingBag,
+                title: "Earn on Keepsakes",
+                description: "Clients order framed prints, mugs, and more — you earn on every sale.",
               },
             ].map((step, index) => (
               <Card key={index} className="text-center hover-elevate">
