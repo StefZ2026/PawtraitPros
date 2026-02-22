@@ -5,7 +5,9 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
-import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait } from "./helpers";
+import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt } from "./helpers";
+import { getCurrentPacks, type IndustryType } from "@shared/pack-config";
+import { generateImage } from "../gemini";
 
 export function registerDogRoutes(app: Express): void {
   // --- PET CODE LOOKUP (public) ---
@@ -35,15 +37,181 @@ export function registerDogRoutes(app: Express): void {
         [dog.id]
       );
 
-      const selectedPortrait = portraits.rows.find((p: any) => p.is_selected) || portraits.rows[0] || null;
+      // Map snake_case DB columns to camelCase for frontend
+      const mapPortrait = (p: any) => ({
+        id: p.id,
+        dogId: p.dog_id,
+        styleId: p.style_id,
+        generatedImageUrl: p.generated_image_url,
+        previousImageUrl: p.previous_image_url,
+        isSelected: p.is_selected,
+        editCount: p.edit_count,
+        createdAt: p.created_at,
+        styleName: p.style_name,
+        styleCategory: p.style_category,
+      });
+
+      const mappedPortraits = portraits.rows.map(mapPortrait);
+      const selectedPortrait = mappedPortraits.find((p: any) => p.isSelected) || mappedPortraits[0] || null;
+
       res.json({
-        ...dog,
+        id: dog.id,
+        organizationId: dog.organization_id,
+        name: dog.name,
+        species: dog.species,
+        breed: dog.breed,
+        age: dog.age,
+        description: dog.description,
+        originalPhotoUrl: dog.original_photo_url,
+        ownerEmail: dog.owner_email,
+        ownerPhone: dog.owner_phone,
+        petCode: dog.pet_code,
+        isAvailable: dog.is_available,
+        createdAt: dog.created_at,
+        organizationName: dog.organization_name,
+        organizationLogoUrl: dog.organization_logo_url,
+        organizationSlug: dog.organization_slug,
         portrait: selectedPortrait,
-        portraits: portraits.rows,
+        portraits: mappedPortraits,
       });
     } catch (error) {
       console.error("Error looking up pet code:", error);
       res.status(500).json({ error: "Failed to look up pet" });
+    }
+  });
+
+  // Get available pack styles for a pet (public — for customer style switching)
+  app.get("/api/dogs/code/:petCode/styles", async (req: Request, res: Response) => {
+    try {
+      const { petCode } = req.params;
+      const dogResult = await pool.query(
+        `SELECT d.id, d.species, d.organization_id, o.industry_type
+         FROM dogs d JOIN organizations o ON d.organization_id = o.id
+         WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+      if (dogResult.rows.length === 0) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+      const dog = dogResult.rows[0];
+      const species = (dog.species || "dog") as "dog" | "cat";
+      const industry = (dog.industry_type || "groomer") as IndustryType;
+      const packs = getCurrentPacks(industry, species);
+
+      // Get existing portraits for this dog to mark which styles are already generated
+      const existing = await pool.query(
+        `SELECT style_id FROM portraits WHERE dog_id = $1`, [dog.id]
+      );
+      const generatedStyleIds = new Set(existing.rows.map((r: any) => r.style_id));
+
+      // Get all style details for pack styles
+      const allStyles = await storage.getAllPortraitStyles();
+      const result = packs.map(pack => ({
+        type: pack.type,
+        name: pack.name,
+        styles: pack.styleIds.map(sid => {
+          const style = allStyles.find(s => s.id === sid);
+          return style ? {
+            id: style.id,
+            name: style.name,
+            category: style.category,
+            generated: generatedStyleIds.has(style.id),
+          } : null;
+        }).filter(Boolean),
+      }));
+
+      res.json({ packs: result });
+    } catch (error) {
+      console.error("Error fetching pack styles:", error);
+      res.status(500).json({ error: "Failed to fetch styles" });
+    }
+  });
+
+  // Generate a portrait with a specific style (public — validated by pet code)
+  app.post("/api/dogs/code/:petCode/generate", async (req: Request, res: Response) => {
+    try {
+      const { petCode } = req.params;
+      const { styleId } = req.body;
+      if (!styleId) {
+        return res.status(400).json({ error: "styleId is required" });
+      }
+
+      const dogResult = await pool.query(
+        `SELECT d.*, o.industry_type, o.id as org_id
+         FROM dogs d JOIN organizations o ON d.organization_id = o.id
+         WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+      if (dogResult.rows.length === 0) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+      const dog = dogResult.rows[0];
+
+      // Verify style is in one of the available packs
+      const species = (dog.species || "dog") as "dog" | "cat";
+      const industry = (dog.industry_type || "groomer") as IndustryType;
+      const packs = getCurrentPacks(industry, species);
+      const allPackStyleIds = packs.flatMap(p => p.styleIds);
+      if (!allPackStyleIds.includes(parseInt(styleId))) {
+        return res.status(400).json({ error: "Style not available for this pet" });
+      }
+
+      // Check if portrait with this style already exists
+      const existing = await pool.query(
+        `SELECT id, generated_image_url FROM portraits WHERE dog_id = $1 AND style_id = $2`,
+        [dog.id, parseInt(styleId)]
+      );
+      if (existing.rows.length > 0) {
+        return res.json({
+          portraitId: existing.rows[0].id,
+          generatedImageUrl: existing.rows[0].generated_image_url,
+          alreadyExists: true,
+        });
+      }
+
+      // Check org has portrait credits remaining
+      const org = await storage.getOrganization(dog.org_id);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      // Get style details
+      const style = await storage.getPortraitStyle(parseInt(styleId));
+      if (!style) return res.status(404).json({ error: "Style not found" });
+
+      if (!dog.original_photo_url) {
+        return res.status(400).json({ error: "No photo available for this pet" });
+      }
+
+      // Build prompt and generate
+      const breed = dog.breed || dog.species || "dog";
+      const prompt = sanitizeForPrompt(
+        style.promptTemplate
+          .replace(/\{breed\}/g, breed)
+          .replace(/\{species\}/g, dog.species || "dog")
+          .replace(/\{name\}/g, dog.name)
+      );
+
+      const generatedImageUrl = await generateImage(prompt, dog.original_photo_url);
+
+      // Save portrait (mark previous as not selected)
+      await pool.query(
+        `UPDATE portraits SET is_selected = false WHERE dog_id = $1`, [dog.id]
+      );
+      const portrait = await storage.createPortrait({
+        dogId: dog.id,
+        styleId: parseInt(styleId),
+        generatedImageUrl,
+        isSelected: true,
+      });
+      await storage.incrementOrgPortraitsUsed(dog.org_id);
+
+      res.json({
+        portraitId: portrait.id,
+        generatedImageUrl,
+        alreadyExists: false,
+      });
+    } catch (error: any) {
+      console.error("Error generating portrait via pet code:", error);
+      res.status(500).json({ error: error.message || "Failed to generate portrait" });
     }
   });
 

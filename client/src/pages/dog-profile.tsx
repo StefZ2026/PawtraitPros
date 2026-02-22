@@ -1,5 +1,5 @@
 import { Link, useParams, useRoute } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,8 @@ import {
   Download,
   Loader2,
   ShoppingBag,
+  Palette,
+  Sparkles,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ShareButtons } from "@/components/share-buttons";
@@ -85,6 +87,53 @@ export default function DogProfile() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const queryClient = useQueryClient();
+
+  // Fetch available pack styles for customer style switching
+  const { data: packData } = useQuery<{
+    packs: Array<{
+      type: string;
+      name: string;
+      styles: Array<{ id: number; name: string; category: string; generated: boolean }>;
+    }>;
+  }>({
+    queryKey: ["/api/dogs/code", petCode, "styles"],
+    queryFn: async () => {
+      const res = await fetch(`/api/dogs/code/${petCode}/styles`);
+      if (!res.ok) throw new Error("Failed to fetch styles");
+      return res.json();
+    },
+    enabled: isCustomerView && !!petCode,
+  });
+
+  // Generate portrait with a new style
+  const [generatingStyleId, setGeneratingStyleId] = useState<number | null>(null);
+  const styleGenMutation = useMutation({
+    mutationFn: async (styleId: number) => {
+      setGeneratingStyleId(styleId);
+      const res = await fetch(`/api/dogs/code/${petCode}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ styleId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Generation failed" }));
+        throw new Error(data.error);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      // Refetch dog data to get the new portrait
+      queryClient.invalidateQueries({ queryKey: ["/api/dogs/code", petCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dogs/code", petCode, "styles"] });
+      setGeneratingStyleId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Generation Failed", description: error.message, variant: "destructive" });
+      setGeneratingStyleId(null);
     },
   });
 
@@ -335,25 +384,66 @@ export default function DogProfile() {
             </div>
           </div>
 
-          {/* Customer-facing: Order a Keepsake CTA */}
-          {isCustomerView && activePortrait?.generatedImageUrl && (
-            <div className="mt-4 print:hidden">
-              <Button
-                size="lg"
-                className="w-full gap-2"
-                onClick={() => orderSessionMutation.mutate()}
-                disabled={orderSessionMutation.isPending}
-              >
-                {orderSessionMutation.isPending ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <ShoppingBag className="h-5 w-5" />
-                )}
-                Order a Keepsake
-              </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                Framed prints, mugs, tote bags, and more
-              </p>
+          {/* Customer-facing: Style picker + Order CTA */}
+          {isCustomerView && (
+            <div className="mt-4 print:hidden space-y-4">
+              {/* Style picker — try other styles from the pack */}
+              {packData?.packs && packData.packs.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Palette className="h-4 w-4 text-primary" />
+                    <p className="text-sm font-medium text-muted-foreground">Try a different style</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {packData.packs.flatMap(pack =>
+                      pack.styles
+                        .filter((s) => s.id !== activePortrait?.styleId)
+                        .slice(0, 5)
+                        .map((style) => (
+                          <button
+                            key={style.id}
+                            onClick={() => styleGenMutation.mutate(style.id)}
+                            disabled={generatingStyleId !== null}
+                            className={`relative rounded-lg border-2 p-3 text-center transition-all hover:border-primary/50 hover:bg-primary/5 ${
+                              generatingStyleId === style.id ? "border-primary bg-primary/10" : "border-muted"
+                            }`}
+                          >
+                            {generatingStyleId === style.id ? (
+                              <Loader2 className="h-5 w-5 animate-spin mx-auto mb-1 text-primary" />
+                            ) : style.generated ? (
+                              <Sparkles className="h-5 w-5 mx-auto mb-1 text-primary" />
+                            ) : (
+                              <Palette className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                            )}
+                            <span className="text-xs font-medium leading-tight block">{style.name}</span>
+                          </button>
+                        ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Order a Keepsake */}
+              {activePortrait?.generatedImageUrl && (
+                <div>
+                  <Button
+                    size="lg"
+                    className="w-full gap-2"
+                    onClick={() => orderSessionMutation.mutate()}
+                    disabled={orderSessionMutation.isPending}
+                  >
+                    {orderSessionMutation.isPending ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <ShoppingBag className="h-5 w-5" />
+                    )}
+                    Order a Keepsake
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center mt-2">
+                    Framed prints, mugs, tote bags, and more
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -369,16 +459,19 @@ export default function DogProfile() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 mt-2 print:hidden">
-            <Button variant="outline" onClick={handleSavePawfile} disabled={saving} className="gap-2" data-testid="button-save-pawfile">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              {isCustomerView ? "Download Portrait" : "Save Pawfile"}
-            </Button>
-            <Button variant="outline" onClick={handlePrint} className="gap-2" data-testid="button-print">
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
-          </div>
+          {/* Save/Print — staff only, not customer view */}
+          {!isCustomerView && (
+            <div className="flex flex-wrap gap-2 mt-2 print:hidden">
+              <Button variant="outline" onClick={handleSavePawfile} disabled={saving} className="gap-2" data-testid="button-save-pawfile">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Save Pawfile
+              </Button>
+              <Button variant="outline" onClick={handlePrint} className="gap-2" data-testid="button-print">
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            </div>
+          )}
 
           {!isCustomerView && (
             <div className="mt-3 print:hidden">
