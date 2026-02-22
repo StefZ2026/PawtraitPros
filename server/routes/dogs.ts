@@ -81,6 +81,7 @@ export function registerDogRoutes(app: Express): void {
   });
 
   // Get available pack styles for a pet (public — for customer style switching)
+  // Returns ONLY the styles from the same pack that was used for the current portrait
   app.get("/api/dogs/code/:petCode/styles", async (req: Request, res: Response) => {
     try {
       const { petCode } = req.params;
@@ -98,6 +99,44 @@ export function registerDogRoutes(app: Express): void {
       const industry = (dog.industry_type || "groomer") as IndustryType;
       const packs = getCurrentPacks(industry, species);
 
+      // Determine which pack was used for the current portrait
+      let targetPackType: string | null = null;
+
+      // 1. Check the selected portrait's creation date against daily_pack_selections
+      const portraitResult = await pool.query(
+        `SELECT style_id, created_at FROM portraits
+         WHERE dog_id = $1 AND is_selected = true
+         ORDER BY created_at DESC LIMIT 1`,
+        [dog.id]
+      );
+
+      if (portraitResult.rows.length > 0) {
+        const portrait = portraitResult.rows[0];
+        const portraitDate = new Date(portrait.created_at).toISOString().split("T")[0];
+
+        // Check daily_pack_selections for this org on the portrait's date
+        const packSelResult = await pool.query(
+          `SELECT pack_type FROM daily_pack_selections
+           WHERE organization_id = $1 AND date = $2`,
+          [dog.organization_id, portraitDate]
+        );
+
+        if (packSelResult.rows.length > 0) {
+          targetPackType = packSelResult.rows[0].pack_type;
+        } else {
+          // Fallback: find which pack contains this styleId
+          const matchingPack = packs.find(p => p.styleIds.includes(portrait.style_id));
+          if (matchingPack) {
+            targetPackType = matchingPack.type;
+          }
+        }
+      }
+
+      // Filter to just the matching pack (or all packs if we couldn't determine)
+      const filteredPacks = targetPackType
+        ? packs.filter(p => p.type === targetPackType)
+        : packs;
+
       // Get existing portraits for this dog to mark which styles are already generated
       const existing = await pool.query(
         `SELECT style_id FROM portraits WHERE dog_id = $1`, [dog.id]
@@ -106,7 +145,7 @@ export function registerDogRoutes(app: Express): void {
 
       // Get all style details for pack styles
       const allStyles = await storage.getAllPortraitStyles();
-      const result = packs.map(pack => ({
+      const result = filteredPacks.map(pack => ({
         type: pack.type,
         name: pack.name,
         styles: pack.styleIds.map(sid => {
@@ -147,12 +186,44 @@ export function registerDogRoutes(app: Express): void {
       }
       const dog = dogResult.rows[0];
 
-      // Verify style is in one of the available packs
+      // Determine the correct pack for this pet and verify style is in it
       const species = (dog.species || "dog") as "dog" | "cat";
       const industry = (dog.industry_type || "groomer") as IndustryType;
       const packs = getCurrentPacks(industry, species);
-      const allPackStyleIds = packs.flatMap(p => p.styleIds);
-      if (!allPackStyleIds.includes(parseInt(styleId))) {
+
+      // Find the current portrait's pack (same logic as styles endpoint)
+      let allowedStyleIds: number[] = [];
+      const curPortrait = await pool.query(
+        `SELECT style_id, created_at FROM portraits
+         WHERE dog_id = $1 AND is_selected = true
+         ORDER BY created_at DESC LIMIT 1`,
+        [dog.id]
+      );
+      if (curPortrait.rows.length > 0) {
+        const portrait = curPortrait.rows[0];
+        const portraitDate = new Date(portrait.created_at).toISOString().split("T")[0];
+        const packSelResult = await pool.query(
+          `SELECT pack_type FROM daily_pack_selections
+           WHERE organization_id = $1 AND date = $2`,
+          [dog.organization_id, portraitDate]
+        );
+        let targetPack;
+        if (packSelResult.rows.length > 0) {
+          targetPack = packs.find(p => p.type === packSelResult.rows[0].pack_type);
+        } else {
+          targetPack = packs.find(p => p.styleIds.includes(portrait.style_id));
+        }
+        if (targetPack) {
+          allowedStyleIds = targetPack.styleIds;
+        }
+      }
+
+      // Fallback: if we couldn't determine a pack, allow all pack styles
+      if (allowedStyleIds.length === 0) {
+        allowedStyleIds = packs.flatMap(p => p.styleIds);
+      }
+
+      if (!allowedStyleIds.includes(parseInt(styleId))) {
         return res.status(400).json({ error: "Style not available for this pet" });
       }
 
