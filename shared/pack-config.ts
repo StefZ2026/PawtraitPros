@@ -6,6 +6,11 @@
  * Staff never browses the full style catalog — only pack buttons.
  * Regeneration is within-pack only.
  *
+ * RULES:
+ * - SEASONAL = evokes a season, nature, outdoors, cozy, holiday. NO fine art.
+ * - FUN = costumes, characters, playful, adventure. NO fine art.
+ * - ARTISTIC = classical painting, fine art, refined. NO costumes or seasonal.
+ *
  * Style IDs reference portrait-styles.ts (dog: 1-28, cat: 101-116)
  */
 
@@ -21,23 +26,24 @@ export interface Pack {
 }
 
 // --- SEASONAL PACKS (auto-rotate by current date) ---
-// Each season has 6 styles per species
+// NO fine art styles (Renaissance, Victorian, Royal, Baroque, Art Nouveau, Impressionist, Vintage)
 
 const DOG_SEASONAL: Record<Season, number[]> = {
-  spring: [22, 16, 21, 5, 26, 17],    // Flower Crown, Garden Party, Picnic, Art Nouveau, Impressionist, Beach
-  summer: [17, 21, 28, 18, 9, 16],     // Beach, Picnic, Yoga, Mountain, Space, Garden Party
-  fall:   [20, 10, 19, 15, 8, 25],     // Autumn Leaves, Halloween, Cozy Cabin, Country Cowboy, Cozy PJs, Baroque
-  winter: [23, 19, 8, 1, 2, 3],        // Holiday Spirit, Cozy Cabin, Cozy PJs, Renaissance, Victorian, Royal
+  spring: [22, 16, 21, 17, 28, 7],     // Flower Crown, Garden Party, Picnic, Beach Day, Yoga, Tutu Princess
+  summer: [17, 21, 28, 18, 9, 16],     // Beach Day, Picnic, Yoga, Mountain, Space Explorer, Garden Party
+  fall:   [20, 10, 19, 15, 8, 13],     // Autumn Leaves, Halloween, Cozy Cabin, Country Cowboy, Cozy PJs, Cowboy Sheriff
+  winter: [23, 19, 8, 7, 11, 6],       // Holiday Spirit, Cozy Cabin, Cozy PJs, Tutu Princess, Birthday, Steampunk
 };
 
 const CAT_SEASONAL: Record<Season, number[]> = {
-  spring: [114, 109, 116, 102, 106, 104], // Spring Blossoms, Garden Explorer, Tea Party, Renaissance, Purrista, Sunbeam
+  spring: [114, 109, 116, 115, 106, 104], // Spring Blossoms, Garden Explorer, Tea Party, Box Inspector, Purrista, Sunbeam
   summer: [109, 116, 106, 105, 107, 115], // Garden Explorer, Tea Party, Purrista, Space Cadet, Midnight Prowler, Box Inspector
-  fall:   [112, 104, 111, 103, 108, 101], // Halloween Cat, Sunbeam, Cozy Blanket, Victorian Lady, Bookshelf, Egyptian
-  winter: [113, 111, 104, 102, 103, 108], // Holiday Stocking, Cozy Blanket, Sunbeam, Renaissance, Victorian, Bookshelf
+  fall:   [112, 104, 111, 105, 106, 116], // Halloween Cat, Sunbeam, Cozy Blanket, Space Cadet, Purrista, Tea Party
+  winter: [113, 111, 104, 106, 115, 109], // Holiday Stocking, Cozy Blanket, Sunbeam, Purrista, Box Inspector, Garden Explorer
 };
 
-// --- FUN PACKS (rotate quarterly — different selection per vertical) ---
+// --- FUN PACKS (different selection per vertical) ---
+// Costumes, characters, playful, adventure — NO fine art
 
 const DOG_FUN: Record<IndustryType, number[]> = {
   groomer:  [6, 14, 12, 27, 11, 7],   // Steampunk, Superhero, Pirate, Taco Tuesday, Birthday, Tutu
@@ -51,12 +57,13 @@ const CAT_FUN: Record<IndustryType, number[]> = {
   daycare:  [115, 106, 105, 116, 109, 107], // Box Inspector, Purrista, Space Cadet, Tea Party, Garden, Midnight
 };
 
-// --- ARTISTIC PACKS (rotate quarterly — different selection per vertical) ---
+// --- ARTISTIC PACKS (different selection per vertical) ---
+// Classical painting, fine art, refined — NO costumes, NO seasonal
 
 const DOG_ARTISTIC: Record<IndustryType, number[]> = {
   groomer:  [5, 26, 24, 1, 25, 3],    // Art Nouveau, Impressionist, Vintage, Renaissance, Baroque, Royal
-  boarding: [24, 26, 5, 1, 2, 20],     // Vintage, Impressionist, Art Nouveau, Renaissance, Victorian, Autumn
-  daycare:  [5, 26, 24, 1, 25, 2],     // Art Nouveau, Impressionist, Vintage, Renaissance, Baroque, Victorian
+  boarding: [24, 26, 5, 1, 2, 3],     // Vintage, Impressionist, Art Nouveau, Renaissance, Victorian, Royal
+  daycare:  [5, 26, 24, 1, 25, 2],    // Art Nouveau, Impressionist, Vintage, Renaissance, Baroque, Victorian
 };
 
 const CAT_ARTISTIC: Record<IndustryType, number[]> = {
