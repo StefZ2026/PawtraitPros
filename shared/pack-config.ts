@@ -133,3 +133,45 @@ export function isStyleInPack(styleId: number, industryType: IndustryType, speci
   const pack = getPackByType(industryType, species, packType);
   return pack ? pack.styleIds.includes(styleId) : false;
 }
+
+/** Returns all style IDs used in any pack (all seasons, all industries, both species) */
+export function getAllPackStyleIds(): Set<number> {
+  const ids = new Set<number>();
+  const industries: IndustryType[] = ["groomer", "boarding", "daycare"];
+  const seasons: Season[] = ["spring", "summer", "fall", "winter"];
+  for (const season of seasons) {
+    for (const id of DOG_SEASONAL[season]) ids.add(id);
+    for (const id of CAT_SEASONAL[season]) ids.add(id);
+  }
+  for (const industry of industries) {
+    for (const id of DOG_FUN[industry]) ids.add(id);
+    for (const id of CAT_FUN[industry]) ids.add(id);
+    for (const id of DOG_ARTISTIC[industry]) ids.add(id);
+    for (const id of CAT_ARTISTIC[industry]) ids.add(id);
+  }
+  return ids;
+}
+
+/** Returns all style IDs for a given pack type (across all seasons/industries/species) */
+export function getStyleIdsForPackType(packType: PackType): Set<number> {
+  const ids = new Set<number>();
+  const industries: IndustryType[] = ["groomer", "boarding", "daycare"];
+  const seasons: Season[] = ["spring", "summer", "fall", "winter"];
+  if (packType === "seasonal") {
+    for (const season of seasons) {
+      for (const id of DOG_SEASONAL[season]) ids.add(id);
+      for (const id of CAT_SEASONAL[season]) ids.add(id);
+    }
+  } else if (packType === "fun") {
+    for (const industry of industries) {
+      for (const id of DOG_FUN[industry]) ids.add(id);
+      for (const id of CAT_FUN[industry]) ids.add(id);
+    }
+  } else {
+    for (const industry of industries) {
+      for (const id of DOG_ARTISTIC[industry]) ids.add(id);
+      for (const id of CAT_ARTISTIC[industry]) ids.add(id);
+    }
+  }
+  return ids;
+}
