@@ -12,6 +12,7 @@ import { StyleSelector } from "@/components/style-selector";
 import { PortraitPreview } from "@/components/portrait-preview";
 import { BreedSelector } from "@/components/breed-selector";
 import { portraitStyles, type StyleOption } from "@/lib/portrait-styles";
+import type { Pack } from "@shared/pack-config";
 import { validatePetName } from "@shared/content-filter";
 import { ArrowLeft, Dog, Cat, Sparkles, Eye, AlertTriangle, Plus, Shield, Undo2 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
@@ -66,6 +67,37 @@ export default function Create() {
     },
     enabled: !!orgParam,
   });
+
+  // Fetch today's daily pack to constrain style selection
+  const today = new Date().toISOString().split("T")[0];
+  const dailyPackSpecies = speciesParam || "dog";
+  const { data: dailyPack } = useQuery<{ pack_type: string; styleIds?: number[] }>({
+    queryKey: ["/api/daily-pack", today, dailyPackSpecies],
+    queryFn: async () => {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/daily-pack?date=${today}&species=${dailyPackSpecies}`, { headers });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Fetch pack details to get style IDs
+  const { data: packs = [] } = useQuery<(Pack & { styles?: any[] })[]>({
+    queryKey: ["/api/packs", dailyPackSpecies],
+    queryFn: async () => {
+      const res = await fetch(`/api/packs?species=${dailyPackSpecies}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Get style IDs from today's selected pack
+  const selectedDailyPack = dailyPack?.pack_type
+    ? packs.find((p: any) => p.type === dailyPack.pack_type)
+    : null;
+  const packStyleIds = selectedDailyPack?.styleIds || undefined;
 
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<StyleOption | null>(null);
@@ -521,6 +553,7 @@ export default function Create() {
                   selectedStyle={selectedStyle}
                   onSelectStyle={(s) => { setSelectedStyle(s); }}
                   species={effectiveSpecies}
+                  allowedStyleIds={packStyleIds}
                 />
               </div>
             )}

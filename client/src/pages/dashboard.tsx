@@ -1081,65 +1081,72 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         )}
       </div>
 
-      {/* SECTION 3: End-of-Day Actions */}
-      {todaysDogs.length > 0 && selectedPackType && (
+      {/* SECTION 3: Generate Portraits */}
+      {selectedPackType && readyForGeneration.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="text-center mb-4">
+              <Sparkles className="h-8 w-8 mx-auto mb-2 text-primary" />
+              <h3 className="font-semibold text-lg">Generate Portraits</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {readyForGeneration.length} pet{readyForGeneration.length !== 1 ? "s" : ""} ready — how do you want to assign styles?
+              </p>
+            </div>
+            {generationProgress && (
+              <div className="max-w-xs mx-auto mb-4">
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${(generationProgress.done / generationProgress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground text-center mt-1">{generationProgress.done} / {generationProgress.total}</p>
+              </div>
+            )}
+            <div className="grid sm:grid-cols-2 gap-3 max-w-lg mx-auto">
+              <Button
+                className="gap-2 h-auto py-4 flex-col"
+                onClick={() => handleBatchGenerate(true)}
+                disabled={generating}
+              >
+                {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Zap className="h-5 w-5" />}
+                <span className="font-semibold">Auto-Select for All</span>
+                <span className="text-xs opacity-80 font-normal">System picks a style from today's pack for each pet</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2 h-auto py-4 flex-col"
+                asChild
+              >
+                <Link href={isAdmin ? `/create?org=${organization.id}&species=${packSpecies}` : `/create?species=${packSpecies}`}>
+                  <Palette className="h-5 w-5" />
+                  <span className="font-semibold">Choose per Pet</span>
+                  <span className="text-xs opacity-80 font-normal">Pick a specific style for each pet yourself</span>
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* SECTION 3b: Deliver Portraits */}
+      {selectedPackType && readyForGeneration.length === 0 && generatedToday.length > 0 && (
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="pt-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h3 className="font-semibold flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-primary" />
-                  End-of-Day Actions
+                  <Check className="h-5 w-5 text-green-500" />
+                  Portraits Ready
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {readyForGeneration.length > 0
-                    ? `${readyForGeneration.length} pet(s) ready for portraits`
-                    : generatedToday.length > 0
-                      ? `${generatedToday.length} portrait(s) generated — ready to send!`
-                      : "All done for today!"}
+                  {generatedToday.length} portrait{generatedToday.length !== 1 ? "s" : ""} generated — ready to send!
                 </p>
-                {generationProgress && (
-                  <div className="mt-2">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden w-48">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: `${(generationProgress.done / generationProgress.total) * 100}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{generationProgress.done} / {generationProgress.total}</p>
-                  </div>
-                )}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {readyForGeneration.length > 0 && (
-                  <>
-                    <Button
-                      className="gap-2"
-                      onClick={() => handleBatchGenerate(true)}
-                      disabled={generating}
-                    >
-                      {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      Auto-Generate All
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="gap-2"
-                      asChild
-                    >
-                      <Link href={isAdmin ? `/create?org=${organization.id}` : "/create"}>
-                        <Palette className="h-4 w-4" />
-                        Choose Styles Manually
-                      </Link>
-                    </Button>
-                  </>
-                )}
-                {generatedToday.length > 0 && (
-                  <Button variant="outline" className="gap-2" onClick={handleBatchDeliver}>
-                    <Send className="h-4 w-4" />
-                    Send to {generatedToday.length} Client(s)
-                  </Button>
-                )}
-              </div>
+              <Button variant="outline" className="gap-2" onClick={handleBatchDeliver}>
+                <Send className="h-4 w-4" />
+                Send to {generatedToday.length} Client{generatedToday.length !== 1 ? "s" : ""}
+              </Button>
             </div>
           </CardContent>
         </Card>

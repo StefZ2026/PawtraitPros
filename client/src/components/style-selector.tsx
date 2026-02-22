@@ -23,20 +23,27 @@ interface StyleSelectorProps {
   selectedStyle: StyleOption | null;
   onSelectStyle: (style: StyleOption) => void;
   species?: "dog" | "cat";
+  allowedStyleIds?: number[];
 }
 
-export function StyleSelector({ selectedStyle, onSelectStyle, species = "dog" }: StyleSelectorProps) {
+export function StyleSelector({ selectedStyle, onSelectStyle, species = "dog", allowedStyleIds }: StyleSelectorProps) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const speciesStyles = getStylesBySpecies(species);
   const speciesCategories = getStyleCategoriesBySpecies(species);
 
-  const filteredStyles = activeCategory
-    ? speciesStyles.filter((s) => s.category === activeCategory)
+  const packConstrained = allowedStyleIds && allowedStyleIds.length > 0;
+  const baseStyles = packConstrained
+    ? speciesStyles.filter((s) => allowedStyleIds!.includes(s.id))
     : speciesStyles;
+
+  const filteredStyles = !packConstrained && activeCategory
+    ? baseStyles.filter((s) => s.category === activeCategory)
+    : baseStyles;
 
   return (
     <div className="space-y-6">
+      {!packConstrained && (
       <div className="flex flex-wrap gap-2">
         <Button
           variant={activeCategory === null ? "default" : "outline"}
@@ -63,6 +70,7 @@ export function StyleSelector({ selectedStyle, onSelectStyle, species = "dog" }:
           );
         })}
       </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredStyles.map((style) => {
