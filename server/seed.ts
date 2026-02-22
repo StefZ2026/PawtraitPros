@@ -72,6 +72,7 @@ export async function seedDatabase() {
         await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS industry_type TEXT');
         await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS capture_mode TEXT');
         await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS delivery_mode TEXT DEFAULT 'receipt'");
+        await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS notification_mode TEXT DEFAULT 'both'");
         console.log('[migration] Pros org columns ready');
 
         // Merch orders table

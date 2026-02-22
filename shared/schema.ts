@@ -51,6 +51,7 @@ export const organizations = pgTable("organizations", {
   industryType: text("industry_type"), // "groomer" | "boarding" | "daycare"
   captureMode: text("capture_mode"), // "hero" | "batch" — hero=single photo, batch=multi-upload
   deliveryMode: text("delivery_mode").default("receipt"), // "receipt" | "receipt_sms" | "receipt_sms_pod"
+  notificationMode: text("notification_mode").default("both"), // "sms" | "email" | "both" — how customers are notified at departure
   speciesHandled: text("species_handled"), // dogs, cats, both — must be explicitly chosen during onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),

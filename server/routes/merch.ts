@@ -2,8 +2,10 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
+import { getStripeClient } from "../stripeClient";
 import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, getFrameColors } from "../printful-config";
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "../printful";
+import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from "./email";
 import { ADMIN_EMAIL } from "./helpers";
 
 export function registerMerchRoutes(app: Express): void {
@@ -61,10 +63,11 @@ export function registerMerchRoutes(app: Express): void {
     }
   });
 
-  // Create a merch order
-  app.post("/api/merch/order", isAuthenticated, async (req: Request, res: Response) => {
+  // Step 1: Create merch order + Stripe Checkout Session
+  // Returns a Stripe checkout URL — customer pays there, then gets redirected back
+  app.post("/api/merch/checkout", async (req: Request, res: Response) => {
     try {
-      const { items, customer, address, imageUrl, portraitId, dogId, orgId } = req.body;
+      const { items, customer, address, imageUrl, portraitId, dogId, orgId, sessionToken } = req.body;
 
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: "At least one item is required" });
@@ -97,7 +100,7 @@ export function registerMerchRoutes(app: Express): void {
         });
       }
 
-      // Estimate shipping to get cost
+      // Estimate shipping
       const recipient: PrintfulRecipient = {
         name: customer.name,
         address1: address.address1,
@@ -122,7 +125,7 @@ export function registerMerchRoutes(app: Express): void {
 
       const totalCents = subtotalCents + shippingCents;
 
-      // Create merch order in DB
+      // Create merch order in DB with status "awaiting_payment"
       const orderResult = await pool.query(
         `INSERT INTO merch_orders (
           organization_id, dog_id, portrait_id,
@@ -135,7 +138,7 @@ export function registerMerchRoutes(app: Express): void {
           orgId, dogId || null, portraitId || null,
           customer.name, customer.email || null, customer.phone || null,
           address.address1, address.city, address.state_code, address.zip, address.country_code || "US",
-          totalCents, shippingCents, "pending",
+          totalCents, shippingCents, "awaiting_payment",
         ]
       );
       const merchOrderId = orderResult.rows[0].id;
@@ -149,49 +152,229 @@ export function registerMerchRoutes(app: Express): void {
         );
       }
 
-      // Submit to Printful
-      try {
-        const printfulItems = validatedItems.map(item =>
-          buildOrderItem(item.variantId, item.quantity, imageUrl)
-        );
-        const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(merchOrderId));
+      // Look up org to determine Stripe mode
+      const org = await storage.getOrganization(parseInt(orgId));
+      const testMode = org?.stripeTestMode;
+      const stripe = getStripeClient(testMode);
 
-        // Update order with Printful ID
+      // Build line items for Stripe Checkout
+      const lineItems = validatedItems.map(item => {
+        const product = getProduct(item.productKey);
+        return {
+          price_data: {
+            currency: "usd",
+            product_data: { name: product?.name || item.productKey },
+            unit_amount: item.priceCents,
+          },
+          quantity: item.quantity,
+        };
+      });
+
+      // Add shipping as a line item if applicable
+      if (shippingCents > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: { name: "Shipping" },
+            unit_amount: shippingCents,
+          },
+          quantity: 1,
+        });
+      }
+
+      // Build success/cancel URLs
+      const baseUrl = process.env.APP_URL || (process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000");
+      const successUrl = sessionToken
+        ? `${baseUrl}/order/${sessionToken}?payment=success&session_id={CHECKOUT_SESSION_ID}`
+        : `${baseUrl}/order-complete?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = sessionToken
+        ? `${baseUrl}/order/${sessionToken}?payment=canceled`
+        : `${baseUrl}/`;
+
+      // Create Stripe Checkout Session
+      const checkoutSession = await stripe.checkout.sessions.create({
+        mode: "payment",
+        line_items: lineItems,
+        customer_email: customer.email || undefined,
+        metadata: {
+          merchOrderId: String(merchOrderId),
+          imageUrl,
+          orgId: String(orgId),
+          dogId: dogId ? String(dogId) : "",
+          portraitId: portraitId ? String(portraitId) : "",
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      });
+
+      // Store the Stripe session ID on the order
+      await pool.query(
+        `UPDATE merch_orders SET stripe_payment_intent_id = $1 WHERE id = $2`,
+        [checkoutSession.id, merchOrderId]
+      );
+
+      res.json({
+        checkoutUrl: checkoutSession.url,
+        orderId: merchOrderId,
+        sessionId: checkoutSession.id,
+        totalCents,
+        shippingCents,
+        subtotalCents,
+      });
+    } catch (error: any) {
+      console.error("Error creating merch checkout:", error);
+      res.status(500).json({ error: error.message || "Failed to create checkout" });
+    }
+  });
+
+  // Step 2: Confirm payment and fulfill order
+  // Called after Stripe redirects back with session_id
+  app.post("/api/merch/confirm-checkout", async (req: Request, res: Response) => {
+    try {
+      const { sessionId } = req.body;
+      if (!sessionId) {
+        return res.status(400).json({ error: "Session ID is required" });
+      }
+
+      // Find the order by Stripe session ID
+      const orderResult = await pool.query(
+        `SELECT * FROM merch_orders WHERE stripe_payment_intent_id = $1`,
+        [sessionId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found for this session" });
+      }
+      const order = orderResult.rows[0];
+
+      // If already paid/submitted, return success
+      if (order.status !== "awaiting_payment") {
+        return res.json({
+          orderId: order.id,
+          status: order.status,
+          totalCents: order.total_cents,
+          alreadyProcessed: true,
+        });
+      }
+
+      // Verify payment with Stripe
+      const org = await storage.getOrganization(order.organization_id);
+      const stripe = getStripeClient(org?.stripeTestMode);
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (session.payment_status !== "paid") {
+        return res.status(402).json({ error: "Payment not completed", paymentStatus: session.payment_status });
+      }
+
+      // Mark as paid
+      await pool.query(
+        `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
+        [order.id]
+      );
+
+      // Get order items for Printful
+      const itemsResult = await pool.query(
+        `SELECT * FROM merch_order_items WHERE order_id = $1`,
+        [order.id]
+      );
+
+      // Get the imageUrl from the Stripe session metadata
+      const imageUrl = session.metadata?.imageUrl;
+      if (!imageUrl) {
+        console.error(`[merch] No imageUrl in session metadata for order ${order.id}`);
+        return res.json({ orderId: order.id, status: "paid", warning: "Fulfillment pending — missing image URL" });
+      }
+
+      // Submit to Printful
+      const recipient: PrintfulRecipient = {
+        name: order.customer_name,
+        address1: order.shipping_street,
+        city: order.shipping_city,
+        state_code: order.shipping_state,
+        zip: order.shipping_zip,
+        country_code: order.shipping_country || "US",
+        email: order.customer_email,
+        phone: order.customer_phone,
+      };
+
+      try {
+        const printfulItems = itemsResult.rows.map((item: any) =>
+          buildOrderItem(item.variant_id, item.quantity, imageUrl)
+        );
+        const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(order.id));
+
         await pool.query(
           `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
-          [String(printfulOrder.id), printfulOrder.status, merchOrderId]
+          [String(printfulOrder.id), printfulOrder.status, order.id]
         );
 
-        // Auto-confirm the order (submit for fulfillment)
+        // Auto-confirm the Printful order
         try {
           await confirmPrintfulOrder(printfulOrder.id);
           await pool.query(
             `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
-            [merchOrderId]
+            [order.id]
           );
         } catch (confirmErr: any) {
-          console.warn(`[merch] Auto-confirm failed for order ${merchOrderId}:`, confirmErr.message);
+          console.warn(`[merch] Auto-confirm failed for order ${order.id}:`, confirmErr.message);
+        }
+
+        // Send order confirmation email with watermarked portrait download
+        if (order.customer_email && isEmailConfigured()) {
+          try {
+            const itemDescriptions = itemsResult.rows.map((item: any) => {
+              const product = getProduct(item.product_key);
+              return `${product?.name || item.product_key} x${item.quantity}`;
+            });
+            const orgName = org?.name || "Pawtrait Pros";
+            const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+            const dogName = dogResult?.name || "your pet";
+
+            const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+
+            // Fetch the watermarked portrait as an attachment
+            let attachments: Array<{ filename: string; content: Buffer }> | undefined;
+            if (order.portrait_id) {
+              try {
+                const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
+                const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
+                if (downloadRes.ok) {
+                  const buffer = Buffer.from(await downloadRes.arrayBuffer());
+                  attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
+                }
+              } catch (dlErr: any) {
+                console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
+              }
+            }
+
+            await sendEmail(order.customer_email, subject, html, attachments);
+            console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
+          } catch (emailErr: any) {
+            console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+          }
         }
 
         res.json({
-          orderId: merchOrderId,
+          orderId: order.id,
           printfulOrderId: printfulOrder.id,
-          totalCents,
-          shippingCents,
-          subtotalCents,
-          status: "submitted",
+          totalCents: order.total_cents,
+          status: "confirmed",
         });
       } catch (printfulErr: any) {
-        console.error(`[merch] Printful order creation failed for order ${merchOrderId}:`, printfulErr.message);
+        console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
         await pool.query(
-          `UPDATE merch_orders SET status = 'failed', printful_status = $1 WHERE id = $2`,
-          [printfulErr.message, merchOrderId]
+          `UPDATE merch_orders SET status = 'paid_fulfillment_pending', printful_status = $1 WHERE id = $2`,
+          [printfulErr.message, order.id]
         );
-        res.status(500).json({ error: "Failed to submit order to fulfillment provider", orderId: merchOrderId });
+        res.json({
+          orderId: order.id,
+          totalCents: order.total_cents,
+          status: "paid",
+          warning: "Payment received but fulfillment pending — we'll process it shortly",
+        });
       }
     } catch (error: any) {
-      console.error("Error creating merch order:", error);
-      res.status(500).json({ error: error.message || "Failed to create order" });
+      console.error("Error confirming merch checkout:", error);
+      res.status(500).json({ error: error.message || "Failed to confirm checkout" });
     }
   });
 

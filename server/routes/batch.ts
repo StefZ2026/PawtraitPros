@@ -5,6 +5,7 @@ import { isAuthenticated } from "../auth";
 import { generateImage } from "../gemini";
 import { getCurrentPacks, type IndustryType } from "@shared/pack-config";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
+import { sendEmail, isEmailConfigured, buildDepartureEmail } from "./email";
 import { ADMIN_EMAIL, sanitizeForPrompt, generatePetCode } from "./helpers";
 
 export function registerBatchRoutes(app: Express): void {
@@ -165,29 +166,49 @@ export function registerBatchRoutes(app: Express): void {
           }
 
           const pawfileUrl = `https://pawtraitpros.com/pawfile/code/${petCode}`;
+          const notifMode = (org as any).notificationMode || "both";
+          const phone = (dog as any).ownerPhone;
+          const email = (dog as any).ownerEmail;
+          const methods: string[] = [];
+          let sent = false;
 
-          // SMS delivery via shared SMS utility (if ownerPhone exists)
-          if ((dog as any).ownerPhone) {
-            const phone = (dog as any).ownerPhone;
-
-            if (isSmsConfigured()) {
-              try {
-                const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and grab a free digital download — or order a print, mug, or canvas: ${pawfileUrl}`;
-                const smsResult = await sendSms(phone, smsBody);
-                if (smsResult.success) {
-                  results.push({ dogId, sent: true, method: "sms" });
-                  continue;
-                } else {
-                  console.error(`[deliver-batch] SMS failed for ${dog.name}:`, smsResult.error);
-                }
-              } catch (smsErr: any) {
-                console.error(`[deliver-batch] SMS error:`, smsErr.message);
+          // SMS delivery (if preference includes SMS and phone exists)
+          if ((notifMode === "sms" || notifMode === "both") && phone && isSmsConfigured()) {
+            try {
+              const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and grab a free digital download — or order a print, mug, or canvas: ${pawfileUrl}`;
+              const smsResult = await sendSms(phone, smsBody);
+              if (smsResult.success) {
+                methods.push("sms");
+                sent = true;
+              } else {
+                console.error(`[deliver-batch] SMS failed for ${dog.name}:`, smsResult.error);
               }
+            } catch (smsErr: any) {
+              console.error(`[deliver-batch] SMS error:`, smsErr.message);
             }
           }
 
-          // Fallback: just mark as "link ready" (no email service yet)
-          results.push({ dogId, sent: false, method: "link_only", error: "SMS not configured or failed" });
+          // Email delivery (if preference includes email and email exists)
+          if ((notifMode === "email" || notifMode === "both") && email && isEmailConfigured()) {
+            try {
+              const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl);
+              const emailResult = await sendEmail(email, subject, html);
+              if (emailResult.success) {
+                methods.push("email");
+                sent = true;
+              } else {
+                console.error(`[deliver-batch] Email failed for ${dog.name}:`, emailResult.error);
+              }
+            } catch (emailErr: any) {
+              console.error(`[deliver-batch] Email error:`, emailErr.message);
+            }
+          }
+
+          if (sent) {
+            results.push({ dogId, sent: true, method: methods.join("+") });
+          } else {
+            results.push({ dogId, sent: false, method: "link_only", error: "No notification channel available or all failed" });
+          }
         } catch (err: any) {
           results.push({ dogId, sent: false, error: err.message });
         }

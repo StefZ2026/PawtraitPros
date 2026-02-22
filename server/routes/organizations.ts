@@ -76,7 +76,7 @@ export function registerOrganizationRoutes(app: Express): void {
         "socialFacebook", "socialInstagram", "socialTwitter", "socialNextdoor",
         "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
         "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
-        "speciesHandled", "onboardingCompleted", "industryType"
+        "speciesHandled", "onboardingCompleted", "industryType", "notificationMode"
       ];
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {
@@ -114,6 +114,12 @@ export function registerOrganizationRoutes(app: Express): void {
       if (updates.speciesHandled !== undefined) {
         if (!["dogs", "cats", "both"].includes(updates.speciesHandled)) {
           return res.status(400).json({ error: "speciesHandled must be 'dogs', 'cats', or 'both'" });
+        }
+      }
+
+      if (updates.notificationMode !== undefined) {
+        if (!["sms", "email", "both"].includes(updates.notificationMode)) {
+          return res.status(400).json({ error: "notificationMode must be 'sms', 'email', or 'both'" });
         }
       }
 

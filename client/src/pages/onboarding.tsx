@@ -14,16 +14,16 @@ import {
   Dog, Cat, Heart, Upload, MapPin, Globe,
   Mail, ArrowRight, ArrowLeft, PawPrint,
   Check, Sparkles, PartyPopper, Zap, Plus,
-  Scissors, Building2, Sun,
+  Scissors, Building2, Sun, Bell, MessageSquare, Smartphone,
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
 import type { Organization, SubscriptionPlan } from "@shared/schema";
 
-type Step = "welcome" | "industry" | "logo" | "species" | "contact" | "social" | "location" | "billing" | "plan" | "finish";
+type Step = "welcome" | "industry" | "logo" | "species" | "contact" | "notifications" | "social" | "location" | "billing" | "plan" | "finish";
 
-const STEPS: Step[] = ["welcome", "industry", "logo", "species", "contact", "social", "location", "billing", "plan", "finish"];
+const STEPS: Step[] = ["welcome", "industry", "logo", "species", "contact", "notifications", "social", "location", "billing", "plan", "finish"];
 
 type AddressPrefix = "location" | "billing";
 type AddressField = "Street" | "City" | "State" | "Zip" | "Country";
@@ -31,6 +31,7 @@ type AddressField = "Street" | "City" | "State" | "Zip" | "Country";
 type FormData = {
   industryType: string;
   speciesHandled: string;
+  notificationMode: string;
   websiteUrl: string;
   contactEmail: string;
   socialFacebook: string;
@@ -243,6 +244,7 @@ export default function Onboarding() {
   const [formData, setFormData] = useState<FormData>({
     industryType: "",
     speciesHandled: "",
+    notificationMode: "both",
     websiteUrl: "",
     contactEmail: "",
     socialFacebook: "",
@@ -330,6 +332,7 @@ export default function Onboarding() {
       ...prev,
       industryType: (org as any).industryType || prev.industryType || "",
       speciesHandled: org.speciesHandled || "",
+      notificationMode: (org as any).notificationMode || "both",
       websiteUrl: org.websiteUrl || "",
       contactEmail: org.contactEmail || "",
       socialFacebook: org.socialFacebook || "",
@@ -816,6 +819,59 @@ export default function Onboarding() {
                 nextDisabled={updateMutation.isPending}
                 backTestId="button-back-contact"
                 nextTestId="button-next-contact"
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {currentStep === "notifications" && (
+          <Card data-testid="step-notifications">
+            <CardContent className="pt-8 pb-8 space-y-6">
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-serif font-bold" data-testid="text-notifications-title">
+                  How should we notify your customers?
+                </h2>
+                <p className="text-muted-foreground">
+                  When a pet's portrait is ready and you send it out, how would you like customers to receive the link?
+                </p>
+              </div>
+
+              <div className="grid gap-3">
+                {[
+                  { value: "both", label: "Email & Text", description: "Send both for maximum reach", icon: <Bell className="h-8 w-8 text-primary" /> },
+                  { value: "sms", label: "Text Message Only", description: "Quick and direct via SMS", icon: <Smartphone className="h-8 w-8 text-primary" /> },
+                  { value: "email", label: "Email Only", description: "Professional email notification", icon: <Mail className="h-8 w-8 text-primary" /> },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
+                      formData.notificationMode === opt.value
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover-elevate"
+                    }`}
+                    onClick={() => updateField("notificationMode", opt.value)}
+                    data-testid={`button-notification-${opt.value}`}
+                  >
+                    {opt.icon}
+                    <div>
+                      <p className="font-semibold">{opt.label}</p>
+                      <p className="text-sm text-muted-foreground">{opt.description}</p>
+                    </div>
+                    {formData.notificationMode === opt.value && (
+                      <Check className="h-5 w-5 text-primary ml-auto" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <StepNavigation
+                onBack={goBack}
+                onNext={() => saveAndNext({ notificationMode: formData.notificationMode })}
+                nextLabel="Save & Continue"
+                nextDisabled={updateMutation.isPending}
+                backTestId="button-back-notifications"
+                nextTestId="button-next-notifications"
               />
             </CardContent>
           </Card>

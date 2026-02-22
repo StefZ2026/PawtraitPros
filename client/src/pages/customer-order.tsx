@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,10 @@ import {
 
 interface SessionData {
   token: string;
+  orgId: number;
   orgName: string;
   orgLogo: string | null;
+  dogId: number;
   dogName: string;
   dogBreed: string | null;
   dogSpecies: string;
@@ -42,11 +44,12 @@ interface CartItem {
   quantity: number;
 }
 
-type OrderStep = "browse" | "cart" | "shipping" | "confirm";
+type OrderStep = "browse" | "cart" | "shipping" | "paying" | "confirm";
 
 export default function CustomerOrder() {
   const params = useParams<{ token: string }>();
   const token = params.token;
+  const searchString = useSearch();
   const { toast } = useToast();
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -59,6 +62,7 @@ export default function CustomerOrder() {
   const [cardFormat, setCardFormat] = useState<"flat" | "folded">("flat");
   const [cardQty, setCardQty] = useState(10);
   const [showAlternates, setShowAlternates] = useState(false);
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [shipping, setShipping] = useState({
     name: "",
     email: "",
@@ -108,11 +112,11 @@ export default function CustomerOrder() {
     enabled: !!holidayAvail?.available,
   });
 
-  // Order mutation
-  const orderMutation = useMutation({
+  // Checkout mutation — creates Stripe Checkout Session and redirects to Stripe
+  const checkoutMutation = useMutation({
     mutationFn: async () => {
       const imageUrl = selectedImage || session?.portraitImage;
-      const res = await fetch("/api/merch/order", {
+      const res = await fetch("/api/merch/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,30 +138,77 @@ export default function CustomerOrder() {
           },
           imageUrl,
           portraitId: selectedPortraitId || session?.portraitId,
-          orgId: undefined, // Will be inferred from session on backend
+          dogId: session?.dogId,
+          orgId: session?.orgId,
+          sessionToken: token,
         }),
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || "Order failed");
+        throw new Error(err.error || "Checkout failed");
+      }
+      return res.json() as Promise<{ checkoutUrl: string; orderId: number; sessionId: string }>;
+    },
+    onSuccess: (data) => {
+      // Redirect to Stripe Checkout
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Checkout failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Confirm payment mutation — called when returning from Stripe with session_id
+  const confirmMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await fetch("/api/merch/confirm-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Payment confirmation failed");
       }
       return res.json();
     },
     onSuccess: () => {
       setStep("confirm");
-      toast({ title: "Order placed!", description: "Your order has been submitted for fulfillment." });
+      setConfirmingPayment(false);
+      toast({ title: "Order confirmed!", description: "Your order has been placed and will be shipped to you." });
     },
     onError: (error: Error) => {
-      toast({ title: "Order failed", description: error.message, variant: "destructive" });
+      setConfirmingPayment(false);
+      toast({ title: "Confirmation failed", description: error.message, variant: "destructive" });
     },
   });
 
-  if (isLoading) {
+  // Handle return from Stripe Checkout
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const payment = params.get("payment");
+    const sessionId = params.get("session_id");
+
+    if (payment === "success" && sessionId && !confirmingPayment && step !== "confirm") {
+      setConfirmingPayment(true);
+      confirmMutation.mutate(sessionId);
+    } else if (payment === "canceled") {
+      toast({ title: "Payment canceled", description: "Your order was not placed. You can try again.", variant: "destructive" });
+      // Clean up URL params
+      window.history.replaceState({}, "", `/order/${token}`);
+    }
+  }, [searchString]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (isLoading || confirmingPayment) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Dog className="h-12 w-12 mx-auto mb-4 text-primary animate-pulse" />
-          <p className="text-muted-foreground">Loading your portrait...</p>
+          <p className="text-muted-foreground">
+            {confirmingPayment ? "Confirming your payment..." : "Loading your portrait..."}
+          </p>
         </div>
       </div>
     );
@@ -336,11 +387,11 @@ export default function CustomerOrder() {
               <CardFooter>
                 <Button
                   className="w-full gap-2"
-                  disabled={!isShippingValid || orderMutation.isPending}
-                  onClick={() => orderMutation.mutate()}
+                  disabled={!isShippingValid || checkoutMutation.isPending}
+                  onClick={() => checkoutMutation.mutate()}
                 >
-                  {orderMutation.isPending ? "Placing Order..." : (
-                    <>Place Order — ${(cartTotal / 100).toFixed(2)} <ArrowRight className="h-4 w-4" /></>
+                  {checkoutMutation.isPending ? "Redirecting to payment..." : (
+                    <>Proceed to Payment — ${(cartTotal / 100).toFixed(2)} <ArrowRight className="h-4 w-4" /></>
                   )}
                 </Button>
               </CardFooter>

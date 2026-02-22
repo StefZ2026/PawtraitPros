@@ -168,8 +168,10 @@ export function registerCustomerSessionRoutes(app: Express): void {
 
       res.json({
         token: session.token,
+        orgId: session.organization_id,
         orgName: session.org_name,
         orgLogo: session.org_logo,
+        dogId: session.dog_id,
         dogName: session.dog_name,
         dogBreed: session.dog_breed,
         dogSpecies: session.dog_species,

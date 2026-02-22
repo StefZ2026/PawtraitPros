@@ -19,7 +19,7 @@ import {
   Dog, Shield, ArrowLeft, Building2, Users, MapPin,
   StickyNote, Pencil, X, Check, LogOut, PawPrint,
   Phone, Mail, Globe, CreditCard, ImageIcon, Upload,
-  Crown, Heart, Plus
+  Crown, Heart, Plus, Bell, Smartphone, MessageSquare
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
@@ -745,6 +745,51 @@ export default function BusinessSettings() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Notification Settings */}
+          <Card data-testid="section-notifications">
+            <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+              <div className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-primary" />
+                <div>
+                  <CardTitle className="text-base">Customer Notifications</CardTitle>
+                  <CardDescription>How customers receive portrait links at departure</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  { value: "both", label: "Email & Text", description: "Send both for maximum reach", icon: <Bell className="h-5 w-5" /> },
+                  { value: "sms", label: "Text Message Only", description: "Quick and direct via SMS", icon: <Smartphone className="h-5 w-5" /> },
+                  { value: "email", label: "Email Only", description: "Professional email notification", icon: <Mail className="h-5 w-5" /> },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left transition-all ${
+                      (org as any).notificationMode === opt.value || (!((org as any).notificationMode) && opt.value === "both")
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/50"
+                    }`}
+                    onClick={() => {
+                      updateMutation.mutate({ notificationMode: opt.value } as any);
+                    }}
+                    data-testid={`button-notification-${opt.value}`}
+                  >
+                    <span className="text-primary">{opt.icon}</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{opt.label}</p>
+                      <p className="text-xs text-muted-foreground">{opt.description}</p>
+                    </div>
+                    {((org as any).notificationMode === opt.value || (!((org as any).notificationMode) && opt.value === "both")) && (
+                      <Check className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </CardContent>
           </Card>
 

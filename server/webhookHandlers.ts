@@ -1,7 +1,11 @@
 import { getStripeClient, getWebhookSecret, mapStripeStatusToInternal } from './stripeClient';
 import { storage } from './storage';
+import { pool } from './db';
 import { stripeService } from './stripeService';
 import { handleCancellation } from './subscription';
+import { getProduct } from './printful-config';
+import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, buildOrderItem, type PrintfulRecipient } from './printful';
+import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from './routes/email';
 
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
@@ -126,6 +130,122 @@ export class WebhookHandlers {
           await storage.updateOrganization(org.id, updateFields);
           await storage.syncOrgCredits(org.id);
           console.log(`[webhook] Synced credits for org ${org.id} on billing cycle`);
+        }
+        break;
+      }
+
+      case 'checkout.session.completed': {
+        // Handle merch order payments — safety net in case customer doesn't return to page
+        const merchOrderId = data.metadata?.merchOrderId;
+        if (!merchOrderId) break; // Not a merch order checkout
+
+        const orderResult = await pool.query(
+          `SELECT * FROM merch_orders WHERE id = $1`,
+          [parseInt(merchOrderId)]
+        );
+        if (orderResult.rows.length === 0) break;
+
+        const order = orderResult.rows[0];
+        if (order.status !== 'awaiting_payment') {
+          console.log(`[webhook] Merch order ${merchOrderId} already processed (status: ${order.status})`);
+          break;
+        }
+
+        if (data.payment_status !== 'paid') break;
+
+        // Mark as paid
+        await pool.query(
+          `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
+          [order.id]
+        );
+
+        // Get order items for Printful
+        const itemsResult = await pool.query(
+          `SELECT * FROM merch_order_items WHERE order_id = $1`,
+          [order.id]
+        );
+
+        const imageUrl = data.metadata?.imageUrl;
+        if (!imageUrl) {
+          console.error(`[webhook] No imageUrl in session metadata for merch order ${order.id}`);
+          break;
+        }
+
+        // Submit to Printful
+        const recipient: PrintfulRecipient = {
+          name: order.customer_name,
+          address1: order.shipping_street,
+          city: order.shipping_city,
+          state_code: order.shipping_state,
+          zip: order.shipping_zip,
+          country_code: order.shipping_country || 'US',
+          email: order.customer_email,
+          phone: order.customer_phone,
+        };
+
+        try {
+          const printfulItems = itemsResult.rows.map((item: any) =>
+            buildOrderItem(item.variant_id, item.quantity, imageUrl)
+          );
+          const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(order.id));
+
+          await pool.query(
+            `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+            [String(printfulOrder.id), printfulOrder.status, order.id]
+          );
+
+          try {
+            await confirmPrintfulOrder(printfulOrder.id);
+            await pool.query(
+              `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+              [order.id]
+            );
+          } catch (confirmErr: any) {
+            console.warn(`[webhook] Auto-confirm failed for order ${order.id}:`, confirmErr.message);
+          }
+
+          // Send confirmation email with watermarked portrait
+          if (order.customer_email && isEmailConfigured()) {
+            try {
+              const org = await storage.getOrganization(order.organization_id);
+              const itemDescriptions = itemsResult.rows.map((item: any) => {
+                const product = getProduct(item.product_key);
+                return `${product?.name || item.product_key} x${item.quantity}`;
+              });
+              const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+              const dogName = dogResult?.name || 'your pet';
+              const orgName = org?.name || 'Pawtrait Pros';
+
+              const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+
+              let attachments: Array<{ filename: string; content: Buffer }> | undefined;
+              if (order.portrait_id) {
+                try {
+                  const baseUrl = process.env.APP_URL || 'https://pawtraitpros.com';
+                  const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
+                  if (downloadRes.ok) {
+                    const buffer = Buffer.from(await downloadRes.arrayBuffer());
+                    attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, '-')}-portrait.png`, content: buffer }];
+                  }
+                } catch (dlErr: any) {
+                  console.warn(`[webhook] Failed to fetch watermarked portrait:`, dlErr.message);
+                }
+              }
+
+              await sendEmail(order.customer_email, subject, html, attachments);
+              console.log(`[webhook] Confirmation email sent for merch order ${order.id}`);
+            } catch (emailErr: any) {
+              console.warn(`[webhook] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+            }
+          }
+
+          console.log(`[webhook] Merch order ${order.id} fulfilled via webhook`);
+        } catch (printfulErr: any) {
+          console.error(`[webhook] Printful order failed for paid order ${order.id}:`, printfulErr.message);
+          await pool.query(
+            `UPDATE merch_orders SET status = 'paid_fulfillment_pending', printful_status = $1 WHERE id = $2`,
+            [printfulErr.message, order.id]
+          );
         }
         break;
       }
