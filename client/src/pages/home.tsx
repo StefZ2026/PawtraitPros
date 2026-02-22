@@ -85,7 +85,7 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative pt-32 pb-16 overflow-hidden">
+      <section className="relative pt-32 pb-8 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10" />
         <div className="container mx-auto px-4 relative">
           <div className="max-w-4xl mx-auto text-center">
@@ -106,7 +106,7 @@ export default function Home() {
       </section>
 
       {/* Portrait Showcase */}
-      <section className="py-16">
+      <section className="pt-8 pb-16">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-serif font-bold mb-4">Stunning AI Portraits</h2>
