@@ -11,7 +11,8 @@ export async function sendEmail(
   to: string,
   subject: string,
   html: string,
-  attachments?: Array<{ filename: string; content: Buffer }>
+  attachments?: Array<{ filename: string; content: Buffer }>,
+  fromName?: string
 ): Promise<EmailSendResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -19,8 +20,10 @@ export async function sendEmail(
   }
 
   try {
+    const emailAddr = process.env.RESEND_FROM_ADDRESS || "noreply@pawtraitpros.com";
+    const displayName = fromName || "Pawtrait Pros";
     const payload: any = {
-      from: process.env.RESEND_FROM_EMAIL || "Pawtrait Pros <onboarding@resend.dev>",
+      from: `${displayName} <${emailAddr}>`,
       to: [to],
       subject,
       html,

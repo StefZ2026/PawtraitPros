@@ -232,7 +232,7 @@ export class WebhookHandlers {
                 }
               }
 
-              await sendEmail(order.customer_email, subject, html, attachments);
+              await sendEmail(order.customer_email, subject, html, attachments, orgName);
               console.log(`[webhook] Confirmation email sent for merch order ${order.id}`);
             } catch (emailErr: any) {
               console.warn(`[webhook] Failed to send confirmation email for order ${order.id}:`, emailErr.message);

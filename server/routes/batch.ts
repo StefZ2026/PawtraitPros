@@ -192,7 +192,7 @@ export function registerBatchRoutes(app: Express): void {
           if ((notifMode === "email" || notifMode === "both") && email && isEmailConfigured()) {
             try {
               const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl);
-              const emailResult = await sendEmail(email, subject, html);
+              const emailResult = await sendEmail(email, subject, html, undefined, org.name);
               if (emailResult.success) {
                 methods.push("email");
                 sent = true;

@@ -346,7 +346,7 @@ export function registerMerchRoutes(app: Express): void {
               }
             }
 
-            await sendEmail(order.customer_email, subject, html, attachments);
+            await sendEmail(order.customer_email, subject, html, attachments, orgName);
             console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
           } catch (emailErr: any) {
             console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
