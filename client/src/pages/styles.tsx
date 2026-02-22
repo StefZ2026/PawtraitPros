@@ -7,11 +7,29 @@ import { useState } from "react";
 import { portraitStyles, stylePreviewImages } from "@/lib/portrait-styles";
 import { useAuth } from "@/hooks/use-auth";
 import { AdminFloatingButton } from "@/components/admin-button";
-import { getAllPackStyleIds, getStyleIdsForPackType } from "@shared/pack-config";
+import { getAllPackStyleIds } from "@shared/pack-config";
 import type { PackType } from "@shared/pack-config";
 
 const allPackIds = getAllPackStyleIds();
 const packStyles = portraitStyles.filter((s) => allPackIds.has(s.id));
+
+// Map each style's original category to a canonical pack type based on its theme
+const categoryToPackType: Record<string, PackType> = {
+  Classical: "artistic",
+  Artistic: "artistic",
+  Cozy: "artistic",
+  Seasonal: "seasonal",
+  "Sci-Fi": "fun",
+  Adventure: "fun",
+  Fun: "fun",
+  Humanizing: "fun",
+  Celebration: "fun",
+  Modern: "fun",
+};
+
+function getCanonicalPackType(style: { category: string }): PackType {
+  return categoryToPackType[style.category] ?? "fun";
+}
 
 const PACK_TABS: Array<{ key: PackType | null; label: string; icon: typeof Sparkles }> = [
   { key: null, label: "All Styles", icon: Palette },
@@ -19,14 +37,6 @@ const PACK_TABS: Array<{ key: PackType | null; label: string; icon: typeof Spark
   { key: "fun", label: "Fun", icon: Sparkles },
   { key: "artistic", label: "Artistic", icon: Paintbrush },
 ];
-
-function getPackTypesForStyle(styleId: number): PackType[] {
-  const types: PackType[] = [];
-  if (getStyleIdsForPackType("seasonal").has(styleId)) types.push("seasonal");
-  if (getStyleIdsForPackType("fun").has(styleId)) types.push("fun");
-  if (getStyleIdsForPackType("artistic").has(styleId)) types.push("artistic");
-  return types;
-}
 
 const packTypeColors: Record<PackType, string> = {
   seasonal: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
@@ -39,7 +49,7 @@ export default function StylesPage() {
   const { isAuthenticated } = useAuth();
 
   const filteredStyles = activePackType
-    ? packStyles.filter((s) => getStyleIdsForPackType(activePackType).has(s.id))
+    ? packStyles.filter((s) => getCanonicalPackType(s) === activePackType)
     : packStyles;
 
   return (
@@ -99,7 +109,7 @@ export default function StylesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filteredStyles.map((style) => {
             const previewImage = stylePreviewImages[style.name];
-            const packs = getPackTypesForStyle(style.id);
+            const packType = getCanonicalPackType(style);
 
             return (
               <Card
@@ -119,12 +129,10 @@ export default function StylesPage() {
                       <Palette className="h-16 w-16 text-primary/30" />
                     </div>
                   )}
-                  <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
-                    {packs.map((pt) => (
-                      <Badge key={pt} variant="secondary" className={`text-xs ${packTypeColors[pt]}`}>
-                        {pt.charAt(0).toUpperCase() + pt.slice(1)}
-                      </Badge>
-                    ))}
+                  <div className="absolute top-2 right-2">
+                    <Badge variant="secondary" className={`text-xs ${packTypeColors[packType]}`}>
+                      {packType.charAt(0).toUpperCase() + packType.slice(1)}
+                    </Badge>
                   </div>
                   <div className="absolute top-2 left-2">
                     <Badge variant="secondary" className="text-xs">
