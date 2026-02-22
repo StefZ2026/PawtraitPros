@@ -247,14 +247,10 @@ export default function CustomerOrder() {
                 Your order has been placed and will be shipped directly to you. You'll receive tracking info by email.
               </p>
               <div className="pt-4">
-                <Button variant="outline" className="gap-2" onClick={() => {
-                  // Download hi-res digital
-                  const link = document.createElement("a");
-                  link.href = currentImage;
-                  link.download = `${session.dogName}-portrait.png`;
-                  link.click();
-                }}>
-                  <Download className="h-4 w-4" /> Download Digital Portrait
+                <Button variant="outline" className="gap-2" asChild>
+                  <a href={`/api/portraits/${selectedPortraitId || session.portraitId}/download`} download>
+                    <Download className="h-4 w-4" /> Download Digital Portrait
+                  </a>
                 </Button>
               </div>
             </CardContent>
@@ -416,14 +412,11 @@ export default function CustomerOrder() {
                 />
               </div>
 
-              {/* Digital download — always free */}
-              <Button variant="outline" className="gap-2" onClick={() => {
-                const link = document.createElement("a");
-                link.href = currentImage;
-                link.download = `${session.dogName}-portrait.png`;
-                link.click();
-              }}>
-                <Download className="h-4 w-4" /> Download Free Digital Copy
+              {/* Digital download — always free, with business logo watermark */}
+              <Button variant="outline" className="gap-2" asChild>
+                <a href={`/api/portraits/${selectedPortraitId || session.portraitId}/download`} download>
+                  <Download className="h-4 w-4" /> Download Free Digital Copy
+                </a>
               </Button>
 
               {/* Alternate portraits */}

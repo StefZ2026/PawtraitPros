@@ -18,6 +18,7 @@ import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, ge
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "./printful";
 import { isTrialExpired, isWithinTrialWindow, getFreeTrial, revertToFreeTrial, handleCancellation, canStartFreeTrial, markFreeTrialUsed } from "./subscription";
 import { pool } from "./db";
+import sharp from "sharp";
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
@@ -2831,6 +2832,95 @@ export async function registerRoutes(
       res.send(imageBuffer);
     } catch (error) {
       console.error("Error serving portrait image:", error);
+      res.status(500).send("Error loading image");
+    }
+  });
+
+  // Digital download with business logo watermark in bottom-right corner
+  app.get("/api/portraits/:id/download", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      const portrait = await storage.getPortrait(id);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).send("Image not found");
+      }
+
+      const dataUri = portrait.generatedImageUrl;
+      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).send("Invalid image data");
+      }
+      const portraitBuffer = Buffer.from(matches[2], "base64");
+
+      // Get the dog to find the org
+      const dog = await storage.getDog(portrait.dogId);
+      if (!dog) {
+        // No dog found — serve without watermark
+        res.set({ "Content-Type": matches[1], "Content-Disposition": "attachment; filename=portrait.png" });
+        return res.send(portraitBuffer);
+      }
+
+      const org = await storage.getOrganization(dog.organizationId);
+      if (!org || !org.logoUrl) {
+        // No org or no logo — serve without watermark
+        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
+        return res.send(portraitBuffer);
+      }
+
+      // Parse the org logo
+      const logoMatches = org.logoUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!logoMatches) {
+        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
+        return res.send(portraitBuffer);
+      }
+      const logoBuffer = Buffer.from(logoMatches[2], "base64");
+
+      // Get portrait dimensions
+      const portraitMeta = await sharp(portraitBuffer).metadata();
+      const pw = portraitMeta.width || 1024;
+      const ph = portraitMeta.height || 1024;
+
+      // Size the logo: 8% of the shorter dimension, minimum 48px
+      const logoSize = Math.max(48, Math.round(Math.min(pw, ph) * 0.08));
+      const margin = Math.round(logoSize * 0.4);
+
+      // Resize logo to target size with slight transparency
+      const resizedLogo = await sharp(logoBuffer)
+        .resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .ensureAlpha()
+        .png()
+        .toBuffer();
+
+      // Add a subtle semi-transparent circle behind the logo for visibility
+      const circleSize = logoSize + 8;
+      const circleSvg = Buffer.from(
+        `<svg width="${circleSize}" height="${circleSize}"><circle cx="${circleSize/2}" cy="${circleSize/2}" r="${circleSize/2}" fill="rgba(255,255,255,0.6)"/></svg>`
+      );
+      const logoBadge = await sharp(circleSvg)
+        .composite([{ input: resizedLogo, gravity: "center" }])
+        .png()
+        .toBuffer();
+
+      // Composite logo onto portrait (bottom-right corner)
+      const result = await sharp(portraitBuffer)
+        .composite([{
+          input: logoBadge,
+          top: ph - circleSize - margin,
+          left: pw - circleSize - margin,
+        }])
+        .png()
+        .toBuffer();
+
+      const filename = `${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`;
+      res.set({
+        "Content-Type": "image/png",
+        "Content-Length": result.length.toString(),
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "public, max-age=3600",
+      });
+      res.send(result);
+    } catch (error) {
+      console.error("Error serving watermarked portrait:", error);
       res.status(500).send("Error loading image");
     }
   });
