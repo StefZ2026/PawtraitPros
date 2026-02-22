@@ -16,7 +16,7 @@ import { AdminFloatingButton } from "@/components/admin-button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Dog, Shield, ArrowLeft, Building2, Users, MapPin,
+  Dog, Cat, Shield, ArrowLeft, Building2, Users, MapPin,
   StickyNote, Pencil, X, Check, LogOut, PawPrint,
   Phone, Mail, Globe, CreditCard, ImageIcon, Upload,
   Crown, Heart, Plus, Bell, Smartphone, MessageSquare
@@ -678,11 +678,49 @@ export default function BusinessSettings() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-0.5">Species Handled</p>
-                    <p className="flex items-center gap-1.5" data-testid="text-species-handled">
-                      <PawPrint className="h-3.5 w-3.5 text-muted-foreground" />
-                      {org.speciesHandled === "both" ? "Dogs & Cats" : org.speciesHandled === "cats" ? "Cats Only" : "Dogs Only"}
-                    </p>
+                    <p className="text-sm font-medium text-muted-foreground mb-1">Species Handled</p>
+                    <div className="flex items-center gap-1.5" data-testid="text-species-handled">
+                      <button
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors ${
+                          org.speciesHandled === "dogs" || org.speciesHandled === "both"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground/40 hover:border-primary/40 hover:text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          const current = org.speciesHandled || "dogs";
+                          let next: string;
+                          if (current === "dogs") next = "both";
+                          else if (current === "both") next = "cats";
+                          else next = "dogs";
+                          updateMutation.mutate({ speciesHandled: next });
+                        }}
+                        disabled={updateMutation.isPending}
+                        data-testid="button-toggle-dogs"
+                      >
+                        <Dog className="h-4 w-4" />
+                        Dogs
+                      </button>
+                      <button
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-sm font-medium transition-colors ${
+                          org.speciesHandled === "cats" || org.speciesHandled === "both"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground/40 hover:border-primary/40 hover:text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          const current = org.speciesHandled || "dogs";
+                          let next: string;
+                          if (current === "cats") next = "both";
+                          else if (current === "both") next = "dogs";
+                          else next = "cats";
+                          updateMutation.mutate({ speciesHandled: next });
+                        }}
+                        disabled={updateMutation.isPending}
+                        data-testid="button-toggle-cats"
+                      >
+                        <Cat className="h-4 w-4" />
+                        Cats
+                      </button>
+                    </div>
                   </div>
                   {org.description && (
                     <div className="sm:col-span-2">
