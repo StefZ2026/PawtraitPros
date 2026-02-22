@@ -76,7 +76,7 @@ export const portraitStyles: StyleOption[] = [
     id: 6,
     name: "Steampunk Explorer",
     description: "Victorian era meets mechanical innovation",
-    category: "Sci-Fi",
+    category: "Artistic",
     species: "dog",
     promptTemplate: "A real {breed} dog wearing actual steampunk costume accessories - brass goggles on head, leather aviator cap, gear-decorated collar, photographed in Victorian industrial setting with copper pipes and gears backdrop, warm sepia lighting, real dog in real costume, not cartoon or illustration"
   },
@@ -233,6 +233,30 @@ export const portraitStyles: StyleOption[] = [
     promptTemplate: "A real {breed} dog wearing a small sombrero hat and colorful serape bandana, photographed in a festive Mexican cantina setting with papel picado decorations, surrounded by tacos and fresh ingredients on the table, warm fiesta lighting, real dog in real costume, professional pet photography, not cartoon or illustration"
   },
   {
+    id: 29,
+    name: "Pool Party",
+    description: "Splashy summer fun on a pool float",
+    category: "Fun",
+    species: "dog",
+    promptTemplate: "A fun portrait of a {breed} dog lounging on a colorful inflatable pool float in a sparkling blue swimming pool, wearing tiny sunglasses, bright summer day with pool toys and tropical drinks nearby, splashing water droplets catching the sunlight, happy carefree expression, vibrant summer pool party atmosphere"
+  },
+  {
+    id: 30,
+    name: "Campfire",
+    description: "Cozy campfire under the stars with roasted treats",
+    category: "Fun",
+    species: "dog",
+    promptTemplate: "A cozy portrait of a {breed} dog sitting by a warm campfire under a starry night sky, wearing a tiny camping bandana, roasting pet treats on a stick over the flames, marshmallows and camping supplies nearby, warm flickering firelight on fur, pine trees silhouetted against the stars, happy content expression, outdoor adventure camping atmosphere"
+  },
+  {
+    id: 31,
+    name: "Sleepover Party",
+    description: "Epic blanket fort sleepover with all the fixings",
+    category: "Fun",
+    species: "dog",
+    promptTemplate: "A fun portrait of a {breed} dog in the middle of an epic sleepover party inside a blanket fort made of colorful sheets and pillows, wearing cozy pajamas, surrounded by sleeping bags, a flashlight casting warm glow, popcorn bowl and stuffed animals scattered around, excited happy expression, playful nighttime sleepover atmosphere"
+  },
+  {
     id: 101,
     name: "Egyptian Royalty",
     description: "Ancient Egyptian deity with golden adornments",
@@ -360,6 +384,30 @@ export const portraitStyles: StyleOption[] = [
     species: "cat",
     promptTemplate: "A charming portrait of a {breed} cat sitting at a tiny tea party setting with miniature cups and saucers, wearing a small pearl collar, delicate floral tablecloth, soft afternoon light through a window, elegant and whimsical, very British and refined"
   },
+  {
+    id: 117,
+    name: "Pool Party",
+    description: "Regal poolside lounging on a flamingo float",
+    category: "Fun",
+    species: "cat",
+    promptTemplate: "A delightful portrait of a {breed} cat lounging like royalty on a pink inflatable flamingo float in a sparkling pool, wearing tiny sunglasses, bright summer day, crystal blue water with playful reflections, tropical poolside setting with palm leaves, relaxed and regal expression, fun summer vibes"
+  },
+  {
+    id: 118,
+    name: "Campfire",
+    description: "Magical campfire night toasting fish treats",
+    category: "Fun",
+    species: "cat",
+    promptTemplate: "A cozy portrait of a {breed} cat sitting by a warm campfire under a starry night sky, wearing a tiny plaid scarf, toasting fish-shaped treats on a stick over the flames, camping lantern and small tent nearby, warm flickering firelight reflecting in wide curious eyes, pine trees and stars in background, magical outdoor camping atmosphere"
+  },
+  {
+    id: 119,
+    name: "Sleepover Party",
+    description: "Cozy blanket fort party with fairy lights",
+    category: "Fun",
+    species: "cat",
+    promptTemplate: "A fun portrait of a {breed} cat peeking out from inside a cozy blanket fort made of soft sheets and fairy lights, wearing tiny pajamas, surrounded by fluffy pillows and sleeping bags, flashlight beam and popcorn bowl nearby, wide playful eyes, warm glow from string lights, magical sleepover party atmosphere"
+  },
 ];
 
 export const dogStyles = portraitStyles.filter(s => s.species === "dog");
@@ -420,4 +468,7 @@ export const stylePreviewImages: Record<string, string> = {
   "Tea Party Guest": "/images/styles/tea-party-guest.jpg",
   "Yoga Instructor": "/images/styles/yoga-instructor.jpg",
   "Taco Tuesday Chef": "/images/styles/taco-tuesday-chef.jpg",
+  "Pool Party": "/images/styles/pool-party.jpg",
+  "Campfire": "/images/styles/campfire.jpg",
+  "Sleepover Party": "/images/styles/sleepover-party.jpg",
 };

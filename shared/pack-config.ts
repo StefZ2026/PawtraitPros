@@ -11,7 +11,7 @@
  * - FUN = costumes, characters, adventure, sci-fi, modern — bold & playful
  * - ARTISTIC = classical painting, fine art, refined — elegant keepsakes
  *
- * Style IDs reference portrait-styles.ts (dog: 1-28, cat: 101-116)
+ * Style IDs reference portrait-styles.ts (dog: 1-31, cat: 101-119)
  */
 
 export type IndustryType = "groomer" | "boarding" | "daycare";
@@ -37,13 +37,13 @@ const DOG_PACKS: Record<PackType, Pack> = {
     type: "artistic",
     name: "Artistic",
     description: "Fine art & classical — elegant framed keepsakes",
-    styleIds: [1, 5, 26, 24, 2], // Renaissance Noble, Art Nouveau Beauty, Impressionist Garden, Vintage Classic, Victorian Gentleman
+    styleIds: [1, 5, 26, 24, 2, 6], // Renaissance Noble, Art Nouveau Beauty, Impressionist Garden, Vintage Classic, Victorian Gentleman, Steampunk Explorer
   },
   fun: {
     type: "fun",
     name: "Fun",
     description: "Costumes, adventures & bold characters",
-    styleIds: [14, 12, 9, 17, 27], // Superhero, Pirate Captain, Space Explorer, Beach Day, Taco Tuesday Chef
+    styleIds: [14, 12, 17, 29, 30, 31], // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party
   },
 };
 
@@ -66,7 +66,7 @@ const CAT_PACKS: Record<PackType, Pack> = {
     type: "fun",
     name: "Fun",
     description: "Playful adventures & quirky characters",
-    styleIds: [106, 105, 115, 116, 107], // Purrista Barista, Space Cadet, Box Inspector, Tea Party Guest, Midnight Prowler
+    styleIds: [106, 115, 116, 117, 118, 119], // Purrista Barista, Box Inspector, Tea Party Guest, Pool Party, Campfire, Sleepover Party
   },
 };
 
