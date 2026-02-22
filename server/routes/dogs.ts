@@ -6,7 +6,7 @@ import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
 import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt } from "./helpers";
-import { getCurrentPacks, type IndustryType } from "@shared/pack-config";
+import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
 
 export function registerDogRoutes(app: Express): void {
@@ -96,8 +96,7 @@ export function registerDogRoutes(app: Express): void {
       }
       const dog = dogResult.rows[0];
       const species = (dog.species || "dog") as "dog" | "cat";
-      const industry = (dog.industry_type || "groomer") as IndustryType;
-      const packs = getCurrentPacks(industry, species);
+      const packs = getPacks(species);
 
       // Determine which pack was used for the current portrait
       let targetPackType: string | null = null;
@@ -114,11 +113,11 @@ export function registerDogRoutes(app: Express): void {
         const portrait = portraitResult.rows[0];
         const portraitDate = new Date(portrait.created_at).toISOString().split("T")[0];
 
-        // Check daily_pack_selections for this org on the portrait's date
+        // Check daily_pack_selections for this org on the portrait's date + species
         const packSelResult = await pool.query(
           `SELECT pack_type FROM daily_pack_selections
-           WHERE organization_id = $1 AND date = $2`,
-          [dog.organization_id, portraitDate]
+           WHERE organization_id = $1 AND date = $2 AND species = $3`,
+          [dog.organization_id, portraitDate, species]
         );
 
         if (packSelResult.rows.length > 0) {
@@ -188,8 +187,7 @@ export function registerDogRoutes(app: Express): void {
 
       // Determine the correct pack for this pet and verify style is in it
       const species = (dog.species || "dog") as "dog" | "cat";
-      const industry = (dog.industry_type || "groomer") as IndustryType;
-      const packs = getCurrentPacks(industry, species);
+      const packs = getPacks(species);
 
       // Find the current portrait's pack (same logic as styles endpoint)
       let allowedStyleIds: number[] = [];
@@ -204,8 +202,8 @@ export function registerDogRoutes(app: Express): void {
         const portraitDate = new Date(portrait.created_at).toISOString().split("T")[0];
         const packSelResult = await pool.query(
           `SELECT pack_type FROM daily_pack_selections
-           WHERE organization_id = $1 AND date = $2`,
-          [dog.organization_id, portraitDate]
+           WHERE organization_id = $1 AND date = $2 AND species = $3`,
+          [dog.organization_id, portraitDate, species]
         );
         let targetPack;
         if (packSelResult.rows.length > 0) {

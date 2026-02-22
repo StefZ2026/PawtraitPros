@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { ArrowLeft, Sparkles, Paintbrush, Dog, Cat, Palette, Sun } from "lucide-react";
+import { ArrowLeft, Sparkles, Paintbrush, Dog, Cat, Palette, PartyPopper } from "lucide-react";
 import { useState } from "react";
 import { stylePreviewImages } from "@/lib/portrait-styles";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,35 +18,35 @@ interface ShowcaseStyle {
 
 // Curated 5 per pack — best images, mix of dog + cat
 const SHOWCASE_STYLES: ShowcaseStyle[] = [
-  // Seasonal
-  { name: "Holiday Spirit", description: "Festive seasonal celebration", species: "dog", pack: "seasonal" },
-  { name: "Autumn Leaves", description: "Fall season beauty", species: "dog", pack: "seasonal" },
-  { name: "Spring Flower Crown", description: "Whimsical garden beauty", species: "dog", pack: "seasonal" },
-  { name: "Halloween Pumpkin", description: "Whimsical spooky season costume", species: "dog", pack: "seasonal" },
-  { name: "Spring Blossoms", description: "Gentle beauty among cherry blossoms", species: "cat", pack: "seasonal" },
+  // Celebrate
+  { name: "Holiday Spirit", description: "Festive seasonal celebration", species: "dog", pack: "celebrate" },
+  { name: "Spring Flower Crown", description: "Whimsical garden beauty", species: "dog", pack: "celebrate" },
+  { name: "Halloween Pumpkin", description: "Whimsical spooky season costume", species: "dog", pack: "celebrate" },
+  { name: "Holiday Stocking", description: "Festive kitty in holiday cheer", species: "cat", pack: "celebrate" },
+  { name: "Sunbeam Napper", description: "Cozy cat basking in a warm sunbeam", species: "cat", pack: "celebrate" },
   // Fun
   { name: "Superhero", description: "Caped crusader ready to save the day", species: "dog", pack: "fun" },
   { name: "Pirate Captain", description: "Swashbuckling adventure on the high seas", species: "dog", pack: "fun" },
-  { name: "Birthday Party", description: "Celebratory party pup with festive hat", species: "dog", pack: "fun" },
   { name: "Space Explorer", description: "Futuristic astronaut among the stars", species: "dog", pack: "fun" },
   { name: "Purrista Barista", description: "Your favorite feline coffee artist", species: "cat", pack: "fun" },
+  { name: "Box Inspector", description: "Classic cat-in-a-box charm", species: "cat", pack: "fun" },
   // Artistic
   { name: "Renaissance Noble", description: "A dignified portrait in the style of Italian Renaissance masters", species: "dog", pack: "artistic" },
   { name: "Art Nouveau Beauty", description: "Elegant flowing lines and natural motifs", species: "dog", pack: "artistic" },
   { name: "Impressionist Garden", description: "Soft, light-filled garden scene", species: "dog", pack: "artistic" },
-  { name: "Victorian Gentleman", description: "Distinguished elegance of the Victorian era", species: "dog", pack: "artistic" },
   { name: "Egyptian Royalty", description: "Ancient Egyptian deity with golden adornments", species: "cat", pack: "artistic" },
+  { name: "Victorian Lady", description: "Prim and proper Victorian elegance", species: "cat", pack: "artistic" },
 ];
 
 const PACK_TABS: Array<{ key: PackType | null; label: string; icon: typeof Sparkles }> = [
   { key: null, label: "All Styles", icon: Palette },
-  { key: "seasonal", label: "Seasonal", icon: Sun },
+  { key: "celebrate", label: "Celebrate", icon: PartyPopper },
   { key: "fun", label: "Fun", icon: Sparkles },
   { key: "artistic", label: "Artistic", icon: Paintbrush },
 ];
 
 const packTypeColors: Record<PackType, string> = {
-  seasonal: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  celebrate: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
   fun: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300",
   artistic: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
 };
@@ -91,7 +91,7 @@ export default function StylesPage() {
             Portrait Style Packs
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Three curated packs — Seasonal, Fun, and Artistic — each with styles tailored to your business
+            Three curated packs — Celebrate, Fun, and Artistic — each with styles tailored for dogs and cats
           </p>
         </div>
 
@@ -139,6 +139,13 @@ export default function StylesPage() {
                     <Badge variant="secondary" className={`text-xs ${packTypeColors[style.pack]}`}>
                       {style.pack.charAt(0).toUpperCase() + style.pack.slice(1)}
                     </Badge>
+                  </div>
+                  <div className="absolute top-2 left-2">
+                    {style.species === "dog" ? (
+                      <Dog className="h-4 w-4 text-white drop-shadow-md" />
+                    ) : (
+                      <Cat className="h-4 w-4 text-white drop-shadow-md" />
+                    )}
                   </div>
                 </div>
                 <CardContent className="p-4">

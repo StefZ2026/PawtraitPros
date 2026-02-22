@@ -557,27 +557,33 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
 
   const industryType = (organization as any).industryType || "groomer";
 
+  // Species-aware pack selection
+  const speciesHandled = organization.speciesHandled || "dogs";
+  const handlesBoth = speciesHandled === "both";
+  const defaultPackSpecies = speciesHandled === "cats" ? "cat" : "dog";
+  const [packSpecies, setPackSpecies] = useState<"dog" | "cat">(defaultPackSpecies);
+
   // Today's date
   const today = new Date().toISOString().split("T")[0];
   const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
-  // Daily pack selection
+  // Daily pack selection (per species)
   const { data: dailyPack } = useQuery<any>({
-    queryKey: ["/api/daily-pack", today],
+    queryKey: ["/api/daily-pack", today, packSpecies],
     queryFn: async () => {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/daily-pack?date=${today}`, { headers });
+      const res = await fetch(`/api/daily-pack?date=${today}&species=${packSpecies}`, { headers });
       if (!res.ok) return null;
       return res.json();
     },
     enabled: hasPlan,
   });
 
-  // Packs for this org's industry
+  // Packs for this species
   const { data: packs = [] } = useQuery<any[]>({
-    queryKey: ["/api/packs", industryType],
+    queryKey: ["/api/packs", packSpecies],
     queryFn: async () => {
-      const res = await fetch(`/api/packs?industryType=${industryType}&species=${newPetSpecies}`);
+      const res = await fetch(`/api/packs?species=${packSpecies}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -599,14 +605,14 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const readyForGeneration = todaysDogs.filter(d => d.originalPhotoUrl && !d.portrait?.generatedImageUrl);
   const generatedToday = todaysDogs.filter(d => d.portrait?.generatedImageUrl);
 
-  // Set daily pack
+  // Set daily pack (per species)
   const setPackMutation = useMutation({
     mutationFn: async (packType: string) => {
-      return apiRequest("POST", "/api/daily-pack", { packType, date: today });
+      return apiRequest("POST", "/api/daily-pack", { packType, species: packSpecies, date: today });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
-      toast({ title: "Pack selected!", description: "Today's portrait pack has been set." });
+      toast({ title: "Pack selected!", description: `Today's ${packSpecies === "cat" ? "cat" : "dog"} portrait pack has been set.` });
     },
   });
 
@@ -793,10 +799,35 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               <Calendar className="h-5 w-5 text-primary" />
               <CardTitle className="text-lg">{todayLabel}</CardTitle>
             </div>
-            {selectedPackType && (
-              <Badge className="capitalize">{selectedPackType} Pack</Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {selectedPackType && (
+                <Badge className="capitalize">{selectedPackType} Pack</Badge>
+              )}
+            </div>
           </div>
+          {/* Species toggle for orgs that handle both */}
+          {handlesBoth && (
+            <div className="flex gap-1 mt-2">
+              <Button
+                variant={packSpecies === "dog" ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => { setPackSpecies("dog"); setPreviewPackType(null); }}
+              >
+                <Dog className="h-4 w-4" />
+                Dogs
+              </Button>
+              <Button
+                variant={packSpecies === "cat" ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => { setPackSpecies("cat"); setPreviewPackType(null); }}
+              >
+                <Cat className="h-4 w-4" />
+                Cats
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {!selectedPackType ? (

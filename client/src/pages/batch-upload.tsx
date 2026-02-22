@@ -34,7 +34,7 @@ export default function BatchUpload() {
   const [batchId, setBatchId] = useState<number | null>(null);
   const [photos, setPhotos] = useState<BatchPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [selectedPack, setSelectedPack] = useState<string>("seasonal");
+  const [selectedPack, setSelectedPack] = useState<string>("celebrate");
 
   // Fetch org's dogs for assignment
   const { data: myDogs } = useQuery<DogType[]>({
@@ -270,7 +270,7 @@ export default function BatchUpload() {
             <div className="pt-4 border-t space-y-3">
               <label className="text-sm font-medium block">Portrait Pack</label>
               <div className="flex gap-2">
-                {["seasonal", "fun", "artistic"].map((pack) => (
+                {["celebrate", "fun", "artistic"].map((pack) => (
                   <button
                     key={pack}
                     className={`px-4 py-2 rounded-md border text-sm capitalize ${

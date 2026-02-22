@@ -152,7 +152,7 @@ export const customerSessions = pgTable("customer_sessions", {
   organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   dogId: integer("dog_id").notNull().references(() => dogs.id),
   portraitId: integer("portrait_id").notNull().references(() => portraits.id),
-  packType: text("pack_type"), // "seasonal" | "fun" | "artistic"
+  packType: text("pack_type"), // "celebrate" | "fun" | "artistic"
   customerPhone: text("customer_phone"),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -183,7 +183,8 @@ export const dailyPackSelections = pgTable("daily_pack_selections", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   date: text("date").notNull(), // YYYY-MM-DD format (text to avoid timezone issues)
-  packType: text("pack_type").notNull(), // "seasonal" | "fun" | "artistic"
+  species: text("species").default("dog").notNull(), // "dog" | "cat"
+  packType: text("pack_type").notNull(), // "celebrate" | "fun" | "artistic"
   selectedBy: varchar("selected_by"), // staff userId who selected
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

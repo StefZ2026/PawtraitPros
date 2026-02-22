@@ -147,23 +147,30 @@ export async function seedDatabase() {
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_phone TEXT');
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS pet_code VARCHAR(10)');
 
-        // Daily pack selections table
+        // Daily pack selections table (species-separated: one pack per org per date per species)
         await pool.query(`CREATE TABLE IF NOT EXISTS daily_pack_selections (
           id SERIAL PRIMARY KEY,
           organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
           date TEXT NOT NULL,
+          species TEXT NOT NULL DEFAULT 'dog',
           pack_type TEXT NOT NULL,
           selected_by VARCHAR,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          UNIQUE(organization_id, date)
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )`);
-        // Ensure unique constraint exists (if table was created without it)
+        // Add species column if table already exists without it
+        await pool.query(`ALTER TABLE daily_pack_selections ADD COLUMN IF NOT EXISTS species TEXT NOT NULL DEFAULT 'dog'`);
+        // Drop old unique constraint (org_id, date) and add new one (org_id, date, species)
         await pool.query(`
           DO $$ BEGIN
-            IF NOT EXISTS (
+            IF EXISTS (
               SELECT 1 FROM pg_constraint WHERE conname = 'daily_pack_selections_organization_id_date_key'
             ) THEN
-              ALTER TABLE daily_pack_selections ADD CONSTRAINT daily_pack_selections_organization_id_date_key UNIQUE (organization_id, date);
+              ALTER TABLE daily_pack_selections DROP CONSTRAINT daily_pack_selections_organization_id_date_key;
+            END IF;
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'daily_pack_selections_org_date_species_key'
+            ) THEN
+              ALTER TABLE daily_pack_selections ADD CONSTRAINT daily_pack_selections_org_date_species_key UNIQUE (organization_id, date, species);
             END IF;
           END $$;
         `);

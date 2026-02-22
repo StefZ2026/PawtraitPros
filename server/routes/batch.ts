@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { generateImage } from "../gemini";
-import { getCurrentPacks, type IndustryType } from "@shared/pack-config";
+import { getPacks } from "@shared/pack-config";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
 import { sendEmail, isEmailConfigured, buildDepartureEmail } from "./email";
 import { ADMIN_EMAIL, sanitizeForPrompt, generatePetCode } from "./helpers";
@@ -20,7 +20,7 @@ export function registerBatchRoutes(app: Express): void {
       if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
         return res.status(400).json({ error: "dogIds array is required" });
       }
-      if (!packType || !["seasonal", "fun", "artistic"].includes(packType)) {
+      if (!packType || !["celebrate", "fun", "artistic"].includes(packType)) {
         return res.status(400).json({ error: "Invalid packType" });
       }
 
@@ -54,7 +54,7 @@ export function registerBatchRoutes(app: Express): void {
 
           // Get pack styles for this pet's species
           const petSpecies = (dog.species || "dog") as "dog" | "cat";
-          const packs = getCurrentPacks(industryType as IndustryType, petSpecies);
+          const packs = getPacks(petSpecies);
           const pack = packs.find(p => p.type === packType);
           if (!pack) {
             results.push({ dogId, success: false, error: "Pack not found for species" });
@@ -369,7 +369,7 @@ export function registerBatchRoutes(app: Express): void {
   app.post("/api/batch/:id/generate", isAuthenticated, async (req: any, res: Response) => {
     try {
       const batchId = parseInt(req.params.id);
-      const { packType } = req.body; // "seasonal" | "fun" | "artistic"
+      const { packType } = req.body; // "celebrate" | "fun" | "artistic"
 
       if (isNaN(batchId)) {
         return res.status(400).json({ error: "Invalid batch ID" });
@@ -410,7 +410,7 @@ export function registerBatchRoutes(app: Express): void {
         batchId,
         status: "generating",
         assignedPhotos: photosResult.rows.length,
-        packType: packType || "seasonal",
+        packType: packType || "celebrate",
         message: `Generating portraits for ${photosResult.rows.length} photos. Check batch status for progress.`,
       });
     } catch (error: any) {
