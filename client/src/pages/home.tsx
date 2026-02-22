@@ -2,8 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
 import {
-  Heart, Palette, Sparkles, Dog, Cat, Building2, LogOut,
-  LayoutDashboard, Scissors, Sun, Camera, Send, ShoppingBag, ArrowRight, Megaphone
+  Heart, Sparkles, Dog, Cat, Building2, LogOut,
+  LayoutDashboard, Scissors, Sun, Camera, ShoppingBag, ArrowRight
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -148,7 +148,7 @@ export default function Home() {
               Under a minute per pet. Repeat daily.
             </p>
           </div>
-          <div className="grid md:grid-cols-3 lg:grid-cols-5 gap-5 max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
             {[
               {
                 icon: Camera,
@@ -161,14 +161,9 @@ export default function Home() {
                 description: "One tap — AI creates stunning portraits for every pet.",
               },
               {
-                icon: Send,
-                title: "Send to Clients",
-                description: "Pet parents get their portrait via text, email, or both.",
-              },
-              {
-                icon: Megaphone,
-                title: "Market Your Business",
-                description: "Share portraits on social media to attract new clients and keep existing ones coming back.",
+                icon: Heart,
+                title: "Share the Love",
+                description: "Text or email portraits to pet parents, and post to social media to attract new clients.",
               },
               {
                 icon: ShoppingBag,
