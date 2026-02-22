@@ -23,6 +23,7 @@ import {
   ChevronDown, ChevronUp, Zap
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
+import { stylePreviewImages } from "@/lib/portrait-styles";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { Organization, Dog as DogType } from "@shared/schema";
@@ -585,6 +586,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
 
   const selectedPackType = dailyPack?.pack_type || null;
   const selectedPack = packs.find((p: any) => p.type === selectedPackType);
+  const [previewPackType, setPreviewPackType] = useState<string | null>(null);
 
   // Filter dogs to today's clients
   const todaysDogs = useMemo(() => {
@@ -798,22 +800,62 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         </CardHeader>
         <CardContent>
           {!selectedPackType ? (
-            <div className="text-center py-4">
-              <Palette className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
-              <p className="font-medium mb-4">Choose today's portrait pack</p>
-              <div className="flex flex-wrap justify-center gap-3">
-                {packs.map((pack: any) => (
-                  <Button
-                    key={pack.type}
-                    variant="outline"
-                    className="gap-2 h-auto py-3 px-5 flex-col"
-                    onClick={() => setPackMutation.mutate(pack.type)}
-                    disabled={setPackMutation.isPending}
-                  >
-                    <span className="font-semibold capitalize">{pack.name}</span>
-                    <span className="text-xs text-muted-foreground font-normal">{pack.description}</span>
-                  </Button>
-                ))}
+            <div className="py-4">
+              <div className="text-center mb-4">
+                <Palette className="h-10 w-10 mx-auto mb-3 text-muted-foreground/50" />
+                <p className="font-medium">Choose today's portrait pack</p>
+              </div>
+              <div className="grid md:grid-cols-3 gap-3">
+                {packs.map((pack: any) => {
+                  const isPreview = previewPackType === pack.type;
+                  return (
+                    <div
+                      key={pack.type}
+                      className={`rounded-lg border-2 transition-colors cursor-pointer ${isPreview ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                      onClick={() => setPreviewPackType(isPreview ? null : pack.type)}
+                    >
+                      <div className="p-4 text-center">
+                        <span className="font-semibold capitalize text-base">{pack.name}</span>
+                        <p className="text-xs text-muted-foreground mt-1">{pack.description}</p>
+                      </div>
+                      {isPreview && pack.styles && (
+                        <div className="px-3 pb-3">
+                          <div className="grid grid-cols-3 gap-1.5 mb-3">
+                            {pack.styles.slice(0, 6).map((style: any) => {
+                              const previewImg = stylePreviewImages[style.name];
+                              return (
+                                <div key={style.id} className="text-center">
+                                  <div className="aspect-square rounded bg-muted overflow-hidden">
+                                    {previewImg ? (
+                                      <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <Palette className="h-4 w-4 text-muted-foreground/30" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <Button
+                            className="w-full gap-2"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPackMutation.mutate(pack.type);
+                            }}
+                            disabled={setPackMutation.isPending}
+                          >
+                            <Check className="h-4 w-4" />
+                            Use This Pack
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -829,20 +871,23 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               </div>
               {selectedPack?.styles && (
                 <div className="flex gap-2 overflow-x-auto pb-2">
-                  {selectedPack.styles.map((style: any) => (
-                    <div key={style.id} className="shrink-0 w-20 text-center">
-                      <div className="w-20 h-20 rounded-lg bg-muted border overflow-hidden">
-                        {style.previewImageUrl ? (
-                          <img src={style.previewImageUrl} alt={style.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Palette className="h-6 w-6 text-muted-foreground/30" />
-                          </div>
-                        )}
+                  {selectedPack.styles.map((style: any) => {
+                    const previewImg = stylePreviewImages[style.name];
+                    return (
+                      <div key={style.id} className="shrink-0 w-20 text-center">
+                        <div className="w-20 h-20 rounded-lg bg-muted border overflow-hidden">
+                          {previewImg ? (
+                            <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Palette className="h-6 w-6 text-muted-foreground/30" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1 truncate">{style.name}</p>
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-1 truncate">{style.name}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
