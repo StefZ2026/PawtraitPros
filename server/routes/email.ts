@@ -20,7 +20,7 @@ export async function sendEmail(
 
   try {
     const payload: any = {
-      from: "Pawtrait Pros <noreply@pawtraitpros.com>",
+      from: process.env.RESEND_FROM_EMAIL || "Pawtrait Pros <onboarding@resend.dev>",
       to: [to],
       subject,
       html,
