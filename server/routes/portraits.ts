@@ -133,6 +133,36 @@ export function registerPortraitRoutes(app: Express): void {
     }
   });
 
+  // Public org logo image (for emails and external use)
+  app.get("/api/organizations/:id/logo", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      const org = await storage.getOrganization(id);
+      if (!org || !org.logoUrl) {
+        return res.status(404).send("Logo not found");
+      }
+      const dataUri = org.logoUrl;
+      if (!dataUri.startsWith('data:')) {
+        return res.redirect(dataUri);
+      }
+      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).send("Invalid logo data");
+      }
+      const contentType = matches[1];
+      const imageBuffer = Buffer.from(matches[2], 'base64');
+      res.set({
+        'Content-Type': contentType,
+        'Content-Length': imageBuffer.length.toString(),
+        'Cache-Control': 'public, max-age=86400',
+      });
+      res.send(imageBuffer);
+    } catch (error) {
+      console.error("Error serving org logo:", error);
+      res.status(500).send("Error loading logo");
+    }
+  });
+
   app.get("/api/business/:slug/og-image", async (req: Request, res: Response) => {
     try {
       const slug = req.params.slug as string;

@@ -63,12 +63,25 @@ export function buildDepartureEmail(
   orgName: string,
   orgLogoUrl: string | null,
   dogName: string,
-  pawfileUrl: string
+  pawfileUrl: string,
+  portraitImageUrl?: string,
+  orgId?: number
 ): { subject: string; html: string } {
   const subject = `${dogName}'s portrait from ${orgName} is ready!`;
 
-  const logoHtml = orgLogoUrl
-    ? `<img src="${orgLogoUrl}" alt="${orgName}" style="max-height:60px;margin-bottom:16px;" /><br/>`
+  const appUrl = process.env.APP_URL || "https://pawtrait-pros.onrender.com";
+
+  // Use public URL endpoint for logo (base64 data URIs don't render in email clients)
+  const logoSrc = orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
+  const logoHtml = logoSrc
+    ? `<img src="${logoSrc}" alt="${orgName}" style="max-height:60px;margin-bottom:16px;" /><br/>`
+    : "";
+
+  // Portrait image (served via public endpoint)
+  const portraitHtml = portraitImageUrl
+    ? `<div style="text-align:center;margin:24px 0;">
+        <img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:400px;width:100%;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+      </div>`
     : "";
 
   const html = `
@@ -80,8 +93,9 @@ export function buildDepartureEmail(
       <p style="font-size:16px;color:#333;line-height:1.6;">
         Hi there! We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you.
       </p>
+      ${portraitHtml}
       <p style="font-size:16px;color:#333;line-height:1.6;">
-        View it, grab a free digital download, or order a framed print, mug, or canvas:
+        If you love it, you can order a beautifully framed piece of artwork, a mug, tote bag, or other keepsake featuring ${dogName}:
       </p>
       <div style="text-align:center;margin:32px 0;">
         <a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">

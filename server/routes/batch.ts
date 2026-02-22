@@ -165,17 +165,23 @@ export function registerBatchRoutes(app: Express): void {
             await storage.updateDog(dog.id, { petCode } as any);
           }
 
-          const pawfileUrl = `https://pawtraitpros.com/pawfile/code/${petCode}`;
+          const appUrl = process.env.APP_URL || "https://pawtrait-pros.onrender.com";
+          const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
           const notifMode = (org as any).notificationMode || "both";
           const phone = (dog as any).ownerPhone;
           const email = (dog as any).ownerEmail;
           const methods: string[] = [];
           let sent = false;
 
+          // Get the latest portrait for this dog (for email image)
+          const portraits = await storage.getPortraitsByDog(dog.id);
+          const latestPortrait = portraits.length > 0 ? portraits[portraits.length - 1] : null;
+          const portraitImageUrl = latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : undefined;
+
           // SMS delivery (if preference includes SMS and phone exists)
           if ((notifMode === "sms" || notifMode === "both") && phone && isSmsConfigured()) {
             try {
-              const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and grab a free digital download — or order a print, mug, or canvas: ${pawfileUrl}`;
+              const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
               const smsResult = await sendSms(phone, smsBody);
               if (smsResult.success) {
                 methods.push("sms");
@@ -191,7 +197,7 @@ export function registerBatchRoutes(app: Express): void {
           // Email delivery (if preference includes email and email exists)
           if ((notifMode === "email" || notifMode === "both") && email && isEmailConfigured()) {
             try {
-              const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl);
+              const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl, portraitImageUrl, org.id);
               const emailResult = await sendEmail(email, subject, html, undefined, org.name);
               if (emailResult.success) {
                 methods.push("email");
