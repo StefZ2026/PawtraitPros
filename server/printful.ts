@@ -8,6 +8,7 @@
  */
 
 const PRINTFUL_BASE = "https://api.printful.com";
+const PRINTFUL_STORE_ID = "17752122";
 
 function getApiKey(): string {
   const key = process.env.PRINTFUL_API_KEY;
@@ -22,6 +23,7 @@ async function printfulFetch(path: string, options: RequestInit = {}): Promise<a
     headers: {
       "Authorization": `Bearer ${getApiKey()}`,
       "Content-Type": "application/json",
+      "X-PF-Store-Id": PRINTFUL_STORE_ID,
       ...options.headers,
     },
   });
