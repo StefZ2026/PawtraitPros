@@ -14,7 +14,8 @@ import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
-  AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft
+  AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
+  Scissors, Sun
 } from "lucide-react";
 import type { Organization } from "@shared/schema";
 
@@ -555,6 +556,7 @@ export default function Admin() {
                   <thead>
                     <tr className="border-b text-left text-sm text-muted-foreground">
                       <th className="pb-3 font-medium">Business</th>
+                      <th className="pb-3 font-medium">Edition</th>
                       <th className="pb-3 font-medium text-center">
                         <div className="flex items-center justify-center gap-0.5">
                           <Dog className="h-4 w-4 inline-block" /><Cat className="h-4 w-4 inline-block" />
@@ -580,6 +582,24 @@ export default function Admin() {
                             <p className="font-medium text-primary" data-testid={`text-business-name-${org.id}`}>{org.name}</p>
                             <p className="text-sm text-muted-foreground">{org.contactEmail || "—"}</p>
                           </Link>
+                        </td>
+                        <td className="py-4">
+                          {org.industryType === "groomer" && (
+                            <span className="inline-flex items-center gap-1.5 text-sm text-pink-600 dark:text-pink-400">
+                              <Scissors className="h-3.5 w-3.5" /> Groomer
+                            </span>
+                          )}
+                          {org.industryType === "boarding" && (
+                            <span className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400">
+                              <Building2 className="h-3.5 w-3.5" /> Boarding
+                            </span>
+                          )}
+                          {org.industryType === "daycare" && (
+                            <span className="inline-flex items-center gap-1.5 text-sm text-amber-600 dark:text-amber-400">
+                              <Sun className="h-3.5 w-3.5" /> Daycare
+                            </span>
+                          )}
+                          {!org.industryType && <span className="text-sm text-muted-foreground">—</span>}
                         </td>
                         <td className="py-4 text-center" data-testid={`text-species-${org.id}`}>
                           <div className="flex items-center justify-center gap-0.5">
