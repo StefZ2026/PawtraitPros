@@ -48,18 +48,31 @@ export function registerPackRoutes(app: Express): void {
   // --- DAILY PACK SELECTION ---
 
   // Get today's pack selection for the org (per species)
+  // Supports ?orgId= for admin/edit context, falls back to owner lookup
   app.get("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
-      const org = await storage.getOrganizationByOwner(userId);
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const userEmail = req.user!.claims.email as string;
+      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+      const orgIdParam = req.query.orgId as string | undefined;
+
+      let orgId: number | null = null;
+
+      if (orgIdParam) {
+        orgId = parseInt(orgIdParam);
+      } else {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (org) orgId = org.id;
+      }
+
+      if (!orgId) return res.json(null);
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
       const species = (req.query.species as string) || "dog";
 
       const result = await pool.query(
         "SELECT * FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3",
-        [org.id, date, species]
+        [orgId, date, species]
       );
       if (result.rows.length === 0) {
         return res.json(null);

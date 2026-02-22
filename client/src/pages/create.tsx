@@ -68,37 +68,6 @@ export default function Create() {
     enabled: !!orgParam,
   });
 
-  // Fetch today's daily pack to constrain style selection
-  const today = new Date().toISOString().split("T")[0];
-  const dailyPackSpecies = speciesParam || "dog";
-  const { data: dailyPack } = useQuery<{ pack_type: string; styleIds?: number[] }>({
-    queryKey: ["/api/daily-pack", today, dailyPackSpecies],
-    queryFn: async () => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/daily-pack?date=${today}&species=${dailyPackSpecies}`, { headers });
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: isAuthenticated,
-  });
-
-  // Fetch pack details to get style IDs
-  const { data: packs = [] } = useQuery<(Pack & { styles?: any[] })[]>({
-    queryKey: ["/api/packs", dailyPackSpecies],
-    queryFn: async () => {
-      const res = await fetch(`/api/packs?species=${dailyPackSpecies}`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: isAuthenticated,
-  });
-
-  // Get style IDs from today's selected pack
-  const selectedDailyPack = dailyPack?.pack_type
-    ? packs.find((p: any) => p.type === dailyPack.pack_type)
-    : null;
-  const packStyleIds = selectedDailyPack?.styleIds || undefined;
-
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<StyleOption | null>(null);
   const [petName, setPetName] = useState("");
@@ -223,6 +192,39 @@ export default function Create() {
 
   const effectiveSpecies = species || "dog";
   const speciesLabel = effectiveSpecies === "cat" ? "cat" : "dog";
+
+  // Fetch today's daily pack to constrain style selection
+  const today = new Date().toISOString().split("T")[0];
+  const packOrgId = targetOrg?.id || existingDog?.organizationId || myOrg?.id;
+  const { data: dailyPack } = useQuery<{ pack_type: string }>({
+    queryKey: ["/api/daily-pack", today, effectiveSpecies, packOrgId],
+    queryFn: async () => {
+      const headers = await getAuthHeaders();
+      const orgQuery = packOrgId ? `&orgId=${packOrgId}` : "";
+      const res = await fetch(`/api/daily-pack?date=${today}&species=${effectiveSpecies}${orgQuery}`, { headers });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Fetch pack details to get style IDs
+  const { data: packs = [] } = useQuery<(Pack & { styles?: any[] })[]>({
+    queryKey: ["/api/packs", effectiveSpecies],
+    queryFn: async () => {
+      const res = await fetch(`/api/packs?species=${effectiveSpecies}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isAuthenticated,
+  });
+
+  // Get style IDs from today's selected pack
+  const selectedDailyPack = dailyPack?.pack_type
+    ? packs.find((p: any) => p.type === dailyPack.pack_type)
+    : null;
+  const packStyleIds = selectedDailyPack?.styleIds || undefined;
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const sanitize = (s: string) => s.replace(/[^\w\s\-'.,:;!?()]/g, '').substring(0, 200).trim();
