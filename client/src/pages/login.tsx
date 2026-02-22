@@ -25,6 +25,7 @@ export default function Login() {
   const [lastName, setLastName] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // Store edition param for onboarding auto-selection
   useEffect(() => {
@@ -76,6 +77,7 @@ export default function Login() {
           password: signupPassword,
           firstName,
           lastName,
+          acceptedTerms,
         }),
       });
       const data = await res.json();
@@ -227,7 +229,21 @@ export default function Login() {
                       </Button>
                     </div>
                   </div>
-                  <Button type="submit" className="w-full" disabled={loading}>
+                  <label className="flex items-start gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={acceptedTerms}
+                      onChange={(e) => setAcceptedTerms(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-input accent-primary"
+                    />
+                    <span className="text-muted-foreground">
+                      I agree to the{" "}
+                      <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline">Terms of Service</a>
+                      {" "}and{" "}
+                      <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">Privacy Policy</a>
+                    </span>
+                  </label>
+                  <Button type="submit" className="w-full" disabled={loading || !acceptedTerms}>
                     {loading ? "Creating account..." : "Create Account"}
                   </Button>
                 </form>

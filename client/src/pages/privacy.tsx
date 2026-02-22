@@ -106,7 +106,7 @@ export default function Privacy() {
               <li><strong>Opt-in:</strong> SMS messages are only sent when you explicitly enter a phone number and check the consent box in the "Send via Text" dialog. No automated or marketing messages are sent.</li>
               <li><strong>Message content:</strong> Messages contain a link to a pet portrait on Pawtrait Pros and a brief description. Standard message and data rates may apply.</li>
               <li><strong>Opt-out:</strong> Recipients can reply STOP to any message to opt out of future texts from this number.</li>
-              <li><strong>Phone numbers:</strong> We do not store recipient phone numbers after the message is sent. Phone numbers are transmitted to our SMS provider (Telnyx) solely for message delivery.</li>
+              <li><strong>Phone numbers:</strong> We do not store recipient phone numbers after the message is sent. Phone numbers are transmitted to our SMS provider (Twilio) solely for message delivery.</li>
               <li><strong>Frequency:</strong> Messages are sent only on demand — one message per share action initiated by the user.</li>
               <li><strong>Help:</strong> Reply HELP to any message for support, or contact us at stefanie@pawtraitpros.com.</li>
             </ul>
@@ -118,7 +118,7 @@ export default function Privacy() {
               We do not sell, trade, or rent your personal information to third parties. We may share information with:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Service providers:</strong> Supabase (authentication and database), Stripe (payments), Google Gemini (AI portrait generation), Meta/Instagram (social posting), Telnyx (SMS), and Render (hosting) — each acting as data processors bound by their own privacy policies and data processing agreements</li>
+              <li><strong>Service providers:</strong> Supabase (authentication and database), Stripe (payments), Google Gemini (AI portrait generation), Meta/Instagram (social posting), Twilio (SMS), and Render (hosting) — each acting as data processors bound by their own privacy policies and data processing agreements</li>
               <li><strong>Public showcase pages:</strong> Organization name, description, location, logo, and pet profiles (including portraits) that you choose to make public are visible to anyone visiting your business showcase page</li>
               <li><strong>Social media platforms:</strong> When you use Instagram posting or other social sharing features, the content you choose to share is transmitted to those platforms</li>
               <li><strong>Legal requirements:</strong> We may disclose information if required by law, court order, or in response to valid legal process</li>
@@ -219,7 +219,9 @@ export default function Privacy() {
               If you have questions about this Privacy Policy or wish to exercise your data protection rights, please contact us at:
             </p>
             <p className="text-muted-foreground leading-relaxed mt-2">
-              Pawtrait Pros<br />
+              Pawtrait Pros LLC<br />
+              119 Colemans Bluff Drive<br />
+              Woodstock, GA 30188<br />
               Email:{" "}
               <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">
                 support@pawtraitpros.com

@@ -66,8 +66,7 @@ export function useAuth() {
 
   const isLoading = sessionLoading || userLoading;
   const isAuthenticated = !!user && !!session;
-  const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-  const isAdmin = isAuthenticated && user?.email === adminEmail;
+  const isAdmin = isAuthenticated && !!(user as any)?.isAdmin;
 
   return {
     user,

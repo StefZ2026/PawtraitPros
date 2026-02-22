@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Express, RequestHandler } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authStorage } from './auth-storage';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
@@ -33,8 +34,6 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    // Shape req.user to match existing code pattern:
-    // routes.ts uses req.user.claims.sub (35+ times) and req.user.claims.email (20+ times)
     req.user = {
       claims: {
         sub: user.id,
@@ -67,24 +66,37 @@ export function registerAuthRoutes(app: Express): void {
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
       const user = await authStorage.getUser(userId);
-      res.json(user);
+      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+      res.json({ ...user, isAdmin });
     } catch (error) {
       console.error('Error fetching user:', error);
       res.status(500).json({ message: 'Failed to fetch user' });
     }
   });
 
+  const signupRateLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    message: { error: 'Too many signup attempts. Please wait a minute.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
   // Server-side signup using admin API (bypasses email rate limits)
-  app.post('/api/auth/signup', async (req, res) => {
+  app.post('/api/auth/signup', signupRateLimiter, async (req, res) => {
     try {
-      const { email, password, firstName, lastName } = req.body;
+      const { email, password, firstName, lastName, acceptedTerms } = req.body;
 
       if (!email || !password) {
         return res.status(400).json({ error: 'Email and password are required' });
       }
       if (password.length < 6) {
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
+      if (!acceptedTerms) {
+        return res.status(400).json({ error: 'You must accept the Terms of Service and Privacy Policy' });
       }
 
       const { data, error } = await supabase.auth.admin.createUser({
@@ -100,6 +112,17 @@ export function registerAuthRoutes(app: Express): void {
       if (error) {
         console.error('Signup error:', error.message);
         return res.status(400).json({ error: error.message });
+      }
+
+      // Record consent timestamp
+      try {
+        const { pool } = await import('./db');
+        await pool.query(
+          'UPDATE users SET terms_accepted_at = NOW(), privacy_accepted_at = NOW() WHERE id = $1',
+          [data.user.id]
+        );
+      } catch (consentErr) {
+        console.error('Failed to record consent:', consentErr);
       }
 
       res.json({ user: { id: data.user.id, email: data.user.email } });

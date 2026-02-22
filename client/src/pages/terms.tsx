@@ -149,7 +149,7 @@ export default function Terms() {
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">15. Governing Law</h2>
             <p className="text-muted-foreground leading-relaxed">
-              These Terms shall be governed by and construed in accordance with the laws of the United States, without regard to conflict of law provisions.
+              These Terms shall be governed by and construed in accordance with the laws of the State of Georgia, United States, without regard to conflict of law provisions. Any disputes arising under these Terms shall be resolved in the state or federal courts located in Cherokee County, Georgia.
             </p>
           </section>
 

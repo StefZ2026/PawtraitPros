@@ -1071,7 +1071,7 @@ export async function registerRoutes(
   // --- Merch Order Endpoints ---
 
   // Estimate shipping costs
-  app.post("/api/merch/estimate", async (req: Request, res: Response) => {
+  app.post("/api/merch/estimate", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { items, address } = req.body;
 
@@ -1106,7 +1106,7 @@ export async function registerRoutes(
   });
 
   // Create a merch order
-  app.post("/api/merch/order", async (req: Request, res: Response) => {
+  app.post("/api/merch/order", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { items, customer, address, imageUrl, portraitId, dogId, orgId } = req.body;
 
@@ -1240,7 +1240,7 @@ export async function registerRoutes(
   });
 
   // Get a specific merch order
-  app.get("/api/merch/order/:id", async (req: Request, res: Response) => {
+  app.get("/api/merch/order/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const orderId = parseInt(req.params.id);
       if (isNaN(orderId)) {
@@ -2150,6 +2150,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
 
+      // Ownership check: only admin or org owner can confirm checkout
+      const callerIsAdmin = req.user.claims.email === ADMIN_EMAIL;
+      if (!callerIsAdmin && org.ownerId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
       const sessionCustomerId = typeof session.customer === 'string' ? session.customer : (session.customer as any)?.id;
 
       if (org.stripeCustomerId && sessionCustomerId !== org.stripeCustomerId) {
@@ -2199,7 +2205,9 @@ export async function registerRoutes(
       await storage.updateOrganizationStripeInfo(org.id, stripeInfo);
 
       const updated = await storage.getOrganization(org.id);
-      res.json(updated);
+      // Strip Stripe IDs from response — never expose to client
+      const { stripeCustomerId: _sc, stripeSubscriptionId: _ss, ...safeUpdated } = updated as any;
+      res.json(safeUpdated);
     } catch (error: any) {
       console.error("Error confirming checkout:", error);
       res.status(500).json({ error: "Failed to confirm subscription" });
@@ -2589,12 +2597,20 @@ export async function registerRoutes(
   app.get("/api/dogs/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid pet ID" });
+      }
       const dog = await storage.getDog(id);
       if (!dog) {
         return res.status(404).json({ error: "Pet not found" });
       }
-      
+
+      // Only expose dogs that belong to an active org and are available
       const org = dog.organizationId ? await storage.getOrganization(dog.organizationId) : null;
+      if (!org || org.status !== 'active' || dog.status !== 'available') {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+
       const allPortraits = await storage.getPortraitsByDog(dog.id);
 
       const portraitsWithStyles = await Promise.all(
@@ -2961,9 +2977,30 @@ export async function registerRoutes(
   });
 
   // Portraits
-  app.get("/api/dogs/:dogId/portraits", async (req: Request, res: Response) => {
+  app.get("/api/dogs/:dogId/portraits", isAuthenticated, async (req: any, res: Response) => {
     try {
       const dogId = parseInt(req.params.dogId as string);
+      if (isNaN(dogId)) {
+        return res.status(400).json({ error: "Invalid pet ID" });
+      }
+
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const dog = await storage.getDog(dogId);
+      if (!dog || !dog.organizationId) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+
+      // Verify the requesting user owns this dog's org (or is admin)
+      if (!userIsAdmin) {
+        const userOrg = await storage.getOrganizationByOwner(userId);
+        if (!userOrg || userOrg.id !== dog.organizationId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
       const dogPortraits = await storage.getPortraitsByDog(dogId);
       res.json(dogPortraits);
     } catch (error) {
@@ -4161,6 +4198,8 @@ export async function registerRoutes(
 
   // In-memory image cache for serving base64 images as public URLs
   const imageCache = new Map<string, { data: Buffer; contentType: string; expiresAt: number }>();
+  const MAX_IMAGE_CACHE_SIZE = 50;
+  const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
   // Clean expired images every 2 minutes
   setInterval(() => {
@@ -4189,8 +4228,14 @@ export async function registerRoutes(
     const matches = base64DataUri.match(/^data:(image\/\w+);base64,(.+)$/s);
     if (!matches) throw new Error("Invalid base64 image data");
     const contentType = matches[1];
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) throw new Error(`Unsupported image type: ${contentType}`);
     const buffer = Buffer.from(matches[2], 'base64');
     const token = crypto.randomUUID();
+    // Evict oldest entry if cache is full
+    if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
+      const oldestKey = imageCache.keys().next().value;
+      if (oldestKey) imageCache.delete(oldestKey);
+    }
     imageCache.set(token, {
       data: buffer,
       contentType,
@@ -4296,8 +4341,10 @@ export async function registerRoutes(
       }
       if (!orgId) return res.redirect('/settings?instagram=error&detail=no_organization');
 
-      // Store orgId in state param for callback
-      const state = Buffer.from(JSON.stringify({ orgId })).toString('base64url');
+      // Store orgId in HMAC-signed state param for callback
+      const statePayload = JSON.stringify({ orgId, ts: Date.now() });
+      const stateHmac = crypto.createHmac('sha256', IG_APP_SECRET!).update(statePayload).digest('hex');
+      const state = Buffer.from(JSON.stringify({ p: statePayload, s: stateHmac })).toString('base64url');
       const redirectUri = `${process.env.NODE_ENV === 'production' ? 'https://pawtraitpros.com' : 'http://localhost:5000'}/api/instagram-native/callback`;
 
       const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${IG_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_business_basic,instagram_business_content_publish&response_type=code&state=${state}`;
@@ -4324,7 +4371,13 @@ export async function registerRoutes(
     }
 
     try {
-      const stateData = JSON.parse(Buffer.from(state as string, 'base64url').toString());
+      // Verify HMAC-signed state
+      const stateOuter = JSON.parse(Buffer.from(state as string, 'base64url').toString());
+      const expectedHmac = crypto.createHmac('sha256', IG_APP_SECRET!).update(stateOuter.p).digest('hex');
+      if (!crypto.timingSafeEqual(Buffer.from(stateOuter.s, 'hex'), Buffer.from(expectedHmac, 'hex'))) {
+        return res.redirect('/settings?instagram=error&detail=invalid_state');
+      }
+      const stateData = JSON.parse(stateOuter.p);
       const orgId = stateData.orgId;
       if (!orgId) throw new Error("No orgId in state");
 
@@ -4561,6 +4614,18 @@ export async function registerRoutes(
     }
   });
 
+  // Helper: verify Meta signed_request HMAC
+  function verifyMetaSignedRequest(signedRequest: string): any | null {
+    if (!IG_APP_SECRET) return null;
+    const [sig, payload] = signedRequest.split('.');
+    if (!sig || !payload) return null;
+    const expectedSig = crypto.createHmac('sha256', IG_APP_SECRET).update(payload).digest('base64url');
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+    } catch { return null; }
+    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+  }
+
   // Native Instagram: Data deletion callback (required by Meta)
   app.post("/api/instagram-native/data-deletion", async (req: Request, res: Response) => {
     try {
@@ -4569,13 +4634,15 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid request" });
       }
 
-      // Parse signed request
-      const [sig, payload] = signed_request.split('.');
-      const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+      // Verify and parse signed request
+      const data = verifyMetaSignedRequest(signed_request);
+      if (!data) {
+        return res.status(403).json({ error: "Invalid signature" });
+      }
       const fbUserId = data.user_id;
 
       if (fbUserId) {
-        // Clear Instagram data for any org linked to this Facebook user
+        // Clear Instagram data for the specific user
         await pool.query(
           `UPDATE organizations SET
             instagram_access_token = NULL,
@@ -4583,7 +4650,8 @@ export async function registerRoutes(
             instagram_username = NULL,
             instagram_page_id = NULL,
             instagram_token_expires_at = NULL
-          WHERE instagram_page_id IS NOT NULL`
+          WHERE instagram_user_id = $1`,
+          [String(fbUserId)]
         );
         console.log(`[instagram-native] Data deletion processed for FB user ${fbUserId}`);
       }
@@ -4608,8 +4676,11 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid request" });
       }
 
-      const [sig, payload] = signed_request.split('.');
-      const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+      // Verify and parse signed request
+      const data = verifyMetaSignedRequest(signed_request);
+      if (!data) {
+        return res.status(403).json({ error: "Invalid signature" });
+      }
       const fbUserId = data.user_id;
 
       if (fbUserId) {
@@ -4620,7 +4691,8 @@ export async function registerRoutes(
             instagram_username = NULL,
             instagram_page_id = NULL,
             instagram_token_expires_at = NULL
-          WHERE instagram_page_id IS NOT NULL`
+          WHERE instagram_user_id = $1`,
+          [String(fbUserId)]
         );
         console.log(`[instagram-native] Deauthorized FB user ${fbUserId}`);
       }
@@ -4629,6 +4701,119 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("[instagram-native] Deauthorize error:", error);
       res.status(500).json({ error: "Failed to process deauthorization" });
+    }
+  });
+
+  // --- GDPR: Data Export (Right to Portability) ---
+  app.get("/api/my-data/export", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+
+      // Gather all user data
+      const user = await storage.getUser(userId);
+      const org = await storage.getOrganizationByOwner(userId);
+      let dogs: any[] = [];
+      let portraits: any[] = [];
+
+      if (org) {
+        dogs = await storage.getDogsByOrganization(org.id);
+        for (const dog of dogs) {
+          const dogPortraits = await storage.getPortraitsByDog(dog.id);
+          portraits.push(...dogPortraits.map(p => ({
+            dogName: dog.name,
+            style: p.styleId,
+            createdAt: p.createdAt,
+          })));
+        }
+      }
+
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        user: {
+          id: user?.id,
+          email: user?.email,
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          createdAt: user?.createdAt,
+        },
+        organization: org ? {
+          name: org.name,
+          slug: org.slug,
+          description: org.description,
+          websiteUrl: org.websiteUrl,
+          phone: org.phone,
+          address: org.address,
+          createdAt: org.createdAt,
+        } : null,
+        pets: dogs.map(d => ({
+          name: d.name,
+          breed: d.breed,
+          species: d.species,
+          age: d.age,
+          gender: d.gender,
+          description: d.description,
+          ownerName: d.ownerName,
+          ownerEmail: d.ownerEmail,
+          ownerPhone: d.ownerPhone,
+          createdAt: d.createdAt,
+        })),
+        portraits: portraits,
+      };
+
+      res.set('Content-Disposition', 'attachment; filename="my-data-export.json"');
+      res.set('Content-Type', 'application/json');
+      res.json(exportData);
+    } catch (error: any) {
+      console.error("Data export error:", error);
+      res.status(500).json({ error: "Failed to export data" });
+    }
+  });
+
+  // --- GDPR: Account Deletion (Right to Erasure) ---
+  app.delete("/api/my-account", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+
+      // Prevent admin from deleting their own account
+      if (userEmail === ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin account cannot be self-deleted" });
+      }
+
+      const org = await storage.getOrganizationByOwner(userId);
+
+      if (org) {
+        // Delete all dogs (cascades to portraits)
+        const dogs = await storage.getDogsByOrganization(org.id);
+        for (const dog of dogs) {
+          await storage.deleteDog(dog.id);
+        }
+        // Delete org
+        await storage.deleteOrganization(org.id);
+      }
+
+      // Delete user record from our DB
+      await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+
+      // Delete from Supabase Auth
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl && supabaseServiceKey) {
+        await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+            'apikey': supabaseServiceKey,
+          },
+        });
+      }
+
+      console.log(`[gdpr] Account deleted: ${userEmail} (${userId})`);
+      res.json({ success: true, message: "Your account and all associated data have been permanently deleted." });
+    } catch (error: any) {
+      console.error("Account deletion error:", error);
+      res.status(500).json({ error: "Failed to delete account" });
     }
   });
 

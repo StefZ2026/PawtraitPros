@@ -228,18 +228,20 @@ export default function ChoosePlan() {
                 </Link>
               </Button>
             )}
-            <div className="flex items-center gap-1.5">
-              <Switch
-                id="test-mode"
-                checked={testMode}
-                onCheckedChange={setTestMode}
-                data-testid="switch-test-mode"
-              />
-              <Label htmlFor="test-mode" className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
-                <FlaskConical className="h-3 w-3" />
-                Test
-              </Label>
-            </div>
+            {isAdmin && (
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id="test-mode"
+                  checked={testMode}
+                  onCheckedChange={setTestMode}
+                  data-testid="switch-test-mode"
+                />
+                <Label htmlFor="test-mode" className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
+                  <FlaskConical className="h-3 w-3" />
+                  Test
+                </Label>
+              </div>
+            )}
             <ThemeToggle />
           </div>
         </div>
