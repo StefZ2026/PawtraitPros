@@ -63,7 +63,7 @@ export default function Dashboard() {
         toast({ title: "Subscription active!", description: "Your plan is now active. Let's get you set up!" });
         const returnOrgId = urlParams.get('orgId');
         if (returnOrgId) {
-          navigate(`/admin/rescue/${returnOrgId}`);
+          navigate(`/admin/business/${returnOrgId}`);
         } else {
           navigate("/onboarding");
         }
@@ -312,7 +312,7 @@ function WelcomePage({ isAuthenticated, onCreateNew }: {
                 You're logged in but don't have a business set up yet. Create one to get started, or log in with a different account if your business is already set up.
               </p>
               <div className="grid gap-3">
-                <Button className="w-full gap-2" onClick={onCreateNew} data-testid="button-create-rescue">
+                <Button className="w-full gap-2" onClick={onCreateNew} data-testid="button-create-business">
                   <Plus className="h-4 w-4" />
                   Create Your Business
                 </Button>
@@ -331,12 +331,12 @@ function WelcomePage({ isAuthenticated, onCreateNew }: {
               </p>
               <div className="grid gap-3">
                 <a href="/login" className="block">
-                  <Button className="w-full gap-2" data-testid="button-login-rescue">
+                  <Button className="w-full gap-2" data-testid="button-login-business">
                     <LogIn className="h-4 w-4" />
                     Log In to Your Account
                   </Button>
                 </a>
-                <Button variant="outline" className="w-full gap-2" onClick={onCreateNew} data-testid="button-create-rescue">
+                <Button variant="outline" className="w-full gap-2" onClick={onCreateNew} data-testid="button-create-business">
                   <Plus className="h-4 w-4" />
                   Create Your Business
                 </Button>
@@ -734,7 +734,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             Account
           </Button>
           <Button variant="outline" size="sm" className="gap-2" asChild>
-            <Link href={isAdmin ? `/admin/rescue/${organization.id}` : "/settings"}>
+            <Link href={isAdmin ? `/admin/business/${organization.id}` : "/settings"}>
               <Settings className="h-4 w-4" />
               Settings
             </Link>
@@ -1077,7 +1077,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             <div className="flex gap-2">
               {organization.slug && (
                 <Button variant="ghost" size="sm" className="gap-1" asChild>
-                  <Link href={`/rescue/${organization.slug}`}><Eye className="h-3.5 w-3.5" /> Showcase</Link>
+                  <Link href={`/business/${organization.slug}`}><Eye className="h-3.5 w-3.5" /> Showcase</Link>
                 </Button>
               )}
             </div>

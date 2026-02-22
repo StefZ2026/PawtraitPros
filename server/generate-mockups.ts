@@ -22,7 +22,7 @@ function textSvg(text: string, fontSize: number, color: string, maxWidth: number
   return Buffer.from(svg);
 }
 
-function pawtraitPalsLogoSvg(height: number): { svg: Buffer; width: number; height: number } {
+function pawtraitProsLogoSvg(height: number): { svg: Buffer; width: number; height: number } {
   const iconSize = Math.round(height * 0.6);
   const fontSize = Math.round(height * 0.45);
   const textWidth = Math.ceil(fontSize * 0.6 * 13);
@@ -182,7 +182,7 @@ export async function generateShowcaseMockup(orgId: number): Promise<Buffer> {
   // Bottom: "Powered by" + dog/cat icons + "Pawtrait Pros" (matching the site header)
   const poweredByText = textSvg("Powered by", 13, `rgb(${MUTED_TEXT.r},${MUTED_TEXT.g},${MUTED_TEXT.b})`, 200, "normal");
   composites.push({ input: poweredByText, top: HEIGHT - 38, left: WIDTH - 370 });
-  const ppLogo = pawtraitPalsLogoSvg(40);
+  const ppLogo = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo.svg, top: HEIGHT - 48, left: WIDTH - 280 });
 
   return sharp(bg).composite(composites).png().toBuffer();
@@ -271,7 +271,7 @@ export async function generatePawfileMockup(dogId: number): Promise<Buffer> {
   // Bottom: "Powered by" + dog/cat icons + "Pawtrait Pros" (matching the site header)
   const poweredByText2 = textSvg("Powered by", 13, `rgb(${MUTED_TEXT.r},${MUTED_TEXT.g},${MUTED_TEXT.b})`, 200, "normal");
   composites.push({ input: poweredByText2, top: HEIGHT - 38, left: WIDTH - 370 });
-  const ppLogo2 = pawtraitPalsLogoSvg(40);
+  const ppLogo2 = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo2.svg, top: HEIGHT - 48, left: WIDTH - 280 });
 
   return sharp(bg).composite(composites).png().toBuffer();

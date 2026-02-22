@@ -15,9 +15,9 @@ export default function CounterDisplay() {
   const [searching, setSearching] = useState(false);
 
   const { data: org } = useQuery<Organization>({
-    queryKey: ["/api/rescue", params.slug],
+    queryKey: ["/api/business", params.slug],
     queryFn: async () => {
-      const res = await fetch(`/api/rescue/${params.slug}`);
+      const res = await fetch(`/api/business/${params.slug}`);
       if (!res.ok) return null;
       return res.json();
     },

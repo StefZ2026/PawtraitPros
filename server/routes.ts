@@ -219,7 +219,7 @@ export async function registerRoutes(
           const adminOrgs = allOrgsStartup.filter(o => o.ownerId === adminUserId);
           for (const adminOrg of adminOrgs) {
             await storage.clearOrganizationOwner(adminOrg.id);
-            console.log(`[startup] Removed admin ownership from "${adminOrg.name}" (ID ${adminOrg.id}) — admin should not own any rescue`);
+            console.log(`[startup] Removed admin ownership from "${adminOrg.name}" (ID ${adminOrg.id}) — admin should not own any business`);
           }
         }
       }
@@ -663,12 +663,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/rescue/:slug", async (req: Request, res: Response) => {
+  app.get("/api/business/:slug", async (req: Request, res: Response) => {
     try {
       const { slug } = req.params;
       const org = await storage.getOrganizationBySlug(slug as string);
       if (!org || !org.isActive) {
-        return res.status(404).json({ error: "Rescue not found" });
+        return res.status(404).json({ error: "Business not found" });
       }
 
       const orgDogs = await storage.getDogsByOrganization(org.id);
@@ -695,8 +695,8 @@ export async function registerRoutes(
         dogs: dogsWithPortraits,
       });
     } catch (error) {
-      console.error("Error fetching rescue showcase:", error);
-      res.status(500).json({ error: "Failed to fetch rescue" });
+      console.error("Error fetching business showcase:", error);
+      res.status(500).json({ error: "Failed to fetch business" });
     }
   });
 
@@ -869,18 +869,7 @@ export async function registerRoutes(
       if (!org) return res.status(404).json({ error: "No organization found" });
 
       const industryType = (org as any).industryType || "groomer";
-
-      // Get pack styles
-      const packs = getCurrentPacks(industryType as IndustryType, "dog"); // default to dog, can improve later
-      const pack = packs.find(p => p.type === packType);
-      if (!pack) return res.status(400).json({ error: "Pack not found" });
-
       const allStyles = await storage.getAllPortraitStyles();
-      const packStyles = pack.styleIds.map(id => allStyles.find(s => s.id === id)).filter(Boolean);
-
-      if (packStyles.length === 0) {
-        return res.status(400).json({ error: "No styles found for this pack" });
-      }
 
       // Generate portraits for each dog
       const results: Array<{ dogId: number; success: boolean; portraitId?: number; error?: string }> = [];
@@ -895,6 +884,20 @@ export async function registerRoutes(
 
           if (!dog.originalPhotoUrl) {
             results.push({ dogId, success: false, error: "No photo uploaded" });
+            continue;
+          }
+
+          // Get pack styles for this pet's species
+          const petSpecies = (dog.species || "dog") as "dog" | "cat";
+          const packs = getCurrentPacks(industryType as IndustryType, petSpecies);
+          const pack = packs.find(p => p.type === packType);
+          if (!pack) {
+            results.push({ dogId, success: false, error: "Pack not found for species" });
+            continue;
+          }
+          const packStyles = pack.styleIds.map(id => allStyles.find(s => s.id === id)).filter(Boolean);
+          if (packStyles.length === 0) {
+            results.push({ dogId, success: false, error: "No styles found for this pack" });
             continue;
           }
 
@@ -2607,7 +2610,7 @@ export async function registerRoutes(
 
       // Only expose dogs that belong to an active org and are available
       const org = dog.organizationId ? await storage.getOrganization(dog.organizationId) : null;
-      if (!org || org.status !== 'active' || dog.status !== 'available') {
+      if (!org || !org.isActive || !dog.isAvailable) {
         return res.status(404).json({ error: "Pet not found" });
       }
 
@@ -2775,17 +2778,6 @@ export async function registerRoutes(
     }
   });
 
-  // Portrait Styles
-  app.get("/api/styles", async (req: Request, res: Response) => {
-    try {
-      const styles = await storage.getAllPortraitStyles();
-      res.json(styles);
-    } catch (error) {
-      console.error("Error fetching styles:", error);
-      res.status(500).json({ error: "Failed to fetch styles" });
-    }
-  });
-
   app.get("/api/dogs/:id/photo", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
@@ -2941,7 +2933,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/rescue/:slug/og-image", async (req: Request, res: Response) => {
+  app.get("/api/business/:slug/og-image", async (req: Request, res: Response) => {
     try {
       const slug = req.params.slug as string;
       const org = await storage.getOrganizationBySlug(slug);
@@ -2954,7 +2946,7 @@ export async function registerRoutes(
       });
       res.send(imageBuffer);
     } catch (error) {
-      console.error("Error generating rescue OG image:", error);
+      console.error("Error generating business OG image:", error);
       res.status(500).send("Error generating preview");
     }
   });

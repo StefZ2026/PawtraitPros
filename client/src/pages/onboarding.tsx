@@ -307,7 +307,7 @@ export default function Onboarding() {
     if (!org) return;
     if (org.onboardingCompleted) {
       if (isAdminFlow) {
-        navigate(`/admin/rescue/${adminOrgId}`);
+        navigate(`/admin/business/${adminOrgId}`);
       } else {
         navigate("/dashboard");
       }
@@ -540,11 +540,11 @@ export default function Onboarding() {
     updateMutation.mutate({ onboardingCompleted: true }, {
       onSuccess: () => {
         if (destination === "admin") {
-          navigate(`/admin/rescue/${adminOrgId}`);
+          navigate(`/admin/business/${adminOrgId}`);
         } else if (destination === "create") {
           navigate(isAdminFlow ? `/create?org=${adminOrgId}` : "/create");
         } else {
-          navigate(isAdminFlow ? `/admin/rescue/${adminOrgId}` : "/settings");
+          navigate(isAdminFlow ? `/admin/business/${adminOrgId}` : "/settings");
         }
       },
       onError: () => setFinishing(false),

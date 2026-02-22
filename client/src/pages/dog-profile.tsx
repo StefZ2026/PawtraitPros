@@ -89,9 +89,9 @@ export default function DogProfile() {
   });
 
   const isCat = dog?.species === "cat";
-  const rescueName = dog?.organizationName;
-  const shareTitle = `${dog?.name}'s Pawfile${rescueName ? ` from ${rescueName}` : ''}`;
-  const shareText = `Check out ${dog?.name}'s beautiful portrait${rescueName ? ` from ${rescueName}` : ''}! A gorgeous ${dog?.breed || (isCat ? "cat" : "dog")}.`;
+  const businessName = dog?.organizationName;
+  const shareTitle = `${dog?.name}'s Pawfile${businessName ? ` from ${businessName}` : ''}`;
+  const shareText = `Check out ${dog?.name}'s beautiful portrait${businessName ? ` from ${businessName}` : ''}! A gorgeous ${dog?.breed || (isCat ? "cat" : "dog")}.`;
 
   // Multiple portraits support
   const allPortraits = dog?.portraits || (dog?.portrait ? [dog.portrait] : []);

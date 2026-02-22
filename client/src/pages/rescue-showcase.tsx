@@ -26,7 +26,7 @@ interface DogWithPortrait extends DogType {
   portrait?: Portrait;
 }
 
-interface RescueShowcaseData {
+interface BusinessShowcaseData {
   id: number;
   name: string;
   slug: string;
@@ -42,20 +42,20 @@ interface RescueShowcaseData {
   dogs: DogWithPortrait[];
 }
 
-export default function RescueShowcase() {
+export default function BusinessShowcase() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
   const { isAdmin } = useAuth();
   const showcaseRef = useRef<HTMLDivElement>(null);
 
-  const { data: rescue, isLoading, error } = useQuery<RescueShowcaseData>({
-    queryKey: ["/api/rescue", slug],
+  const { data: business, isLoading, error } = useQuery<BusinessShowcaseData>({
+    queryKey: ["/api/business", slug],
   });
 
   const [speciesFilter, setSpeciesFilter] = useState<"all" | "dog" | "cat">("all");
 
-  const shareTitle = `${rescue?.name} - Pet Portraits`;
-  const shareText = `Check out the beautiful pet portraits from ${rescue?.name}!`;
+  const shareTitle = `${business?.name} - Pet Portraits`;
+  const shareText = `Check out the beautiful pet portraits from ${business?.name}!`;
 
   const handlePrint = () => {
     window.print();
@@ -86,7 +86,7 @@ export default function RescueShowcase() {
     );
   }
 
-  if (error || !rescue) {
+  if (error || !business) {
     return (
       <div className="min-h-screen bg-background">
         <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
@@ -111,13 +111,13 @@ export default function RescueShowcase() {
     );
   }
 
-  const hasDogs = rescue.dogs.some(d => d.species !== "cat");
-  const hasCats = rescue.dogs.some(d => d.species === "cat");
+  const hasDogs = business.dogs.some(d => d.species !== "cat");
+  const hasCats = business.dogs.some(d => d.species === "cat");
   const hasBoth = hasDogs && hasCats;
 
   const filteredPets = speciesFilter === "all"
-    ? rescue.dogs
-    : rescue.dogs.filter(d => speciesFilter === "cat" ? d.species === "cat" : d.species !== "cat");
+    ? business.dogs
+    : business.dogs.filter(d => speciesFilter === "cat" ? d.species === "cat" : d.species !== "cat");
 
   const dogsWithPortraits = filteredPets.filter(d => d.portrait?.generatedImageUrl);
   const dogsWithoutPortraits = filteredPets.filter(d => !d.portrait?.generatedImageUrl);
@@ -169,59 +169,59 @@ export default function RescueShowcase() {
           >
            <div className="showcase-inner">
             <div className="pt-8 pb-5 px-6 text-center border-b-2 border-primary/15">
-              <h1 className="font-serif text-3xl sm:text-4xl font-bold text-primary tracking-wide mb-3" data-testid="text-rescue-name">
-                {rescue.name}
+              <h1 className="font-serif text-3xl sm:text-4xl font-bold text-primary tracking-wide mb-3" data-testid="text-business-name">
+                {business.name}
               </h1>
-              {rescue.logoUrl && (
+              {business.logoUrl && (
                 <div className="protected-image-wrapper max-h-28 max-w-[280px] mx-auto mb-3">
                   <img
-                    src={rescue.logoUrl}
-                    alt={rescue.name}
+                    src={business.logoUrl}
+                    alt={business.name}
                     className="max-h-28 max-w-[280px] object-contain protected-image"
                     draggable={false}
-                    data-testid="img-rescue-logo"
+                    data-testid="img-business-logo"
                   />
                 </div>
               )}
-              {rescue.description && (
-                <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto" data-testid="text-rescue-description">
-                  {rescue.description}
+              {business.description && (
+                <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto" data-testid="text-business-description">
+                  {business.description}
                 </p>
               )}
-              {rescue.websiteUrl && (
+              {business.websiteUrl && (
                 <a
-                  href={rescue.websiteUrl}
+                  href={business.websiteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2 print:hidden"
-                  data-testid="link-rescue-website"
+                  data-testid="link-business-website"
                 >
                   <ExternalLink className="h-3 w-3" />
-                  {rescue.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  {business.websiteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}
                 </a>
               )}
-              {(rescue.socialFacebook || rescue.socialInstagram || rescue.socialTwitter || rescue.socialNextdoor) && (
+              {(business.socialFacebook || business.socialInstagram || business.socialTwitter || business.socialNextdoor) && (
                 <div className="flex items-center justify-center gap-3 mt-3 print:hidden" data-testid="section-social-links">
-                  {rescue.socialFacebook && (
-                    <a href={rescue.socialFacebook} target="_blank" rel="noopener noreferrer"
+                  {business.socialFacebook && (
+                    <a href={business.socialFacebook} target="_blank" rel="noopener noreferrer"
                        className="text-muted-foreground hover:text-primary transition-colors" title="Facebook">
                       <SiFacebook className="h-5 w-5" />
                     </a>
                   )}
-                  {rescue.socialInstagram && (
-                    <a href={rescue.socialInstagram} target="_blank" rel="noopener noreferrer"
+                  {business.socialInstagram && (
+                    <a href={business.socialInstagram} target="_blank" rel="noopener noreferrer"
                        className="text-muted-foreground hover:text-primary transition-colors" title="Instagram">
                       <SiInstagram className="h-5 w-5" />
                     </a>
                   )}
-                  {rescue.socialTwitter && (
-                    <a href={rescue.socialTwitter} target="_blank" rel="noopener noreferrer"
+                  {business.socialTwitter && (
+                    <a href={business.socialTwitter} target="_blank" rel="noopener noreferrer"
                        className="text-muted-foreground hover:text-primary transition-colors" title="X (Twitter)">
                       <FaXTwitter className="h-5 w-5" />
                     </a>
                   )}
-                  {rescue.socialNextdoor && (
-                    <a href={rescue.socialNextdoor} target="_blank" rel="noopener noreferrer"
+                  {business.socialNextdoor && (
+                    <a href={business.socialNextdoor} target="_blank" rel="noopener noreferrer"
                        className="text-muted-foreground hover:text-primary transition-colors" title="Nextdoor">
                       <NextdoorIcon className="h-5 w-5" />
                     </a>
@@ -230,7 +230,7 @@ export default function RescueShowcase() {
               )}
             </div>
 
-            {rescue.dogs.length > 0 && (
+            {business.dogs.length > 0 && (
               <div className="py-4 px-6 text-center">
                 <h2 className="font-serif text-xl font-semibold text-foreground tracking-wide" data-testid="text-available-headline">
                   {showcaseHeadline}
@@ -277,10 +277,10 @@ export default function RescueShowcase() {
               <div className="py-16 px-6 text-center">
                 <Heart className="h-12 w-12 mx-auto mb-4 text-primary/40" />
                 <p className="text-muted-foreground font-serif text-lg">
-                  {rescue.dogs.length === 0 ? "No pet portraits at the moment" : "No pets match this filter"}
+                  {business.dogs.length === 0 ? "No pet portraits at the moment" : "No pets match this filter"}
                 </p>
                 <p className="text-sm text-muted-foreground/70 mt-1">
-                  {rescue.dogs.length === 0 ? "Check back soon!" : "Try viewing all pets instead"}
+                  {business.dogs.length === 0 ? "Check back soon!" : "Try viewing all pets instead"}
                 </p>
               </div>
             ) : (
@@ -331,23 +331,23 @@ export default function RescueShowcase() {
             )}
 
             <div className="border-t-2 border-primary/15 py-4 pb-6 px-6 flex flex-col items-center justify-center gap-3">
-              {(rescue.contactEmail || rescue.contactPhone) && (
+              {(business.contactEmail || business.contactPhone) && (
                 <div className="text-center" data-testid="section-contact-footer">
                   <p className="text-sm font-serif font-semibold text-foreground mb-1">
                     For more information about any of these pets
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
-                    {rescue.contactEmail && (
-                      <a href={`mailto:${rescue.contactEmail}`} className="text-primary hover:underline" data-testid="link-contact-email">
-                        {rescue.contactEmail}
+                    {business.contactEmail && (
+                      <a href={`mailto:${business.contactEmail}`} className="text-primary hover:underline" data-testid="link-contact-email">
+                        {business.contactEmail}
                       </a>
                     )}
-                    {rescue.contactEmail && rescue.contactPhone && (
+                    {business.contactEmail && business.contactPhone && (
                       <span className="text-muted-foreground/40">|</span>
                     )}
-                    {rescue.contactPhone && (
-                      <a href={`tel:${rescue.contactPhone}`} className="text-primary hover:underline" data-testid="link-contact-phone">
-                        {rescue.contactPhone}
+                    {business.contactPhone && (
+                      <a href={`tel:${business.contactPhone}`} className="text-primary hover:underline" data-testid="link-contact-phone">
+                        {business.contactPhone}
                       </a>
                     )}
                   </div>
@@ -366,7 +366,7 @@ export default function RescueShowcase() {
           </div>
           <div className="mt-3 print:hidden">
             <p className="text-sm text-muted-foreground mb-2">Share this showcase:</p>
-            <ShareButtons title={shareTitle} text={shareText} orgId={rescue.id} orgWebsiteUrl={rescue.websiteUrl || undefined} captureRef={showcaseRef} showcaseName={rescue.name} />
+            <ShareButtons title={shareTitle} text={shareText} orgId={business.id} orgWebsiteUrl={business.websiteUrl || undefined} captureRef={showcaseRef} showcaseName={business.name} />
           </div>
         </div>
       </div>

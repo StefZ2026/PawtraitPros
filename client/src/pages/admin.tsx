@@ -481,7 +481,7 @@ export default function Admin() {
                     render={({ field }: any) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          <Input placeholder="Business name" {...field} data-testid="input-new-rescue-name" />
+                          <Input placeholder="Business name" {...field} data-testid="input-new-business-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -493,7 +493,7 @@ export default function Admin() {
                     render={({ field }: any) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          <Input placeholder="Description (optional)" {...field} data-testid="input-new-rescue-desc" />
+                          <Input placeholder="Description (optional)" {...field} data-testid="input-new-business-desc" />
                         </FormControl>
                       </FormItem>
                     )}
@@ -504,12 +504,12 @@ export default function Admin() {
                     render={({ field }: any) => (
                       <FormItem className="flex-1">
                         <FormControl>
-                          <Input placeholder="Website (optional)" {...field} data-testid="input-new-rescue-website" />
+                          <Input placeholder="Website (optional)" {...field} data-testid="input-new-business-website" />
                         </FormControl>
                       </FormItem>
                     )}
                   />
-                  <Button type="submit" disabled={createOrgMutation.isPending} data-testid="button-submit-new-rescue">
+                  <Button type="submit" disabled={createOrgMutation.isPending} data-testid="button-submit-new-business">
                     {createOrgMutation.isPending ? "Creating..." : "Create"}
                   </Button>
                 </form>
@@ -527,7 +527,7 @@ export default function Admin() {
               </p>
             </div>
             {!showCreateForm && (
-              <Button size="sm" className="gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-rescue">
+              <Button size="sm" className="gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-business">
                 <Plus className="h-4 w-4" />
                 Add Business
               </Button>
@@ -544,7 +544,7 @@ export default function Admin() {
               <div className="text-center py-12 text-muted-foreground">
                 <Building2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>No businesses yet</p>
-                <Button className="mt-4 gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-first-rescue">
+                <Button className="mt-4 gap-1" onClick={() => setShowCreateForm(true)} data-testid="button-add-first-business">
                   <Plus className="h-4 w-4" />
                   Add Your First Business
                 </Button>
@@ -574,10 +574,10 @@ export default function Admin() {
                   </thead>
                   <tbody>
                     {organizations.map((org) => (
-                      <tr key={org.id} className="border-b last:border-0" data-testid={`row-rescue-${org.id}`}>
+                      <tr key={org.id} className="border-b last:border-0" data-testid={`row-business-${org.id}`}>
                         <td className="py-4">
-                          <Link href={`/dashboard?org=${org.id}`} className="block hover:underline" data-testid={`link-rescue-${org.id}`}>
-                            <p className="font-medium text-primary" data-testid={`text-rescue-name-${org.id}`}>{org.name}</p>
+                          <Link href={`/dashboard?org=${org.id}`} className="block hover:underline" data-testid={`link-business-${org.id}`}>
+                            <p className="font-medium text-primary" data-testid={`text-business-name-${org.id}`}>{org.name}</p>
                             <p className="text-sm text-muted-foreground">{org.contactEmail || "—"}</p>
                           </Link>
                         </td>
@@ -610,7 +610,7 @@ export default function Admin() {
                               data-testid={`button-info-${org.id}`}
                               asChild
                             >
-                              <Link href={`/admin/rescue/${org.id}`}>
+                              <Link href={`/admin/business/${org.id}`}>
                                 <Users className="h-4 w-4" />
                               </Link>
                             </Button>

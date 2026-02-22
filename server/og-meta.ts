@@ -100,7 +100,7 @@ function getHtmlTemplate(): string {
 }
 
 export function setupOgMetaRoutes(app: Express) {
-  app.get('/rescue/:slug', async (req: Request, res: Response, next: NextFunction) => {
+  app.get('/business/:slug', async (req: Request, res: Response, next: NextFunction) => {
     const ua = req.headers['user-agent'];
     if (!isCrawler(ua)) return next();
 
@@ -113,7 +113,7 @@ export function setupOgMetaRoutes(app: Express) {
       const availableDogs = orgDogs.filter(d => d.isAvailable);
 
       const baseUrl = getBaseUrl(req);
-      const ogImageUrl = `${baseUrl}/api/rescue/${slug}/og-image`;
+      const ogImageUrl = `${baseUrl}/api/business/${slug}/og-image`;
 
       const petCount = availableDogs.length;
       const speciesSet = new Set(availableDogs.map(d => d.species));
@@ -128,12 +128,12 @@ export function setupOgMetaRoutes(app: Express) {
         title: `${org.name} - Pet Portraits | ${SITE_NAME}`,
         description,
         imageUrl: ogImageUrl,
-        url: `${baseUrl}/rescue/${slug}`,
+        url: `${baseUrl}/business/${slug}`,
       });
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (error) {
-      console.error("OG meta error for rescue:", error);
+      console.error("OG meta error for business:", error);
       next();
     }
   });

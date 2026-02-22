@@ -22,7 +22,7 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-// Organizations (rescue groups) - SaaS tenants
+// Organizations (pet businesses) - SaaS tenants
 export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -70,7 +70,7 @@ export const organizations = pgTable("organizations", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
-// Pets available for rescue (dogs and cats)
+// Pets managed by organizations
 export const dogs = pgTable("dogs", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -80,7 +80,7 @@ export const dogs = pgTable("dogs", {
   age: text("age"),
   description: text("description"),
   originalPhotoUrl: text("original_photo_url"),
-  adoptionUrl: text("adoption_url"), // Pals uses this; Pros uses ownerEmail/ownerPhone instead
+  adoptionUrl: text("adoption_url"), // Legacy field; Pros uses ownerEmail/ownerPhone instead
   ownerEmail: text("owner_email"), // pet owner's email (Pros only)
   ownerPhone: text("owner_phone"), // pet owner's phone (Pros only)
   petCode: varchar("pet_code", { length: 10 }), // short lookup code e.g. "BEL-2847"

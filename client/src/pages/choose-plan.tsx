@@ -75,7 +75,7 @@ export default function ChoosePlan() {
 
   const navigateNext = () => {
     if (isAdminFlow && orgId) {
-      navigate(`/admin/rescue/${orgId}`);
+      navigate(`/admin/business/${orgId}`);
     } else {
       navigate("/onboarding");
     }

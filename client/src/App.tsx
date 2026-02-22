@@ -16,8 +16,8 @@ import DogProfile from "@/pages/dog-profile";
 import Dashboard from "@/pages/dashboard";
 import Styles from "@/pages/styles";
 import Admin from "@/pages/admin";
-import RescueInfo from "@/pages/rescue-info";
-import RescueShowcase from "@/pages/rescue-showcase";
+import BusinessSettings from "@/pages/rescue-info";
+import BusinessShowcase from "@/pages/rescue-showcase";
 import ChoosePlan from "@/pages/choose-plan";
 import Onboarding from "@/pages/onboarding";
 import Login from "@/pages/login";
@@ -37,7 +37,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/admin" component={Admin} />
-      <Route path="/admin/rescue/:id" component={RescueInfo} />
+      <Route path="/admin/business/:id" component={BusinessSettings} />
       <Route path="/choose-plan" component={ChoosePlan} />
       <Route path="/choose-plan/:orgId" component={ChoosePlan} />
       <Route path="/onboarding" component={Onboarding} />
@@ -46,8 +46,8 @@ function Router() {
       <Route path="/gallery" component={Gallery} />
       <Route path="/styles" component={Styles} />
       <Route path="/pawfile/:id" component={DogProfile} />
-      <Route path="/settings" component={RescueInfo} />
-      <Route path="/rescue/:slug" component={RescueShowcase} />
+      <Route path="/settings" component={BusinessSettings} />
+      <Route path="/business/:slug" component={BusinessShowcase} />
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />
       <Route path="/sms-opt-in" component={SmsOptIn} />

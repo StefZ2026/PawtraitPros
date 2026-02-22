@@ -34,7 +34,7 @@ interface OrgDetail extends Organization {
 
 type SectionName = "business" | "contact" | "social" | "billing" | "notes" | "plan" | "logo";
 
-export default function RescueInfo() {
+export default function BusinessSettings() {
   const params = useParams<{ id: string }>();
   const adminOrgId = params.id ? parseInt(params.id) : null;
   const isAdminView = adminOrgId !== null && adminOrgId > 0;
@@ -331,7 +331,7 @@ export default function RescueInfo() {
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
         <div className="container mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2 font-serif font-bold text-primary" data-testid="link-home-rescue-info">
+          <Link href="/" className="flex items-center gap-2 font-serif font-bold text-primary" data-testid="link-home-business-settings">
             <Dog className="h-5 w-5" />
             Pawtrait Pros
           </Link>
@@ -353,7 +353,7 @@ export default function RescueInfo() {
                 <span className="text-sm font-medium hidden sm:inline">
                   {user?.firstName || user?.email?.split("@")[0]}
                 </span>
-                <Button variant="ghost" size="icon" data-testid="button-logout-rescue-info" onClick={() => logout()} disabled={isLoggingOut}>
+                <Button variant="ghost" size="icon" data-testid="button-logout-business-settings" onClick={() => logout()} disabled={isLoggingOut}>
                     <LogOut className="h-4 w-4" />
                 </Button>
               </div>
@@ -383,7 +383,7 @@ export default function RescueInfo() {
               </AvatarFallback>
             </Avatar>
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap" data-testid="text-rescue-name">
+              <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap" data-testid="text-business-name-header">
                 {org.name}
                 {isAdminView && getStatusBadge()}
               </h1>
