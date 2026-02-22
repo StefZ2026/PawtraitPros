@@ -11,10 +11,10 @@ import { ImageUpload } from "@/components/image-upload";
 import { StyleSelector } from "@/components/style-selector";
 import { PortraitPreview } from "@/components/portrait-preview";
 import { BreedSelector } from "@/components/breed-selector";
-import { portraitStyles, type StyleOption } from "@/lib/portrait-styles";
+import { portraitStyles, stylePreviewImages, type StyleOption } from "@/lib/portrait-styles";
 import type { Pack } from "@shared/pack-config";
 import { validatePetName } from "@shared/content-filter";
-import { ArrowLeft, Dog, Cat, Sparkles, Eye, AlertTriangle, Plus, Shield, Undo2 } from "lucide-react";
+import { ArrowLeft, Dog, Cat, Sparkles, Eye, AlertTriangle, Plus, Shield, Undo2, Palette, Check } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AdminFloatingButton } from "@/components/admin-button";
@@ -224,6 +224,19 @@ export default function Create() {
     ? packs.find((p: any) => p.type === dailyPack.pack_type)
     : null;
   const packStyleIds = selectedDailyPack?.styleIds || undefined;
+  const noPackSelected = dailyPack === null || (dailyPack && !dailyPack.pack_type);
+
+  // Inline pack selection (if no pack chosen for today)
+  const [previewPackType, setPreviewPackType] = useState<string | null>(null);
+  const setPackMutation = useMutation({
+    mutationFn: async (packType: string) => {
+      return apiRequest("POST", "/api/daily-pack", { packType, species: effectiveSpecies, date: today });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
+      toast({ title: "Pack selected!", description: "Today's pack is set. Now pick a style!" });
+    },
+  });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -546,7 +559,70 @@ export default function Create() {
               </div>
             )}
 
-            {speciesConfirmed && uploadedImage && (
+            {speciesConfirmed && uploadedImage && noPackSelected && (
+              <div>
+                <h2 className="text-lg font-semibold mb-4" data-testid="text-section-pack">
+                  Choose Today's Pack
+                </h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Select a portrait pack before choosing styles. This sets the pack for all pets today.
+                </p>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  {packs.map((pack: any) => {
+                    const isPreview = previewPackType === pack.type;
+                    return (
+                      <div
+                        key={pack.type}
+                        className={`rounded-lg border-2 transition-colors cursor-pointer ${isPreview ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
+                        onClick={() => setPreviewPackType(isPreview ? null : pack.type)}
+                      >
+                        <div className="p-4 text-center">
+                          <span className="font-semibold capitalize text-base">{pack.name}</span>
+                          <p className="text-xs text-muted-foreground mt-1">{pack.description}</p>
+                        </div>
+                        {isPreview && pack.styles && (
+                          <div className="px-3 pb-3">
+                            <div className="grid grid-cols-3 gap-1.5 mb-3">
+                              {pack.styles.slice(0, 6).map((style: any) => {
+                                const previewImg = stylePreviewImages[style.name];
+                                return (
+                                  <div key={style.id} className="text-center">
+                                    <div className="aspect-square rounded bg-muted overflow-hidden">
+                                      {previewImg ? (
+                                        <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                          <Palette className="h-4 w-4 text-muted-foreground/30" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <Button
+                              className="w-full gap-2"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPackMutation.mutate(pack.type);
+                              }}
+                              disabled={setPackMutation.isPending}
+                            >
+                              <Check className="h-4 w-4" />
+                              Use This Pack
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {speciesConfirmed && uploadedImage && !noPackSelected && packStyleIds && (
               <div>
                 <h2 className="text-lg font-semibold mb-4" data-testid="text-section-style">
                   Pick a Style
