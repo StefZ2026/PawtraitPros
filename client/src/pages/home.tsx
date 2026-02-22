@@ -105,8 +105,54 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Three Editions */}
+      {/* Portrait Showcase */}
       <section className="py-16">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-serif font-bold mb-4">Stunning AI Portraits</h2>
+            <p className="text-muted-foreground max-w-xl mx-auto">
+              From Renaissance masterpieces to holiday favorites — 40+ styles your clients will love
+            </p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto">
+            {[
+              { name: "Renaissance Noble", src: "/images/styles/renaissance-noble.jpg" },
+              { name: "Superhero", src: "/images/styles/superhero.jpg" },
+              { name: "Holiday Spirit", src: "/images/styles/holiday-spirit.jpg" },
+              { name: "Art Nouveau Beauty", src: "/images/styles/art-nouveau.jpg" },
+              { name: "Egyptian Royalty", src: "/images/styles/egyptian-royalty.jpg" },
+              { name: "Purrista Barista", src: "/images/styles/purrista-barista.jpg" },
+              { name: "Space Explorer", src: "/images/styles/space-explorer.jpg" },
+              { name: "Spring Blossoms", src: "/images/styles/spring-blossoms.jpg" },
+            ].map((item) => (
+              <div key={item.name} className="aspect-square rounded-lg overflow-hidden relative group protected-image-wrapper">
+                <img
+                  src={item.src}
+                  alt={item.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 protected-image"
+                  draggable={false}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute bottom-3 left-3 right-3">
+                    <p className="text-white text-sm font-medium">{item.name}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-8">
+            <Button variant="outline" size="lg" className="gap-2" asChild>
+              <Link href="/styles">
+                <Palette className="h-5 w-5" />
+                View All Styles
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Three Editions */}
+      <section className="py-16 bg-card/50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-serif font-bold mb-4">Choose Your Edition</h2>
@@ -186,54 +232,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Portrait Showcase */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-serif font-bold mb-4">Stunning AI Portraits</h2>
-            <p className="text-muted-foreground max-w-xl mx-auto">
-              From Renaissance masterpieces to holiday favorites — 40+ styles your clients will love
-            </p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto">
-            {[
-              { name: "Renaissance Noble", src: "/images/styles/renaissance-noble.jpg" },
-              { name: "Superhero", src: "/images/styles/superhero.jpg" },
-              { name: "Holiday Spirit", src: "/images/styles/holiday-spirit.jpg" },
-              { name: "Art Nouveau Beauty", src: "/images/styles/art-nouveau.jpg" },
-              { name: "Egyptian Royalty", src: "/images/styles/egyptian-royalty.jpg" },
-              { name: "Purrista Barista", src: "/images/styles/purrista-barista.jpg" },
-              { name: "Space Explorer", src: "/images/styles/space-explorer.jpg" },
-              { name: "Spring Blossoms", src: "/images/styles/spring-blossoms.jpg" },
-            ].map((item) => (
-              <div key={item.name} className="aspect-square rounded-lg overflow-hidden relative group protected-image-wrapper">
-                <img
-                  src={item.src}
-                  alt={item.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 protected-image"
-                  draggable={false}
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="absolute bottom-3 left-3 right-3">
-                    <p className="text-white text-sm font-medium">{item.name}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="text-center mt-8">
-            <Button variant="outline" size="lg" className="gap-2" asChild>
-              <Link href="/styles">
-                <Palette className="h-5 w-5" />
-                View All Styles
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
       {/* Keepsakes */}
-      <section className="py-20 bg-card/50">
+      <section className="py-20">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-serif font-bold mb-4">Revenue on Autopilot</h2>
