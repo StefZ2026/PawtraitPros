@@ -68,47 +68,27 @@ export function buildDepartureEmail(
   orgId?: number
 ): { subject: string; html: string } {
   const subject = `${dogName}'s portrait from ${orgName} is ready!`;
-
   const appUrl = process.env.APP_URL || "https://pawtrait-pros.onrender.com";
-
-  // Use public URL endpoint for logo (base64 data URIs don't render in email clients)
   const logoSrc = orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
-  const logoHtml = logoSrc
-    ? `<img src="${logoSrc}" alt="${orgName}" style="max-height:60px;margin-bottom:16px;" /><br/>`
-    : "";
 
-  // Portrait image (served via public endpoint)
-  const portraitHtml = portraitImageUrl
-    ? `<div style="text-align:center;margin:24px 0;">
-        <img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:400px;width:100%;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-      </div>`
-    : "";
+  // Build compact HTML — no extra whitespace (Gmail clips emails >102KB and trims threaded content)
+  const parts: string[] = [];
+  parts.push(`<div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">`);
+  parts.push(`<div style="text-align:center;margin-bottom:20px;">`);
+  if (logoSrc) {
+    parts.push(`<img src="${logoSrc}" alt="${orgName}" style="max-height:60px;margin-bottom:12px;" /><br/>`);
+  }
+  parts.push(`<h2 style="color:#1a1a1a;margin:0;">${orgName}</h2></div>`);
+  parts.push(`<p style="font-size:16px;color:#333;line-height:1.5;">We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you!</p>`);
+  if (portraitImageUrl) {
+    parts.push(`<div style="text-align:center;margin:20px 0;"><a href="${pawfileUrl}"><img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:380px;width:100%;border-radius:12px;" /></a></div>`);
+  }
+  parts.push(`<div style="text-align:center;margin:24px 0;"><a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">View & Order a Keepsake</a></div>`);
+  parts.push(`<p style="font-size:14px;color:#666;text-align:center;line-height:1.5;">Love it? Order a framed print, mug, tote, or other keepsake featuring ${dogName}.</p>`);
+  parts.push(`<p style="font-size:12px;color:#999;text-align:center;margin-top:24px;">Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a></p>`);
+  parts.push(`</div>`);
 
-  const html = `
-    <div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">
-      <div style="text-align:center;margin-bottom:24px;">
-        ${logoHtml}
-        <h2 style="color:#1a1a1a;margin:0;">${orgName}</h2>
-      </div>
-      <p style="font-size:16px;color:#333;line-height:1.6;">
-        Hi there! We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you.
-      </p>
-      ${portraitHtml}
-      <p style="font-size:16px;color:#333;line-height:1.6;">
-        If you love it, you can order a beautifully framed piece of artwork, a mug, tote bag, or other keepsake featuring ${dogName}:
-      </p>
-      <div style="text-align:center;margin:32px 0;">
-        <a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">
-          View ${dogName}'s Portrait
-        </a>
-      </div>
-      <p style="font-size:13px;color:#999;text-align:center;">
-        Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a>
-      </p>
-    </div>
-  `;
-
-  return { subject, html };
+  return { subject, html: parts.join("") };
 }
 
 export function buildOrderConfirmationEmail(
