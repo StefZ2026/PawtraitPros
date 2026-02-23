@@ -271,6 +271,8 @@ async function seedSubscriptionPlans() {
       if (existing.trialDays !== plan.trialDays) updateData.trialDays = plan.trialDays;
       if (plan.stripePriceId && existing.stripePriceId !== plan.stripePriceId) updateData.stripePriceId = plan.stripePriceId;
       if (plan.stripeProductId && existing.stripeProductId !== plan.stripeProductId) updateData.stripeProductId = plan.stripeProductId;
+      if (existing.description !== plan.description) updateData.description = plan.description;
+      if (existing.name !== plan.name) updateData.name = plan.name;
       if (Object.keys(updateData).length > 0) {
         await db.update(subscriptionPlans).set(updateData).where(eq(subscriptionPlans.id, plan.id));
         updated++;

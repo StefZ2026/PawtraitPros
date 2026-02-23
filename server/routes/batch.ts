@@ -165,7 +165,7 @@ export function registerBatchRoutes(app: Express): void {
             await storage.updateDog(dog.id, { petCode } as any);
           }
 
-          const appUrl = process.env.APP_URL || "https://pawtrait-pros.onrender.com";
+          const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
           const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
           const notifMode = (org as any).notificationMode || "both";
           const phone = (dog as any).ownerPhone;

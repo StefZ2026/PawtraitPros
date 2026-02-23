@@ -78,7 +78,10 @@ export default function Dashboard() {
         if (testModeParam === 'true') confirmBody.testMode = true;
         apiRequest("POST", "/api/stripe/confirm-checkout", confirmBody)
           .then(onSubscriptionConfirmed)
-          .catch(onSubscriptionConfirmed);
+          .catch((err) => {
+            console.error("[stripe] Checkout confirmation failed:", err);
+            onSubscriptionConfirmed();
+          });
       } else {
         onSubscriptionConfirmed();
       }

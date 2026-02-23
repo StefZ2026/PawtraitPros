@@ -68,7 +68,7 @@ export function buildDepartureEmail(
   orgId?: number
 ): { subject: string; html: string } {
   const subject = `${dogName}'s portrait from ${orgName} is ready!`;
-  const appUrl = process.env.APP_URL || "https://pawtrait-pros.onrender.com";
+  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
   const logoSrc = orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
 
   // Build compact HTML — no extra whitespace (Gmail clips emails >102KB and trims threaded content)
