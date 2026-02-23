@@ -224,6 +224,24 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+function sanitizeLogPayload(obj: any): any {
+  if (typeof obj === "string") {
+    if (obj.length > 500 && obj.startsWith("data:image/")) {
+      return `[base64 image, ${Math.round(obj.length / 1024)}kb]`;
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) return obj.map(sanitizeLogPayload);
+  if (obj && typeof obj === "object") {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = sanitizeLogPayload(v);
+    }
+    return out;
+  }
+  return obj;
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -240,7 +258,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        logLine += ` :: ${JSON.stringify(sanitizeLogPayload(capturedJsonResponse))}`;
       }
 
       log(logLine);

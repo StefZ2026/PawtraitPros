@@ -1,8 +1,11 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { Semaphore } from "./semaphore";
 
 export const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
+
+const geminiSemaphore = new Semaphore(2);
 
 function extractImageFromResponse(response: any): string | null {
   const part = response.candidates?.[0]?.content?.parts?.find(
@@ -61,22 +64,26 @@ Now apply the following artistic style while preserving this exact animal's appe
 async function generateWithImage(prompt: string, sourceImage: string): Promise<string | null> {
   const { mimeType, data } = parseBase64(sourceImage);
   const enhancedPrompt = FIDELITY_PREFIX + prompt;
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-image",
-    contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
-    config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+  return geminiSemaphore.run(async () => {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
+      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+    });
+    return extractImageFromResponse(response);
   });
-  return extractImageFromResponse(response);
 }
 
 async function generateTextOnly(prompt: string): Promise<string> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+    const result = await geminiSemaphore.run(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      return extractImageFromResponse(response);
     });
-    const result = extractImageFromResponse(response);
     if (result) return result;
   }
   throw new Error("Failed to generate image after retries");
@@ -84,18 +91,20 @@ async function generateTextOnly(prompt: string): Promise<string> {
 
 export async function editImage(currentImage: string, editPrompt: string): Promise<string> {
   const { mimeType, data } = parseBase64(currentImage);
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-image",
-    contents: [{
-      role: "user",
-      parts: [
-        { inlineData: { mimeType, data } },
-        { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` },
-      ],
-    }],
-    config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+  return geminiSemaphore.run(async () => {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType, data } },
+          { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` },
+        ],
+      }],
+      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+    });
+    const result = extractImageFromResponse(response);
+    if (!result) throw new Error("Failed to edit image");
+    return result;
   });
-  const result = extractImageFromResponse(response);
-  if (!result) throw new Error("Failed to edit image");
-  return result;
 }

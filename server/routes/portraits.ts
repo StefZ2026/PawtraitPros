@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
+sharp.cache(false);
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { generateImage, editImage } from "../gemini";

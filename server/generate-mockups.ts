@@ -1,4 +1,5 @@
 import sharp from "sharp";
+sharp.cache(false);
 import { storage } from "./storage";
 
 const WIDTH = 1200;
