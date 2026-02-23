@@ -628,6 +628,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Quick add client
   const addClientMutation = useMutation({
     mutationFn: async () => {
+      if (!newPetOwnerEmail && !newPetOwnerPhone) {
+        throw new Error("Please provide the owner's email or phone number");
+      }
       const body: any = {
         name: newPetName,
         species: newPetSpecies,
@@ -994,6 +997,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                   <div>
                     <label className="text-sm font-medium mb-1 flex items-center gap-1"><Mail className="h-3 w-3" /> Owner Email</label>
                     <Input placeholder="owner@email.com" value={newPetOwnerEmail} onChange={(e) => setNewPetOwnerEmail(e.target.value)} />
+                    <p className="text-xs text-muted-foreground mt-1">Email or phone required.</p>
                   </div>
                 </div>
                 <div className="space-y-3">

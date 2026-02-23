@@ -458,6 +458,10 @@ export function registerDogRoutes(app: Express): void {
         return res.status(400).json({ error: "Please select a valid breed from the list" });
       }
 
+      if (!dogData.ownerEmail && !dogData.ownerPhone) {
+        return res.status(400).json({ error: "Owner email or phone is required" });
+      }
+
       const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
       res.status(201).json(dog);
     } catch (error) {

@@ -332,6 +332,7 @@ export default function Create() {
       const nameCheck = validatePetName(petName);
       if (!nameCheck.valid) throw new Error(nameCheck.error || "Invalid name");
       if (!petBreed) throw new Error("Please select a breed");
+      if (!ownerEmail && !ownerPhone) throw new Error("Please provide the owner's email or phone number so we can send them their portrait");
 
       const data: Record<string, any> = {
         name: petName, breed: petBreed || undefined, age: petAge || undefined,
@@ -545,9 +546,10 @@ export default function Create() {
                   <Input placeholder="Age (optional)" aria-label="Pet age" value={petAge} onChange={(e) => setPetAge(e.target.value)} data-testid="input-pet-age" />
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <Input placeholder="Owner email (optional)" aria-label="Owner email" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} data-testid="input-owner-email" />
-                  <Input placeholder="Owner phone (optional)" aria-label="Owner phone" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} data-testid="input-owner-phone" />
+                  <Input placeholder="Owner email" aria-label="Owner email" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} data-testid="input-owner-email" />
+                  <Input placeholder="Owner phone" aria-label="Owner phone" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} data-testid="input-owner-phone" />
                 </div>
+                <p className="text-xs text-muted-foreground -mt-1">At least one contact method required to send the portrait.</p>
                 <Textarea
                   placeholder="Tell people about this pet — personality, quirks, likes... (optional)"
                   value={petDescription}
