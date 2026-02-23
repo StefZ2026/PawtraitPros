@@ -86,7 +86,7 @@ export const portraitStyles: StyleOption[] = [
     description: "Futuristic astronaut among the stars",
     category: "Sci-Fi",
     species: "dog",
-    promptTemplate: "A futuristic portrait of a {breed} dog as an astronaut wearing a detailed space suit with reflective visor, Earth visible in background, cosmic starfield, photorealistic digital art style, sense of wonder and exploration"
+    promptTemplate: "A full-body portrait of a {breed} dog as an astronaut, the dog's head completely fills the open helmet with no empty space between the head and helmet rim, the dog's body naturally fills out a detailed NASA-style space suit with mission patches and life-support hoses, standing heroically on the lunar surface with Earth rising in the background, cosmic starfield, the dog's face is large and clearly visible looking straight at camera through the open visor, photorealistic cinematic lighting, highly detailed, anatomically correct dog proportions inside the suit"
   },
   {
     id: 12,
@@ -294,7 +294,7 @@ export const portraitStyles: StyleOption[] = [
     description: "Cosmic kitty exploring the final frontier",
     category: "Sci-Fi",
     species: "cat",
-    promptTemplate: "A spectacular portrait of a {breed} cat wearing a tiny astronaut helmet floating weightlessly in outer space, colorful nebula and distant galaxies in the background, Earth visible through the visor reflection, wide curious eyes full of wonder, stars twinkling around, playful and awe-inspiring, cinematic space photography style, highly detailed"
+    promptTemplate: "A full-body portrait of a {breed} cat as an astronaut, the cat's head completely fills the open helmet with no empty space between the head and helmet rim, the cat's furry body naturally fills out a detailed NASA-style space suit with mission patches and life-support hoses, standing heroically on the lunar surface with Earth rising in the background, cosmic starfield and nebula, the cat's face is large and clearly visible looking straight at camera through the open visor, photorealistic cinematic lighting, highly detailed, anatomically correct cat proportions inside the suit"
   },
   {
     id: 106,
