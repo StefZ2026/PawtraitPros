@@ -88,7 +88,15 @@ export function registerPackRoutes(app: Express): void {
   app.delete("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
-      const org = await storage.getOrganizationByOwner(userId);
+      const userEmail = req.user!.claims.email as string;
+      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+
+      let org;
+      if (isAdmin && req.query.orgId) {
+        org = await storage.getOrganization(parseInt(req.query.orgId as string));
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+      }
       if (!org) return res.status(404).json({ error: "No organization found" });
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
@@ -109,7 +117,15 @@ export function registerPackRoutes(app: Express): void {
   app.post("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
-      const org = await storage.getOrganizationByOwner(userId);
+      const userEmail = req.user!.claims.email as string;
+      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+
+      let org;
+      if (isAdmin && req.body.organizationId) {
+        org = await storage.getOrganization(parseInt(req.body.organizationId));
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+      }
       if (!org) return res.status(404).json({ error: "No organization found" });
 
       const { packType, date, species } = req.body;

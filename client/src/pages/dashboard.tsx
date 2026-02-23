@@ -578,10 +578,11 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
 
   // Daily pack selection (per species)
   const { data: dailyPack } = useQuery<any>({
-    queryKey: ["/api/daily-pack", today, packSpecies],
+    queryKey: ["/api/daily-pack", today, packSpecies, organization.id],
     queryFn: async () => {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/daily-pack?date=${today}&species=${packSpecies}`, { headers });
+      const orgQuery = isAdmin ? `&orgId=${organization.id}` : "";
+      const res = await fetch(`/api/daily-pack?date=${today}&species=${packSpecies}${orgQuery}`, { headers });
       if (!res.ok) return null;
       return res.json();
     },
@@ -617,7 +618,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Set daily pack (per species)
   const setPackMutation = useMutation({
     mutationFn: async (packType: string) => {
-      return apiRequest("POST", "/api/daily-pack", { packType, species: packSpecies, date: today });
+      const body: any = { packType, species: packSpecies, date: today };
+      if (isAdmin) body.organizationId = organization.id;
+      return apiRequest("POST", "/api/daily-pack", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
@@ -906,8 +909,10 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm text-muted-foreground">Styles in this pack:</span>
                 <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => {
-                  // Allow changing pack
-                  queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
+                  const orgQuery = isAdmin ? `&orgId=${organization.id}` : "";
+                  apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${packSpecies}${orgQuery}`).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
+                  });
                 }}>
                   Change
                 </Button>

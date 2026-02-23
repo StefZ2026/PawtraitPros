@@ -737,8 +737,8 @@ export default function Onboarding() {
                   const newLogo = logoPreview && logoPreview !== org.logoUrl;
                   newLogo ? saveAndNext({ logoUrl: logoPreview }) : goNext();
                 }}
-                nextLabel={logoPreview && logoPreview !== org.logoUrl ? "Save & Continue" : org.logoUrl ? "Looks Good" : "Upload to Continue"}
-                nextDisabled={updateMutation.isPending || (!logoPreview && !org.logoUrl)}
+                nextLabel={logoPreview && logoPreview !== org.logoUrl ? "Save & Continue" : org.logoUrl ? "Looks Good" : "Skip for Now"}
+                nextDisabled={updateMutation.isPending}
                 backTestId="button-back-logo"
                 nextTestId="button-next-logo"
               />

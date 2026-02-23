@@ -230,7 +230,9 @@ export default function Create() {
   const [previewPackType, setPreviewPackType] = useState<string | null>(null);
   const setPackMutation = useMutation({
     mutationFn: async (packType: string) => {
-      return apiRequest("POST", "/api/daily-pack", { packType, species: effectiveSpecies, date: today });
+      const body: any = { packType, species: effectiveSpecies, date: today };
+      if (orgParam) body.organizationId = parseInt(orgParam);
+      return apiRequest("POST", "/api/daily-pack", body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
@@ -635,7 +637,7 @@ export default function Create() {
                     size="sm"
                     className="text-xs text-muted-foreground"
                     onClick={() => {
-                      apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${effectiveSpecies}`).then(() => {
+                      apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${effectiveSpecies}${orgParam ? `&orgId=${orgParam}` : ""}`).then(() => {
                         queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
                         setSelectedStyle(null);
                       });
