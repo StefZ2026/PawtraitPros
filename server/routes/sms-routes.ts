@@ -4,7 +4,7 @@ import { isAuthenticated } from "../auth";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
 
 export function registerSmsRoutes(app: Express): void {
-  // --- SMS sharing via Telnyx ---
+  // --- SMS sharing via Twilio ---
   const smsRateLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 5,
