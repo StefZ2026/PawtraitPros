@@ -1,6 +1,7 @@
 import sharp from "sharp";
 sharp.cache(false);
 import { storage } from "./storage";
+import { fetchImageAsBuffer } from "./supabase-storage";
 
 const WIDTH = 1200;
 const HEIGHT = 630;
@@ -99,7 +100,7 @@ export async function generateShowcaseMockup(orgId: number): Promise<Buffer> {
     const portrait = await storage.getSelectedPortraitByDog(dog.id);
     if (portrait && portrait.generatedImageUrl) {
       try {
-        const buf = await extractImageFromDataUri(portrait.generatedImageUrl);
+        const buf = await fetchImageAsBuffer(portrait.generatedImageUrl);
         dogsWithPortraits.push({
           name: dog.name,
           breed: dog.breed || "Unknown",
@@ -134,7 +135,7 @@ export async function generateShowcaseMockup(orgId: number): Promise<Buffer> {
   let orgLogoWidth = 0;
   if (org.logoUrl) {
     try {
-      const orgLogoBuf = await extractImageFromDataUri(org.logoUrl);
+      const orgLogoBuf = await fetchImageAsBuffer(org.logoUrl);
       const orgLogo = await makeRoundedImage(orgLogoBuf, orgLogoSize, orgLogoSize, 8);
       composites.push({ input: orgLogo, top: 18, left: 30 });
       orgLogoWidth = orgLogoSize + 14;
@@ -199,7 +200,7 @@ export async function generatePawfileMockup(dogId: number): Promise<Buffer> {
   const portrait = await storage.getSelectedPortraitByDog(dog.id);
   if (!portrait || !portrait.generatedImageUrl) throw new Error("No portrait found");
 
-  const portraitBuffer = await extractImageFromDataUri(portrait.generatedImageUrl);
+  const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
 
   const composites: sharp.OverlayOptions[] = [];
 
@@ -228,7 +229,7 @@ export async function generatePawfileMockup(dogId: number): Promise<Buffer> {
   const orgLogoSize = 60;
   if (org.logoUrl) {
     try {
-      const orgLogoBuf = await extractImageFromDataUri(org.logoUrl);
+      const orgLogoBuf = await fetchImageAsBuffer(org.logoUrl);
       const orgLogo = await makeRoundedImage(orgLogoBuf, orgLogoSize, orgLogoSize, 8);
       composites.push({ input: orgLogo, top: 20, left: WIDTH - orgLogoSize - 30 });
     } catch (e) {}

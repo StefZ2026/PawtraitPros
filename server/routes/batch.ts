@@ -7,6 +7,7 @@ import { getPacks } from "@shared/pack-config";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
 import { sendEmail, isEmailConfigured, buildDepartureEmail } from "./email";
 import { ADMIN_EMAIL, sanitizeForPrompt, generatePetCode } from "./helpers";
+import { uploadToStorage, isDataUri } from "../supabase-storage";
 
 export function registerBatchRoutes(app: Express): void {
 
@@ -92,7 +93,13 @@ export function registerBatchRoutes(app: Express): void {
           );
 
           // Generate image
-          const generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
+          let generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
+          try {
+            const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+            generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+          } catch (err) {
+            console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
+          }
 
           // Save portrait
           const portrait = await storage.createPortrait({

@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import { storage } from "../storage";
 import { getStripeClient } from "../stripeClient";
 import { isTrialExpired } from "../subscription";
+import { uploadToStorage, isDataUri } from "../supabase-storage";
 
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
@@ -161,24 +162,44 @@ export async function createDogWithPortrait(dogData: any, orgId: number, origina
     dogData.petCode = generatePetCode(dogData.name);
   }
 
+  let photoUrl = originalPhotoUrl;
+  if (photoUrl && isDataUri(photoUrl)) {
+    try {
+      const fname = `dog-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      photoUrl = await uploadToStorage(photoUrl, "originals", fname);
+    } catch (err) {
+      console.error("[storage-upload] Dog photo upload failed, using base64 fallback:", err);
+    }
+  }
+
+  let portraitUrl = generatedPortraitUrl;
+  if (portraitUrl && isDataUri(portraitUrl)) {
+    try {
+      const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      portraitUrl = await uploadToStorage(portraitUrl, "portraits", fname);
+    } catch (err) {
+      console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+    }
+  }
+
   const dog = await storage.createDog({
     ...dogData,
-    originalPhotoUrl,
+    originalPhotoUrl: photoUrl,
     organizationId: orgId,
   });
 
-  if (generatedPortraitUrl && styleId) {
+  if (portraitUrl && styleId) {
     const existingPortrait = await storage.getPortraitByDogAndStyle(dog.id, styleId);
     if (!existingPortrait) {
       await storage.createPortrait({
         dogId: dog.id,
         styleId,
-        generatedImageUrl: generatedPortraitUrl,
+        generatedImageUrl: portraitUrl,
         isSelected: true,
       });
       await storage.incrementOrgPortraitsUsed(orgId);
     } else {
-      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: generatedPortraitUrl });
+      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: portraitUrl });
     }
   }
 

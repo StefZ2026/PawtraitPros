@@ -8,6 +8,7 @@ import { isValidBreed } from "../breeds";
 import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt } from "./helpers";
 import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
+import { uploadToStorage, isDataUri } from "../supabase-storage";
 
 export function registerDogRoutes(app: Express): void {
   // --- PET CODE LOOKUP (public) ---
@@ -259,7 +260,13 @@ export function registerDogRoutes(app: Express): void {
           .replace(/\{name\}/g, dog.name)
       );
 
-      const generatedImageUrl = await generateImage(prompt, dog.original_photo_url);
+      let generatedImageUrl = await generateImage(prompt, dog.original_photo_url);
+      try {
+        const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
 
       // Save portrait (mark previous as not selected)
       await pool.query(

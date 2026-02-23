@@ -7,6 +7,7 @@ import { generateImage, editImage } from "../gemini";
 import { generateShowcaseMockup, generatePawfileMockup } from "../generate-mockups";
 import { isTrialExpired } from "../subscription";
 import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit } from "./helpers";
+import { uploadToStorage, isDataUri, fetchImageAsBuffer } from "../supabase-storage";
 
 const MAX_STYLES_PER_PET = 5;
 
@@ -54,35 +55,28 @@ export function registerPortraitRoutes(app: Express): void {
         return res.status(404).send("Image not found");
       }
 
-      const dataUri = portrait.generatedImageUrl;
-      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
-      if (!matches) {
-        return res.status(400).send("Invalid image data");
-      }
-      const portraitBuffer = Buffer.from(matches[2], "base64");
+      const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
 
       // Get the dog to find the org
       const dog = await storage.getDog(portrait.dogId);
       if (!dog) {
-        // No dog found — serve without watermark
-        res.set({ "Content-Type": matches[1], "Content-Disposition": "attachment; filename=portrait.png" });
+        res.set({ "Content-Type": "image/png", "Content-Disposition": "attachment; filename=portrait.png" });
         return res.send(portraitBuffer);
       }
 
       const org = await storage.getOrganization(dog.organizationId);
       if (!org || !org.logoUrl) {
-        // No org or no logo — serve without watermark
         res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
         return res.send(portraitBuffer);
       }
 
-      // Parse the org logo
-      const logoMatches = org.logoUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!logoMatches) {
+      let logoBuffer: Buffer;
+      try {
+        logoBuffer = await fetchImageAsBuffer(org.logoUrl);
+      } catch {
         res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
         return res.send(portraitBuffer);
       }
-      const logoBuffer = Buffer.from(logoMatches[2], "base64");
 
       // Get portrait dimensions
       const portraitMeta = await sharp(portraitBuffer).metadata();
@@ -328,7 +322,15 @@ export function registerPortraitRoutes(app: Express): void {
         }
       }
 
-      const generatedImage = await generateImage(sanitizedPrompt, originalImage || undefined);
+      const generatedImageRaw = await generateImage(sanitizedPrompt, originalImage || undefined);
+
+      let generatedImage = generatedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
 
       let portraitRecord = existingPortrait;
       if (dogId && styleId) {
@@ -412,7 +414,22 @@ export function registerPortraitRoutes(app: Express): void {
         }
       }
 
-      const editedImage = await editImage(currentImage, sanitizedEditPrompt);
+      // If currentImage is a URL (from Storage), fetch and convert to data URI for Gemini
+      let imageForEdit = currentImage;
+      if (!isDataUri(currentImage)) {
+        const buf = await fetchImageAsBuffer(currentImage);
+        imageForEdit = `data:image/png;base64,${buf.toString('base64')}`;
+      }
+
+      const editedImageRaw = await editImage(imageForEdit, sanitizedEditPrompt);
+
+      let editedImage = editedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
+      }
 
       let editCount: number | null = null;
       if (portraitId) {

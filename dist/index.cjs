@@ -1132,6 +1132,45 @@ async function markFreeTrialUsed(orgId) {
   await storage.updateOrganization(orgId, { hasUsedFreeTrial: true });
 }
 
+// server/supabase-storage.ts
+var SUPABASE_URL = process.env.SUPABASE_URL;
+var SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+async function uploadToStorage(base64DataUri, bucket, filename) {
+  const match = base64DataUri.match(/^data:([^;]+);base64,(.+)$/s);
+  if (!match) throw new Error("Invalid base64 data URI");
+  const contentType = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  const res = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/${bucket}/${filename}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        "Content-Type": contentType,
+        "x-upsert": "true"
+      },
+      body: buffer
+    }
+  );
+  if (!res.ok) {
+    const text2 = await res.text();
+    throw new Error(`Storage upload failed (${res.status}): ${text2}`);
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${filename}`;
+}
+async function fetchImageAsBuffer(urlOrDataUri) {
+  if (urlOrDataUri.startsWith("data:")) {
+    const base64Data = urlOrDataUri.replace(/^data:image\/\w+;base64,/, "");
+    return Buffer.from(base64Data, "base64");
+  }
+  const res = await fetch(urlOrDataUri);
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+function isDataUri(value) {
+  return value.startsWith("data:");
+}
+
 // server/routes/helpers.ts
 var ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 function sanitizeForPrompt(input) {
@@ -1268,23 +1307,41 @@ async function createDogWithPortrait(dogData, orgId, originalPhotoUrl, generated
   if (!dogData.petCode) {
     dogData.petCode = generatePetCode(dogData.name);
   }
+  let photoUrl = originalPhotoUrl;
+  if (photoUrl && isDataUri(photoUrl)) {
+    try {
+      const fname = `dog-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      photoUrl = await uploadToStorage(photoUrl, "originals", fname);
+    } catch (err) {
+      console.error("[storage-upload] Dog photo upload failed, using base64 fallback:", err);
+    }
+  }
+  let portraitUrl = generatedPortraitUrl;
+  if (portraitUrl && isDataUri(portraitUrl)) {
+    try {
+      const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      portraitUrl = await uploadToStorage(portraitUrl, "portraits", fname);
+    } catch (err) {
+      console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+    }
+  }
   const dog = await storage.createDog({
     ...dogData,
-    originalPhotoUrl,
+    originalPhotoUrl: photoUrl,
     organizationId: orgId
   });
-  if (generatedPortraitUrl && styleId) {
+  if (portraitUrl && styleId) {
     const existingPortrait = await storage.getPortraitByDogAndStyle(dog.id, styleId);
     if (!existingPortrait) {
       await storage.createPortrait({
         dogId: dog.id,
         styleId,
-        generatedImageUrl: generatedPortraitUrl,
+        generatedImageUrl: portraitUrl,
         isSelected: true
       });
       await storage.incrementOrgPortraitsUsed(orgId);
     } else {
-      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: generatedPortraitUrl });
+      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: portraitUrl });
     }
   }
   return dog;
@@ -3300,7 +3357,13 @@ function registerDogRoutes(app2) {
       const prompt = sanitizeForPrompt(
         style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, dog.species || "dog").replace(/\{name\}/g, dog.name)
       );
-      const generatedImageUrl = await generateImage(prompt, dog.original_photo_url);
+      let generatedImageUrl = await generateImage(prompt, dog.original_photo_url);
+      try {
+        const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
       await pool.query(
         `UPDATE portraits SET is_selected = false WHERE dog_id = $1`,
         [dog.id]
@@ -3622,10 +3685,6 @@ function pillSvg(text2, fontSize, bgColor, textColor, paddingX, paddingY) {
   </svg>`;
   return { svg: Buffer.from(svg), width, height };
 }
-async function extractImageFromDataUri(dataUri) {
-  const base64Data = dataUri.replace(/^data:image\/\w+;base64,/, "");
-  return Buffer.from(base64Data, "base64");
-}
 async function resizeToFit(imageBuffer, maxW, maxH) {
   return (0, import_sharp.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "center" }).png().toBuffer();
 }
@@ -3645,7 +3704,7 @@ async function generateShowcaseMockup(orgId) {
     const portrait = await storage.getSelectedPortraitByDog(dog.id);
     if (portrait && portrait.generatedImageUrl) {
       try {
-        const buf = await extractImageFromDataUri(portrait.generatedImageUrl);
+        const buf = await fetchImageAsBuffer(portrait.generatedImageUrl);
         dogsWithPortraits.push({
           name: dog.name,
           breed: dog.breed || "Unknown",
@@ -3669,7 +3728,7 @@ async function generateShowcaseMockup(orgId) {
   let orgLogoWidth = 0;
   if (org.logoUrl) {
     try {
-      const orgLogoBuf = await extractImageFromDataUri(org.logoUrl);
+      const orgLogoBuf = await fetchImageAsBuffer(org.logoUrl);
       const orgLogo = await makeRoundedImage(orgLogoBuf, orgLogoSize, orgLogoSize, 8);
       composites.push({ input: orgLogo, top: 18, left: 30 });
       orgLogoWidth = orgLogoSize + 14;
@@ -3712,7 +3771,7 @@ async function generatePawfileMockup(dogId) {
   if (!org) throw new Error("Organization not found");
   const portrait = await storage.getSelectedPortraitByDog(dog.id);
   if (!portrait || !portrait.generatedImageUrl) throw new Error("No portrait found");
-  const portraitBuffer = await extractImageFromDataUri(portrait.generatedImageUrl);
+  const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
   const composites = [];
   const bg = await (0, import_sharp.default)({
     create: { width: WIDTH, height: HEIGHT, channels: 4, background: CREAM_BG }
@@ -3729,7 +3788,7 @@ async function generatePawfileMockup(dogId) {
   const orgLogoSize = 60;
   if (org.logoUrl) {
     try {
-      const orgLogoBuf = await extractImageFromDataUri(org.logoUrl);
+      const orgLogoBuf = await fetchImageAsBuffer(org.logoUrl);
       const orgLogo = await makeRoundedImage(orgLogoBuf, orgLogoSize, orgLogoSize, 8);
       composites.push({ input: orgLogo, top: 20, left: WIDTH - orgLogoSize - 30 });
     } catch (e) {
@@ -3802,15 +3861,10 @@ function registerPortraitRoutes(app2) {
       if (!portrait || !portrait.generatedImageUrl) {
         return res.status(404).send("Image not found");
       }
-      const dataUri = portrait.generatedImageUrl;
-      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
-      if (!matches) {
-        return res.status(400).send("Invalid image data");
-      }
-      const portraitBuffer = Buffer.from(matches[2], "base64");
+      const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
       const dog = await storage.getDog(portrait.dogId);
       if (!dog) {
-        res.set({ "Content-Type": matches[1], "Content-Disposition": "attachment; filename=portrait.png" });
+        res.set({ "Content-Type": "image/png", "Content-Disposition": "attachment; filename=portrait.png" });
         return res.send(portraitBuffer);
       }
       const org = await storage.getOrganization(dog.organizationId);
@@ -3818,12 +3872,13 @@ function registerPortraitRoutes(app2) {
         res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
         return res.send(portraitBuffer);
       }
-      const logoMatches = org.logoUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!logoMatches) {
+      let logoBuffer;
+      try {
+        logoBuffer = await fetchImageAsBuffer(org.logoUrl);
+      } catch {
         res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
         return res.send(portraitBuffer);
       }
-      const logoBuffer = Buffer.from(logoMatches[2], "base64");
       const portraitMeta = await (0, import_sharp2.default)(portraitBuffer).metadata();
       const pw = portraitMeta.width || 1024;
       const ph = portraitMeta.height || 1024;
@@ -4030,7 +4085,14 @@ function registerPortraitRoutes(app2) {
           }
         }
       }
-      const generatedImage = await generateImage(sanitizedPrompt, originalImage || void 0);
+      const generatedImageRaw = await generateImage(sanitizedPrompt, originalImage || void 0);
+      let generatedImage = generatedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
       let portraitRecord = existingPortrait;
       if (dogId && styleId) {
         const parsedDogId = parseInt(dogId);
@@ -4100,7 +4162,19 @@ function registerPortraitRoutes(app2) {
           });
         }
       }
-      const editedImage = await editImage(currentImage, sanitizedEditPrompt);
+      let imageForEdit = currentImage;
+      if (!isDataUri(currentImage)) {
+        const buf = await fetchImageAsBuffer(currentImage);
+        imageForEdit = `data:image/png;base64,${buf.toString("base64")}`;
+      }
+      const editedImageRaw = await editImage(imageForEdit, sanitizedEditPrompt);
+      let editedImage = editedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
+      }
       let editCount = null;
       if (portraitId) {
         const existing = await storage.getPortrait(parseInt(portraitId));
@@ -4342,7 +4416,13 @@ function registerBatchRoutes(app2) {
           const prompt = sanitizeForPrompt(
             style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
           );
-          const generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
+          let generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
+          try {
+            const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+            generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+          } catch (err) {
+            console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
+          }
           const portrait = await storage.createPortrait({
             dogId: dog.id,
             styleId: style.id,
