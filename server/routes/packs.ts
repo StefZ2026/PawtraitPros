@@ -84,6 +84,27 @@ export function registerPackRoutes(app: Express): void {
     }
   });
 
+  // Clear today's pack selection (allows re-choosing)
+  app.delete("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.claims.sub as string;
+      const org = await storage.getOrganizationByOwner(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+
+      const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const species = (req.query.species as string) || "dog";
+
+      await pool.query(
+        "DELETE FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3",
+        [org.id, date, species]
+      );
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Error clearing daily pack:", error);
+      res.status(500).json({ error: "Failed to clear daily pack" });
+    }
+  });
+
   // Set today's pack selection (per species)
   app.post("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
     try {

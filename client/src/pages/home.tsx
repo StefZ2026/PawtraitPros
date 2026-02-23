@@ -3,10 +3,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
 import {
   Heart, Sparkles, Dog, Cat, Building2, LogOut,
-  LayoutDashboard, Scissors, Sun, Camera, ShoppingBag, ArrowRight, Palette
+  LayoutDashboard, Scissors, Sun, Camera, ShoppingBag, ArrowRight, Palette, Menu
 } from "lucide-react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const EDITIONS = [
   {
@@ -37,6 +39,7 @@ const EDITIONS = [
 
 export default function Home() {
   const { user, isLoading, isAuthenticated, logout, isLoggingOut } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-screen">
@@ -46,7 +49,8 @@ export default function Home() {
             <span className="flex items-center gap-0.5"><Dog className="h-6 w-6" /><Cat className="h-6 w-6" /></span>
             Pawtrait Pros
           </Link>
-          <nav className="flex items-center gap-2">
+          {/* Desktop nav */}
+          <nav className="hidden sm:flex items-center gap-2">
             <Button variant="ghost" data-testid="link-gallery" asChild>
               <Link href="/gallery">Gallery</Link>
             </Button>
@@ -81,6 +85,47 @@ export default function Home() {
               </>
             )}
           </nav>
+          {/* Mobile hamburger */}
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="sm:hidden" aria-label="Open menu">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-64 pt-12">
+              <nav className="flex flex-col gap-2">
+                <Button variant="ghost" className="justify-start" asChild>
+                  <Link href="/gallery" onClick={() => setMobileOpen(false)}>Gallery</Link>
+                </Button>
+                <Button variant="ghost" className="justify-start" asChild>
+                  <Link href="/styles" onClick={() => setMobileOpen(false)}>Styles</Link>
+                </Button>
+                {isAuthenticated ? (
+                  <>
+                    <Button variant="ghost" className="justify-start gap-2" asChild>
+                      <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
+                        <LayoutDashboard className="h-4 w-4" />
+                        Dashboard
+                      </Link>
+                    </Button>
+                    <Button variant="ghost" className="justify-start gap-2" onClick={() => { logout(); setMobileOpen(false); }} disabled={isLoggingOut}>
+                      <LogOut className="h-4 w-4" />
+                      Log Out
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <a href="/login" onClick={() => setMobileOpen(false)}>
+                      <Button variant="ghost" className="w-full justify-start">Log In</Button>
+                    </a>
+                    <a href="/login" onClick={() => setMobileOpen(false)}>
+                      <Button className="w-full">Get Started</Button>
+                    </a>
+                  </>
+                )}
+              </nav>
+            </SheetContent>
+          </Sheet>
         </div>
       </header>
 
@@ -246,7 +291,7 @@ export default function Home() {
               { name: "Framed Prints", desc: "3 sizes, 3 frame colors" },
               { name: "Mugs", desc: "11oz & 15oz" },
               { name: "Tote Bags", desc: "Natural canvas" },
-              { name: "Holiday Cards", desc: "Seasonal (Nov-Dec)" },
+              { name: "Holiday Cards", desc: "Events & Major Holidays" },
             ].map((item) => (
               <div key={item.name} className="flex items-center gap-3 bg-card border rounded-lg px-5 py-3">
                 <ShoppingBag className="h-5 w-5 text-primary shrink-0" />

@@ -540,13 +540,13 @@ export default function Create() {
                   About This {effectiveSpecies === "cat" ? "Kitty" : "Pup"}
                 </h2>
                 <div className="grid sm:grid-cols-3 gap-3">
-                  <Input placeholder="Name *" value={petName} onChange={(e) => setPetName(e.target.value)} data-testid="input-pet-name" />
+                  <Input placeholder="Name *" aria-label="Pet name" value={petName} onChange={(e) => setPetName(e.target.value)} data-testid="input-pet-name" />
                   <BreedSelector species={effectiveSpecies} value={petBreed} onChange={setPetBreed} />
-                  <Input placeholder="Age (optional)" value={petAge} onChange={(e) => setPetAge(e.target.value)} data-testid="input-pet-age" />
+                  <Input placeholder="Age (optional)" aria-label="Pet age" value={petAge} onChange={(e) => setPetAge(e.target.value)} data-testid="input-pet-age" />
                 </div>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <Input placeholder="Owner email (optional)" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} data-testid="input-owner-email" />
-                  <Input placeholder="Owner phone (optional)" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} data-testid="input-owner-phone" />
+                  <Input placeholder="Owner email (optional)" aria-label="Owner email" type="email" value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} data-testid="input-owner-email" />
+                  <Input placeholder="Owner phone (optional)" aria-label="Owner phone" type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} data-testid="input-owner-phone" />
                 </div>
                 <Textarea
                   placeholder="Tell people about this pet — personality, quirks, likes... (optional)"
@@ -624,9 +624,25 @@ export default function Create() {
 
             {speciesConfirmed && uploadedImage && !noPackSelected && packStyleIds && (
               <div>
-                <h2 className="text-lg font-semibold mb-4" data-testid="text-section-style">
-                  Pick a Style
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold" data-testid="text-section-style">
+                    Pick a Style
+                  </h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground"
+                    onClick={() => {
+                      apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${effectiveSpecies}`).then(() => {
+                        queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
+                        setSelectedStyle(null);
+                      });
+                    }}
+                    data-testid="button-change-pack"
+                  >
+                    Change Pack
+                  </Button>
+                </div>
                 <StyleSelector
                   selectedStyle={selectedStyle}
                   onSelectStyle={(s) => { setSelectedStyle(s); }}
