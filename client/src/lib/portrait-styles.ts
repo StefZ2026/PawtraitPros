@@ -386,7 +386,7 @@ export const portraitStyles: StyleOption[] = [
   },
   {
     id: 117,
-    name: "Pool Party",
+    name: "Pool Lounge",
     description: "Regal poolside lounging on a flamingo float",
     category: "Fun",
     species: "cat",
@@ -394,7 +394,7 @@ export const portraitStyles: StyleOption[] = [
   },
   {
     id: 118,
-    name: "Campfire",
+    name: "Starlight Camp",
     description: "Magical campfire night toasting fish treats",
     category: "Fun",
     species: "cat",
@@ -402,7 +402,7 @@ export const portraitStyles: StyleOption[] = [
   },
   {
     id: 119,
-    name: "Sleepover Party",
+    name: "Blanket Fort",
     description: "Cozy blanket fort party with fairy lights",
     category: "Fun",
     species: "cat",
@@ -471,4 +471,7 @@ export const stylePreviewImages: Record<string, string> = {
   "Pool Party": "/images/styles/pool-party.jpg",
   "Campfire": "/images/styles/campfire.jpg",
   "Sleepover Party": "/images/styles/sleepover-party.jpg",
+  "Pool Lounge": "/images/styles/pool-lounge.jpg",
+  "Starlight Camp": "/images/styles/starlight-camp.jpg",
+  "Blanket Fort": "/images/styles/blanket-fort.jpg",
 };
