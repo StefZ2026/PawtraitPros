@@ -4,39 +4,42 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { ArrowLeft, Sparkles, Paintbrush, Dog, Cat, Palette, PartyPopper } from "lucide-react";
 import { useState } from "react";
-import { stylePreviewImages } from "@/lib/portrait-styles";
+import { portraitStyles, stylePreviewImages } from "@/lib/portrait-styles";
 import { useAuth } from "@/hooks/use-auth";
 import { AdminFloatingButton } from "@/components/admin-button";
-import type { PackType } from "@shared/pack-config";
+import { getPacks, type PackType } from "@shared/pack-config";
 
-interface ShowcaseStyle {
+interface DisplayStyle {
+  id: number;
   name: string;
   description: string;
   species: "dog" | "cat";
   pack: PackType;
 }
 
-// Curated 5 per pack — best images, mix of dog + cat
-const SHOWCASE_STYLES: ShowcaseStyle[] = [
-  // Celebrate
-  { name: "Holiday Spirit", description: "Festive seasonal celebration", species: "dog", pack: "celebrate" },
-  { name: "Spring Flower Crown", description: "Whimsical garden beauty", species: "dog", pack: "celebrate" },
-  { name: "Halloween Pumpkin", description: "Whimsical spooky season costume", species: "dog", pack: "celebrate" },
-  { name: "Holiday Stocking", description: "Festive kitty in holiday cheer", species: "cat", pack: "celebrate" },
-  { name: "Sunbeam Napper", description: "Cozy cat basking in a warm sunbeam", species: "cat", pack: "celebrate" },
-  // Fun
-  { name: "Superhero", description: "Caped crusader ready to save the day", species: "dog", pack: "fun" },
-  { name: "Pirate Captain", description: "Swashbuckling adventure on the high seas", species: "dog", pack: "fun" },
-  { name: "Space Explorer", description: "Futuristic astronaut among the stars", species: "dog", pack: "fun" },
-  { name: "Purrista Barista", description: "Your favorite feline coffee artist", species: "cat", pack: "fun" },
-  { name: "Box Inspector", description: "Classic cat-in-a-box charm", species: "cat", pack: "fun" },
-  // Artistic
-  { name: "Renaissance Noble", description: "A dignified portrait in the style of Italian Renaissance masters", species: "dog", pack: "artistic" },
-  { name: "Art Nouveau Beauty", description: "Elegant flowing lines and natural motifs", species: "dog", pack: "artistic" },
-  { name: "Impressionist Garden", description: "Soft, light-filled garden scene", species: "dog", pack: "artistic" },
-  { name: "Egyptian Royalty", description: "Ancient Egyptian deity with golden adornments", species: "cat", pack: "artistic" },
-  { name: "Victorian Lady", description: "Prim and proper Victorian elegance", species: "cat", pack: "artistic" },
-];
+function buildPackStyles(): DisplayStyle[] {
+  const styles: DisplayStyle[] = [];
+  for (const species of ["dog", "cat"] as const) {
+    const packs = getPacks(species);
+    for (const pack of packs) {
+      for (const styleId of pack.styleIds) {
+        const style = portraitStyles.find((s) => s.id === styleId);
+        if (style) {
+          styles.push({
+            id: style.id,
+            name: style.name,
+            description: style.description,
+            species: style.species,
+            pack: pack.type,
+          });
+        }
+      }
+    }
+  }
+  return styles;
+}
+
+const ALL_PACK_STYLES = buildPackStyles();
 
 const PACK_TABS: Array<{ key: PackType | null; label: string; icon: typeof Sparkles }> = [
   { key: null, label: "All Styles", icon: Palette },
@@ -53,11 +56,14 @@ const packTypeColors: Record<PackType, string> = {
 
 export default function StylesPage() {
   const [activePackType, setActivePackType] = useState<PackType | null>(null);
+  const [speciesFilter, setSpeciesFilter] = useState<"all" | "dog" | "cat">("all");
   const { isAuthenticated } = useAuth();
 
-  const filteredStyles = activePackType
-    ? SHOWCASE_STYLES.filter((s) => s.pack === activePackType)
-    : SHOWCASE_STYLES;
+  const filteredStyles = ALL_PACK_STYLES.filter((s) => {
+    if (activePackType && s.pack !== activePackType) return false;
+    if (speciesFilter !== "all" && s.species !== speciesFilter) return false;
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,7 +101,7 @@ export default function StylesPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-2 mb-8">
+        <div className="flex flex-wrap justify-center gap-2 mb-4">
           {PACK_TABS.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -113,13 +119,41 @@ export default function StylesPage() {
           })}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        <div className="flex justify-center gap-2 mb-8">
+          <Button
+            variant={speciesFilter === "all" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSpeciesFilter("all")}
+          >
+            All Pets
+          </Button>
+          <Button
+            variant={speciesFilter === "dog" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSpeciesFilter("dog")}
+            className="gap-1"
+          >
+            <Dog className="h-3.5 w-3.5" />
+            Dogs
+          </Button>
+          <Button
+            variant={speciesFilter === "cat" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSpeciesFilter("cat")}
+            className="gap-1"
+          >
+            <Cat className="h-3.5 w-3.5" />
+            Cats
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {filteredStyles.map((style) => {
             const previewImage = stylePreviewImages[style.name];
 
             return (
               <Card
-                key={style.name}
+                key={`${style.species}-${style.id}`}
                 className="overflow-hidden hover-elevate group"
               >
                 <div className="aspect-square relative bg-muted protected-image-wrapper">

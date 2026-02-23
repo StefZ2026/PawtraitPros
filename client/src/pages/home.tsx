@@ -122,7 +122,7 @@ export default function Home() {
               { name: "Art Nouveau Beauty", src: "/images/styles/art-nouveau.jpg" },
               { name: "Egyptian Royalty", src: "/images/styles/egyptian-royalty.jpg" },
               { name: "Purrista Barista", src: "/images/styles/purrista-barista.jpg" },
-              { name: "Space Explorer", src: "/images/styles/space-explorer.jpg" },
+              { name: "Pool Party", src: "/images/styles/pool-party.jpg" },
               { name: "Spring Blossoms", src: "/images/styles/spring-blossoms.jpg" },
             ].map((item) => (
               <div key={item.name} className="aspect-square rounded-lg overflow-hidden relative group protected-image-wrapper">
