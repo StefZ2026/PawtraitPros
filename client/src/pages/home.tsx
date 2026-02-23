@@ -161,14 +161,14 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto">
             {[
-              { name: "Renaissance Noble", src: "/images/styles/renaissance-noble.jpg" },
-              { name: "Superhero", src: "/images/styles/superhero.jpg" },
-              { name: "Holiday Spirit", src: "/images/styles/holiday-spirit.jpg" },
-              { name: "Art Nouveau Beauty", src: "/images/styles/art-nouveau.jpg" },
-              { name: "Egyptian Royalty", src: "/images/styles/egyptian-royalty.jpg" },
-              { name: "Purrista Barista", src: "/images/styles/purrista-barista.jpg" },
-              { name: "Pool Party", src: "/images/styles/pool-party.jpg" },
-              { name: "Spring Blossoms", src: "/images/styles/spring-blossoms.jpg" },
+              { name: "Renaissance Noble", src: "/images/styles/renaissance-noble.jpg?v=2" },
+              { name: "Superhero", src: "/images/styles/superhero.jpg?v=2" },
+              { name: "Holiday Spirit", src: "/images/styles/holiday-spirit.jpg?v=2" },
+              { name: "Art Nouveau Beauty", src: "/images/styles/art-nouveau.jpg?v=2" },
+              { name: "Egyptian Royalty", src: "/images/styles/egyptian-royalty.jpg?v=2" },
+              { name: "Purrista Barista", src: "/images/styles/purrista-barista.jpg?v=2" },
+              { name: "Pool Party", src: "/images/styles/pool-party.jpg?v=2" },
+              { name: "Spring Blossoms", src: "/images/styles/spring-blossoms.jpg?v=2" },
             ].map((item) => (
               <div key={item.name} className="aspect-square rounded-lg overflow-hidden relative group protected-image-wrapper">
                 <img
