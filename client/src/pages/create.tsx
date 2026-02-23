@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -86,6 +86,13 @@ export default function Create() {
 
   const activeView = views.find(v => v.id === activeViewId) || null;
   const generatedImage = activeView?.image || null;
+
+  // Async job tracking
+  const [generateJobId, setGenerateJobId] = useState<string | null>(null);
+  const [editJobId, setEditJobId] = useState<string | null>(null);
+  const [completedGenerate, setCompletedGenerate] = useState<{ result: any; context: any } | null>(null);
+  const [completedEdit, setCompletedEdit] = useState<any>(null);
+  const generateContextRef = useRef<{ style: StyleOption; wasExistingStyle: boolean; existingViewId: number | null } | null>(null);
 
   const [showLimitModal, setShowLimitModal] = useState(false);
   const targetOrg = orgParam ? adminTargetOrg : myOrg;
@@ -240,8 +247,108 @@ export default function Create() {
     },
   });
 
+  // Poll for generate job completion
+  useEffect(() => {
+    if (!generateJobId) return;
+    const poll = async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch(`/api/jobs/${generateJobId}`, { headers });
+        if (!res.ok) return;
+        const job = await res.json();
+        if (job.status === "completed" && job.result) {
+          setGenerateJobId(null);
+          setCompletedGenerate({ result: job.result, context: generateContextRef.current });
+          generateContextRef.current = null;
+        } else if (job.status === "failed") {
+          setGenerateJobId(null);
+          generateContextRef.current = null;
+          toast({ title: "Generation Failed", description: job.error || "Please try again.", variant: "destructive" });
+        }
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [generateJobId, toast]);
+
+  // Process completed generate result
+  useEffect(() => {
+    if (!completedGenerate) return;
+    const { result: data, context: ctx } = completedGenerate;
+    setCompletedGenerate(null);
+    if (!data?.generatedImage || !ctx) return;
+
+    if (ctx.wasExistingStyle && ctx.existingViewId !== null) {
+      const newEditsUsed = data.editCount ?? 0;
+      setViews(prev => prev.map(v =>
+        v.id === ctx.existingViewId
+          ? { ...v, image: data.generatedImage, editsUsed: newEditsUsed, portraitId: data.portraitId || v.portraitId, hasPreviousImage: data.hasPreviousImage ?? true }
+          : v
+      ));
+      toast({ title: "Portrait Regenerated!", description: `${petName}'s ${ctx.style.name} portrait has been updated! (${newEditsUsed}/${MAX_EDITS_PER_VIEW} edits used)` });
+    } else {
+      const newView: PortraitView = {
+        id: nextViewId,
+        image: data.generatedImage,
+        style: ctx.style,
+        editsUsed: data.editCount ?? 0,
+        portraitId: data.portraitId,
+      };
+      setViews(prev => [...prev, newView]);
+      setActiveViewId(nextViewId);
+      setNextViewId(prev => prev + 1);
+      toast({ title: "Portrait Generated!", description: `${petName}'s ${ctx.style.name} portrait is ready!` });
+    }
+  }, [completedGenerate, nextViewId, petName, toast]);
+
+  // Poll for edit job completion
+  useEffect(() => {
+    if (!editJobId) return;
+    const poll = async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch(`/api/jobs/${editJobId}`, { headers });
+        if (!res.ok) return;
+        const job = await res.json();
+        if (job.status === "completed" && job.result) {
+          setEditJobId(null);
+          setCompletedEdit(job.result);
+        } else if (job.status === "failed") {
+          setEditJobId(null);
+          toast({ title: "Edit Failed", description: job.error || "Please try again.", variant: "destructive" });
+        }
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, [editJobId, toast]);
+
+  // Process completed edit result
+  useEffect(() => {
+    if (!completedEdit) return;
+    const data = completedEdit;
+    setCompletedEdit(null);
+    if (data.editedImage && activeViewId !== null) {
+      setViews(prev => prev.map(v =>
+        v.id === activeViewId
+          ? { ...v, image: data.editedImage, editsUsed: data.editCount ?? (v.editsUsed + 1), hasPreviousImage: !!data.hasPreviousImage }
+          : v
+      ));
+      const usedCount = data.editCount ?? 1;
+      toast({ title: "Portrait Updated!", description: `${usedCount}/${data.maxEdits || MAX_EDITS_PER_VIEW} edits used` });
+    }
+  }, [completedEdit, activeViewId, toast]);
+
   const generateMutation = useMutation({
     mutationFn: async () => {
+      // Capture context before POST so polling callback has the right state
+      generateContextRef.current = {
+        style: selectedStyle!,
+        wasExistingStyle: !!(activeView && activeView.style.id === selectedStyle?.id),
+        existingViewId: activeView && activeView.style.id === selectedStyle?.id ? activeViewId : null,
+      };
       const sanitize = (s: string) => s.replace(/[^\w\s\-'.,:;!?()]/g, '').substring(0, 200).trim();
       const breed = sanitize(petBreed || (effectiveSpecies === "cat" ? "domestic" : "mixed breed"));
       const safeName = sanitize(petName);
@@ -255,31 +362,12 @@ export default function Create() {
       return (await apiRequest("POST", "/api/generate-portrait", body)).json();
     },
     onSuccess: (data: any) => {
-      if (data.generatedImage) {
-        if (activeView && activeView.style.id === selectedStyle?.id) {
-          const newEditsUsed = data.editCount ?? (activeView.editsUsed + 1);
-          setViews(prev => prev.map(v =>
-            v.id === activeViewId
-              ? { ...v, image: data.generatedImage, editsUsed: newEditsUsed, portraitId: data.portraitId || v.portraitId, hasPreviousImage: data.hasPreviousImage ?? true }
-              : v
-          ));
-          toast({ title: "Portrait Regenerated!", description: `${petName}'s ${selectedStyle?.name} portrait has been updated! (${newEditsUsed}/${MAX_EDITS_PER_VIEW} edits used)` });
-        } else {
-          const newView: PortraitView = {
-            id: nextViewId,
-            image: data.generatedImage,
-            style: selectedStyle!,
-            editsUsed: data.editCount ?? 0,
-            portraitId: data.portraitId,
-          };
-          setViews(prev => [...prev, newView]);
-          setActiveViewId(nextViewId);
-          setNextViewId(prev => prev + 1);
-          toast({ title: "Portrait Generated!", description: `${petName}'s ${selectedStyle?.name} portrait is ready!` });
-        }
+      if (data.jobId) {
+        setGenerateJobId(data.jobId);
       }
     },
     onError: (error: Error) => {
+      generateContextRef.current = null;
       toast({ title: "Generation Failed", description: error.message || "Please try again.", variant: "destructive" });
     },
   });
@@ -292,20 +380,18 @@ export default function Create() {
       return (await apiRequest("POST", "/api/edit-portrait", body)).json();
     },
     onSuccess: (data: any) => {
-      if (data.editedImage && activeViewId !== null) {
-        setViews(prev => prev.map(v =>
-          v.id === activeViewId
-            ? { ...v, image: data.editedImage, editsUsed: data.editCount ?? (v.editsUsed + 1), hasPreviousImage: !!data.hasPreviousImage }
-            : v
-        ));
-        const usedCount = data.editCount ?? (activeView?.editsUsed ? activeView.editsUsed + 1 : 1);
-        toast({ title: "Portrait Updated!", description: `${usedCount}/${data.maxEdits || MAX_EDITS_PER_VIEW} edits used` });
+      if (data.jobId) {
+        setEditJobId(data.jobId);
       }
     },
     onError: (error: Error) => {
       toast({ title: "Edit Failed", description: error.message || "Please try again.", variant: "destructive" });
     },
   });
+
+  // Derived state: true during POST submission OR job polling
+  const isGenerating = generateMutation.isPending || !!generateJobId;
+  const isEditing = editMutation.isPending || !!editJobId;
 
   const revertMutation = useMutation({
     mutationFn: async () => {
@@ -736,17 +822,17 @@ export default function Create() {
             )}
 
             {styleChanged && (
-              <Button onClick={handleGenerate} disabled={generateMutation.isPending} className="w-full gap-2" size="lg" data-testid="button-generate-new-style">
+              <Button onClick={handleGenerate} disabled={isGenerating} className="w-full gap-2" size="lg" data-testid="button-generate-new-style">
                 <Sparkles className="h-5 w-5" />
-                {generateMutation.isPending ? "Generating..." : `Generate "${selectedStyle?.name}" Portrait`}
+                {isGenerating ? "Generating..." : `Generate "${selectedStyle?.name}" Portrait`}
               </Button>
             )}
 
             <PortraitPreview
               generatedImage={generatedImage}
-              isGenerating={generateMutation.isPending}
-              isEditing={editMutation.isPending}
-              selectedStyle={generateMutation.isPending ? selectedStyle : displayStyle}
+              isGenerating={isGenerating}
+              isEditing={isEditing}
+              selectedStyle={isGenerating ? selectedStyle : displayStyle}
               dogName={petName}
               onRegenerate={handleGenerate}
               onDownload={handleDownload}
@@ -756,9 +842,9 @@ export default function Create() {
             />
 
             {!hasViews && (
-              <Button onClick={handleGenerate} disabled={!canGenerate || generateMutation.isPending} className="w-full gap-2" size="lg" data-testid="button-generate-preview">
+              <Button onClick={handleGenerate} disabled={!canGenerate || isGenerating} className="w-full gap-2" size="lg" data-testid="button-generate-preview">
                 <Sparkles className="h-5 w-5" />
-                {generateMutation.isPending ? "Generating..." : "Generate Preview"}
+                {isGenerating ? "Generating..." : "Generate Preview"}
               </Button>
             )}
 
@@ -766,13 +852,13 @@ export default function Create() {
               <div className="flex flex-col gap-2">
                 <Button
                   onClick={handleGenerate}
-                  disabled={generateMutation.isPending || (activeView ? activeView.editsUsed >= MAX_EDITS_PER_VIEW : false)}
+                  disabled={isGenerating || (activeView ? activeView.editsUsed >= MAX_EDITS_PER_VIEW : false)}
                   variant="outline"
                   className="w-full gap-2"
                   data-testid="button-generate-another"
                 >
                   <Sparkles className="h-4 w-4" />
-                  {generateMutation.isPending ? "Regenerating..." : activeView && activeView.editsUsed >= MAX_EDITS_PER_VIEW ? "No edits remaining" : "Regenerate"}
+                  {isGenerating ? "Regenerating..." : activeView && activeView.editsUsed >= MAX_EDITS_PER_VIEW ? "No edits remaining" : "Regenerate"}
                 </Button>
                 {activeView?.hasPreviousImage && activeView?.portraitId && (
                   <Button

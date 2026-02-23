@@ -6,12 +6,128 @@ import { isAuthenticated } from "../auth";
 import { generateImage, editImage } from "../gemini";
 import { generateShowcaseMockup, generatePawfileMockup } from "../generate-mockups";
 import { isTrialExpired } from "../subscription";
-import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit } from "./helpers";
+import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit, generatePetCode } from "./helpers";
 import { uploadToStorage, isDataUri, fetchImageAsBuffer } from "../supabase-storage";
+import { enqueue, registerWorker, type Job } from "../job-queue";
 
 const MAX_STYLES_PER_PET = 5;
 
 export function registerPortraitRoutes(app: Express): void {
+  // Register the async worker that processes all portrait job types
+  registerWorker(async (job: Job) => {
+    const p = job.payload;
+
+    if (job.type === "generate") {
+      const generatedImageRaw = await generateImage(p.prompt, p.originalImage || undefined);
+
+      let generatedImage = generatedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
+
+      let portraitRecord = p.existingPortrait ? { ...p.existingPortrait } : null;
+      if (p.dogId && p.styleId) {
+        if (p.existingPortrait) {
+          await storage.updatePortrait(p.existingPortrait.id, {
+            previousImageUrl: p.existingPortrait.generatedImageUrl || null,
+            generatedImageUrl: generatedImage,
+          });
+          await storage.incrementPortraitEditCount(p.existingPortrait.id);
+          await storage.selectPortraitForGallery(p.dogId, p.existingPortrait.id);
+          portraitRecord = {
+            ...p.existingPortrait,
+            editCount: p.existingPortrait.editCount + 1,
+            generatedImageUrl: generatedImage,
+            previousImageUrl: p.existingPortrait.generatedImageUrl || null,
+          };
+        } else {
+          portraitRecord = await storage.createPortrait({
+            dogId: p.dogId,
+            styleId: p.styleId,
+            generatedImageUrl: generatedImage,
+          });
+          await storage.selectPortraitForGallery(p.dogId, portraitRecord.id);
+          await storage.incrementOrgPortraitsUsed(p.orgId);
+        }
+      }
+
+      return {
+        generatedImage,
+        dogName: p.dogName,
+        portraitId: portraitRecord?.id,
+        editCount: portraitRecord ? portraitRecord.editCount : null,
+        maxEdits: MAX_EDITS_PER_IMAGE,
+        isNewPortrait: p.isNewPortrait,
+        hasPreviousImage: !!(portraitRecord as any)?.previousImageUrl,
+      };
+    }
+
+    if (job.type === "edit") {
+      const editedImageRaw = await editImage(p.imageForEdit, p.editPrompt);
+
+      let editedImage = editedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
+      }
+
+      let editCount: number | null = null;
+      if (p.portraitId) {
+        const existing = await storage.getPortrait(p.portraitId);
+        await storage.updatePortrait(p.portraitId, {
+          previousImageUrl: existing?.generatedImageUrl || null,
+          generatedImageUrl: editedImage,
+        });
+        await storage.incrementPortraitEditCount(p.portraitId);
+        const updated = await storage.getPortrait(p.portraitId);
+        editCount = updated?.editCount ?? null;
+      }
+
+      return {
+        editedImage,
+        editCount,
+        maxEdits: MAX_EDITS_PER_IMAGE,
+        hasPreviousImage: true,
+      };
+    }
+
+    if (job.type === "batch") {
+      let generatedImageUrl = await generateImage(p.prompt, p.originalPhotoUrl);
+      try {
+        const fname = `portrait-${p.dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
+      }
+
+      const portrait = await storage.createPortrait({
+        dogId: p.dogId,
+        styleId: p.styleId,
+        generatedImageUrl,
+        isSelected: true,
+      });
+      await storage.incrementOrgPortraitsUsed(p.orgId);
+
+      if (p.needsPetCode) {
+        const petCode = generatePetCode(p.dogName);
+        await storage.updateDog(p.dogId, { petCode } as any);
+      }
+
+      return {
+        dogId: p.dogId,
+        success: true,
+        portraitId: portrait.id,
+        generatedImageUrl,
+      };
+    }
+
+    throw new Error(`Unknown job type: ${job.type}`);
+  });
 
   app.get("/api/portraits/:id/image", async (req: Request, res: Response) => {
     try {
@@ -226,6 +342,7 @@ export function registerPortraitRoutes(app: Express): void {
     }
   });
 
+  // POST /api/generate-portrait — ASYNC: returns jobId immediately
   app.post("/api/generate-portrait", isAuthenticated, aiRateLimiter, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -322,54 +439,30 @@ export function registerPortraitRoutes(app: Express): void {
         }
       }
 
-      const generatedImageRaw = await generateImage(sanitizedPrompt, originalImage || undefined);
-
-      let generatedImage = generatedImageRaw;
-      try {
-        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
-      }
-
-      let portraitRecord = existingPortrait;
-      if (dogId && styleId) {
-        const parsedDogId = parseInt(dogId);
-        const parsedStyleId = parseInt(styleId);
-        if (existingPortrait) {
-          await storage.updatePortrait(existingPortrait.id, {
-            previousImageUrl: existingPortrait.generatedImageUrl || null,
-            generatedImageUrl: generatedImage,
-          });
-          await storage.incrementPortraitEditCount(existingPortrait.id);
-          await storage.selectPortraitForGallery(parsedDogId, existingPortrait.id);
-          portraitRecord = { ...existingPortrait, editCount: existingPortrait.editCount + 1, generatedImageUrl: generatedImage, previousImageUrl: existingPortrait.generatedImageUrl || null };
-        } else {
-          portraitRecord = await storage.createPortrait({
-            dogId: parsedDogId,
-            styleId: parsedStyleId,
-            generatedImageUrl: generatedImage,
-          });
-          await storage.selectPortraitForGallery(parsedDogId, portraitRecord.id);
-          await storage.incrementOrgPortraitsUsed(org.id);
-        }
-      }
-
-      res.json({
-        generatedImage,
+      // Enqueue the generation job — returns instantly
+      const jobId = enqueue("generate", {
+        prompt: sanitizedPrompt,
+        originalImage: originalImage || null,
         dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
-        portraitId: portraitRecord?.id,
-        editCount: portraitRecord ? portraitRecord.editCount : null,
-        maxEdits: MAX_EDITS_PER_IMAGE,
+        dogId: dogId ? parseInt(dogId) : null,
+        styleId: styleId ? parseInt(styleId) : null,
+        orgId: org.id,
+        existingPortrait: existingPortrait ? {
+          id: existingPortrait.id,
+          editCount: existingPortrait.editCount,
+          generatedImageUrl: existingPortrait.generatedImageUrl,
+        } : null,
         isNewPortrait,
-        hasPreviousImage: !!(portraitRecord as any)?.previousImageUrl,
       });
+
+      res.status(202).json({ jobId });
     } catch (error) {
       console.error("[generate-portrait]", error);
-      res.status(500).json({ error: "Failed to generate portrait. Please try again." });
+      res.status(500).json({ error: "Failed to start portrait generation. Please try again." });
     }
   });
 
+  // POST /api/edit-portrait — ASYNC: returns jobId immediately
   app.post("/api/edit-portrait", isAuthenticated, aiRateLimiter, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -392,8 +485,6 @@ export function registerPortraitRoutes(app: Express): void {
       if (isTrialExpired(org)) {
         return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade to a paid plan to continue." });
       }
-
-
 
       if (portraitId) {
         const portrait = await storage.getPortrait(parseInt(portraitId));
@@ -421,35 +512,21 @@ export function registerPortraitRoutes(app: Express): void {
         imageForEdit = `data:image/png;base64,${buf.toString('base64')}`;
       }
 
-      const editedImageRaw = await editImage(imageForEdit, sanitizedEditPrompt);
+      // Enqueue the edit job — returns instantly
+      const jobId = enqueue("edit", {
+        imageForEdit,
+        editPrompt: sanitizedEditPrompt,
+        portraitId: portraitId ? parseInt(portraitId) : null,
+      });
 
-      let editedImage = editedImageRaw;
-      try {
-        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
-      }
-
-      let editCount: number | null = null;
-      if (portraitId) {
-        const existing = await storage.getPortrait(parseInt(portraitId));
-        await storage.updatePortrait(parseInt(portraitId), {
-          previousImageUrl: existing?.generatedImageUrl || null,
-          generatedImageUrl: editedImage,
-        });
-        await storage.incrementPortraitEditCount(parseInt(portraitId));
-        const updated = await storage.getPortrait(parseInt(portraitId));
-        editCount = updated?.editCount ?? null;
-      }
-
-      res.json({ editedImage, editCount, maxEdits: MAX_EDITS_PER_IMAGE, hasPreviousImage: true });
+      res.status(202).json({ jobId });
     } catch (error) {
       console.error("[edit-portrait]", error);
-      res.status(500).json({ error: "Failed to edit portrait. Please try again." });
+      res.status(500).json({ error: "Failed to start portrait edit. Please try again." });
     }
   });
 
+  // POST /api/revert-portrait — stays synchronous (no Gemini call)
   app.post("/api/revert-portrait", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;

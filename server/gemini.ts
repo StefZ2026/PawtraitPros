@@ -5,7 +5,7 @@ export const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-const geminiSemaphore = new Semaphore(2);
+const geminiSemaphore = new Semaphore(10);
 
 function extractImageFromResponse(response: any): string | null {
   const part = response.candidates?.[0]?.content?.parts?.find(
@@ -20,6 +20,31 @@ function parseBase64(dataUrl: string): { mimeType: string; data: string } {
   const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
   const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
   return { mimeType, data };
+}
+
+function isRetryableError(err: any): boolean {
+  const status = err?.status || err?.httpStatusCode || err?.code;
+  if (status === 429 || status === 503) return true;
+  const msg = String(err?.message || "").toLowerCase();
+  return msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable");
+}
+
+async function callWithRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
+        console.warn(`[gemini] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: all retries exhausted`);
 }
 
 export async function generateImage(prompt: string, sourceImage?: string): Promise<string> {
@@ -64,26 +89,30 @@ Now apply the following artistic style while preserving this exact animal's appe
 async function generateWithImage(prompt: string, sourceImage: string): Promise<string | null> {
   const { mimeType, data } = parseBase64(sourceImage);
   const enhancedPrompt = FIDELITY_PREFIX + prompt;
-  return geminiSemaphore.run(async () => {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
-      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-    });
-    return extractImageFromResponse(response);
-  });
+  return geminiSemaphore.run(() =>
+    callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      return extractImageFromResponse(response);
+    }, "generateWithImage")
+  );
 }
 
 async function generateTextOnly(prompt: string): Promise<string> {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await geminiSemaphore.run(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-      });
-      return extractImageFromResponse(response);
-    });
+    const result = await geminiSemaphore.run(() =>
+      callWithRetry(async () => {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-image",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+        });
+        return extractImageFromResponse(response);
+      }, "generateTextOnly")
+    );
     if (result) return result;
   }
   throw new Error("Failed to generate image after retries");
@@ -91,20 +120,22 @@ async function generateTextOnly(prompt: string): Promise<string> {
 
 export async function editImage(currentImage: string, editPrompt: string): Promise<string> {
   const { mimeType, data } = parseBase64(currentImage);
-  return geminiSemaphore.run(async () => {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: [{
-        role: "user",
-        parts: [
-          { inlineData: { mimeType, data } },
-          { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` },
-        ],
-      }],
-      config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-    });
-    const result = extractImageFromResponse(response);
-    if (!result) throw new Error("Failed to edit image");
-    return result;
-  });
+  return geminiSemaphore.run(() =>
+    callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data } },
+            { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` },
+          ],
+        }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      const result = extractImageFromResponse(response);
+      if (!result) throw new Error("Failed to edit image");
+      return result;
+    }, "editImage")
+  );
 }

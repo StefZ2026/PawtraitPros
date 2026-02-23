@@ -660,7 +660,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     },
   });
 
-  // Batch generate
+  // Batch generate — async with polling
   const handleBatchGenerate = async (autoSelect: boolean) => {
     if (!selectedPackType) {
       toast({ title: "Select a pack first", description: "Choose today's pack before generating.", variant: "destructive" });
@@ -688,17 +688,67 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         }),
       });
       const data = await res.json();
-      if (res.ok) {
-        setGenerationProgress({ done: data.totalGenerated, total: dogIds.length });
-        queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
-        toast({ title: "Portraits generated!", description: `${data.totalGenerated} portraits created.` });
-      } else {
+      if (!res.ok) {
         toast({ title: "Generation failed", description: data.error, variant: "destructive" });
+        setGenerating(false);
+        setGenerationProgress(null);
+        return;
+      }
+
+      // data = { jobIds: [{dogId, jobId}, ...], errors: [...], status, totalQueued }
+      const jobEntries: { dogId: number; jobId: string }[] = data.jobIds || [];
+      if (jobEntries.length === 0) {
+        toast({ title: "No portraits queued", description: data.errors?.[0]?.error || "All pets were skipped.", variant: "destructive" });
+        setGenerating(false);
+        setGenerationProgress(null);
+        return;
+      }
+
+      const totalJobs = jobEntries.length;
+      const jobIdList = jobEntries.map(j => j.jobId);
+      setGenerationProgress({ done: 0, total: totalJobs });
+
+      // Poll until all jobs complete or fail
+      const poll = async (): Promise<void> => {
+        const pollHeaders = await getAuthHeaders();
+        const idsParam = jobIdList.join(",");
+        const pollRes = await fetch(`/api/jobs?ids=${idsParam}`, { headers: pollHeaders });
+        if (!pollRes.ok) return;
+        const jobs: any[] = await pollRes.json();
+        const completed = jobs.filter(j => j?.status === "completed").length;
+        const failed = jobs.filter(j => j?.status === "failed").length;
+        const done = completed + failed;
+        setGenerationProgress({ done: completed, total: totalJobs });
+
+        if (done >= totalJobs) {
+          // All jobs finished
+          queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+          setGenerating(false);
+          setGenerationProgress(null);
+          if (failed > 0) {
+            toast({ title: "Batch complete", description: `${completed} portrait${completed !== 1 ? "s" : ""} created, ${failed} failed.`, variant: completed > 0 ? "default" : "destructive" });
+          } else {
+            toast({ title: "Portraits generated!", description: `${completed} portrait${completed !== 1 ? "s" : ""} created.` });
+          }
+          return;
+        }
+
+        // Continue polling
+        await new Promise(r => setTimeout(r, 2000));
+        return poll();
+      };
+
+      // Start polling loop
+      await poll();
+
+      // Show any pre-validation errors from the batch endpoint
+      if (data.errors && data.errors.length > 0) {
+        const skipped = data.errors.length;
+        toast({ title: `${skipped} pet${skipped !== 1 ? "s" : ""} skipped`, description: data.errors[0].error, variant: "default" });
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
       setGenerating(false);
       setGenerationProgress(null);
     }

@@ -2,15 +2,16 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
-import { generateImage } from "../gemini";
 import { getPacks } from "@shared/pack-config";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
 import { sendEmail, isEmailConfigured, buildDepartureEmail } from "./email";
 import { ADMIN_EMAIL, sanitizeForPrompt, generatePetCode } from "./helpers";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
+import { enqueue } from "../job-queue";
 
 export function registerBatchRoutes(app: Express): void {
 
+  // POST /api/generate-batch — ASYNC: enqueues one job per dog, returns jobIds immediately
   app.post("/api/generate-batch", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -34,96 +35,83 @@ export function registerBatchRoutes(app: Express): void {
       }
       if (!org) return res.status(404).json({ error: "No organization found" });
 
-      const industryType = (org as any).industryType || "groomer";
       const allStyles = await storage.getAllPortraitStyles();
 
-      // Generate portraits for each dog
-      const results: Array<{ dogId: number; success: boolean; portraitId?: number; error?: string }> = [];
+      // Validate each dog and enqueue jobs for valid ones
+      const jobIds: Array<{ dogId: number; jobId: string }> = [];
+      const errors: Array<{ dogId: number; error: string }> = [];
 
       for (const dogId of dogIds) {
-        try {
-          const dog = await storage.getDog(dogId);
-          if (!dog || dog.organizationId !== org.id) {
-            results.push({ dogId, success: false, error: "Dog not found or wrong org" });
-            continue;
-          }
-
-          if (!dog.originalPhotoUrl) {
-            results.push({ dogId, success: false, error: "No photo uploaded" });
-            continue;
-          }
-
-          // Get pack styles for this pet's species
-          const petSpecies = (dog.species || "dog") as "dog" | "cat";
-          const packs = getPacks(petSpecies);
-          const pack = packs.find(p => p.type === packType);
-          if (!pack) {
-            results.push({ dogId, success: false, error: "Pack not found for species" });
-            continue;
-          }
-          const packStyles = pack.styleIds.map(id => allStyles.find(s => s.id === id)).filter(Boolean);
-          if (packStyles.length === 0) {
-            results.push({ dogId, success: false, error: "No styles found for this pack" });
-            continue;
-          }
-
-          // Pick style: auto-select randomly from pack, or let client specify later
-          let style;
-          if (autoSelect) {
-            style = packStyles[Math.floor(Math.random() * packStyles.length)];
-          } else {
-            // For manual selection, skip generation — client will pick styles and call generate-portrait individually
-            results.push({ dogId, success: true, portraitId: undefined });
-            continue;
-          }
-
-          if (!style) {
-            results.push({ dogId, success: false, error: "Could not select style" });
-            continue;
-          }
-
-          // Build prompt from style template
-          const species = dog.species || "dog";
-          const breed = dog.breed || species;
-          const prompt = sanitizeForPrompt(
-            style.promptTemplate
-              .replace(/\{breed\}/g, breed)
-              .replace(/\{species\}/g, species)
-              .replace(/\{name\}/g, dog.name)
-          );
-
-          // Generate image
-          let generatedImageUrl = await generateImage(prompt, dog.originalPhotoUrl);
-          try {
-            const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-            generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
-          } catch (err) {
-            console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
-          }
-
-          // Save portrait
-          const portrait = await storage.createPortrait({
-            dogId: dog.id,
-            styleId: style.id,
-            generatedImageUrl,
-            isSelected: true,
-          });
-          await storage.incrementOrgPortraitsUsed(org.id);
-
-          // Auto-generate pet code if not set
-          if (!dog.petCode) {
-            const petCode = generatePetCode(dog.name);
-            await storage.updateDog(dog.id, { petCode } as any);
-          }
-
-          results.push({ dogId: dog.id, success: true, portraitId: portrait.id });
-        } catch (genErr: any) {
-          console.error(`[generate-batch] Error for dog ${dogId}:`, genErr.message);
-          results.push({ dogId, success: false, error: genErr.message });
+        const dog = await storage.getDog(dogId);
+        if (!dog || dog.organizationId !== org.id) {
+          errors.push({ dogId, error: "Dog not found or wrong org" });
+          continue;
         }
+
+        if (!dog.originalPhotoUrl) {
+          errors.push({ dogId, error: "No photo uploaded" });
+          continue;
+        }
+
+        // Get pack styles for this pet's species
+        const petSpecies = (dog.species || "dog") as "dog" | "cat";
+        const packs = getPacks(petSpecies);
+        const pack = packs.find(p => p.type === packType);
+        if (!pack) {
+          errors.push({ dogId, error: "Pack not found for species" });
+          continue;
+        }
+        const packStyles = pack.styleIds.map(id => allStyles.find(s => s.id === id)).filter(Boolean);
+        if (packStyles.length === 0) {
+          errors.push({ dogId, error: "No styles found for this pack" });
+          continue;
+        }
+
+        // Pick style: auto-select randomly from pack, or skip (client will pick manually)
+        let style;
+        if (autoSelect) {
+          style = packStyles[Math.floor(Math.random() * packStyles.length)];
+        } else {
+          // For manual selection, skip generation — client will pick styles and call generate-portrait individually
+          jobIds.push({ dogId, jobId: "" });
+          continue;
+        }
+
+        if (!style) {
+          errors.push({ dogId, error: "Could not select style" });
+          continue;
+        }
+
+        // Build prompt from style template
+        const species = dog.species || "dog";
+        const breed = dog.breed || species;
+        const prompt = sanitizeForPrompt(
+          style.promptTemplate
+            .replace(/\{breed\}/g, breed)
+            .replace(/\{species\}/g, species)
+            .replace(/\{name\}/g, dog.name)
+        );
+
+        // Enqueue batch job — returns instantly
+        const jobId = enqueue("batch", {
+          dogId: dog.id,
+          dogName: dog.name,
+          prompt,
+          originalPhotoUrl: dog.originalPhotoUrl,
+          styleId: style.id,
+          orgId: org.id,
+          needsPetCode: !dog.petCode,
+        });
+
+        jobIds.push({ dogId: dog.id, jobId });
       }
 
-      res.json({ results, totalGenerated: results.filter(r => r.success && r.portraitId).length });
+      res.status(202).json({
+        jobIds,
+        errors,
+        status: "generating",
+        totalQueued: jobIds.filter(j => j.jobId).length,
+      });
     } catch (error: any) {
       console.error("Error in batch generation:", error.message);
       res.status(500).json({ error: "Batch generation failed" });
@@ -413,10 +401,8 @@ export function registerBatchRoutes(app: Express): void {
         [batchId]
       );
 
-      // Return immediately — generation happens async
-      // In a production system you'd use a job queue, but for now we'll
-      // return the count and let the client poll for status
-      res.json({
+      // Return immediately with status — client polls for completion
+      res.status(202).json({
         batchId,
         status: "generating",
         assignedPhotos: photosResult.rows.length,
