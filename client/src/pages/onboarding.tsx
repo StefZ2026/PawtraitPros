@@ -19,6 +19,7 @@ import {
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
+import { LogoCropDialog } from "@/components/logo-crop-dialog";
 import type { Organization, SubscriptionPlan } from "@shared/schema";
 
 type Step = "welcome" | "industry" | "logo" | "species" | "contact" | "notifications" | "social" | "location" | "billing" | "plan" | "finish";
@@ -241,6 +242,8 @@ export default function Onboarding() {
 
   const [currentStep, setCurrentStep] = useState<Step | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>({
     industryType: "",
     speciesHandled: "",
@@ -447,23 +450,26 @@ export default function Onboarding() {
     }
   };
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const ACCEPTED_LOGO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Invalid file", description: "Please upload an image file.", variant: "destructive" });
+    if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Please upload a JPG, PNG, or WebP image.", variant: "destructive" });
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
       toast({ title: "File too large", description: "Logo must be under 5MB.", variant: "destructive" });
       return;
     }
-    try {
-      const dataUrl = await resizeLogoToDataUrl(file);
-      setLogoPreview(dataUrl);
-    } catch {
-      toast({ title: "Error", description: "Could not process image.", variant: "destructive" });
-    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setRawImageSrc(reader.result as string);
+      setCropDialogOpen(true);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const updateField = <K extends keyof FormData>(field: K, value: FormData[K]) => {
@@ -692,7 +698,7 @@ export default function Onboarding() {
                 <input
                   id="onboarding-logo-upload"
                   type="file"
-                  accept="image/*"
+                  accept=".jpg,.jpeg,.png,.webp"
                   className="hidden"
                   onChange={handleLogoUpload}
                   data-testid="input-onboarding-logo"
@@ -707,7 +713,22 @@ export default function Onboarding() {
                     <Check className="h-3 w-3" /> Logo on file
                   </Badge>
                 )}
-                <p className="text-xs text-muted-foreground">Square image recommended, max 5MB</p>
+                <p className="text-xs text-muted-foreground">JPG, PNG, or WebP. 256x256px recommended, max 5MB</p>
+                <p className="text-xs text-muted-foreground">You'll be able to crop and resize after uploading.</p>
+
+                <LogoCropDialog
+                  open={cropDialogOpen}
+                  imageSrc={rawImageSrc}
+                  onApply={(croppedDataUrl) => {
+                    setLogoPreview(croppedDataUrl);
+                    setCropDialogOpen(false);
+                    setRawImageSrc(null);
+                  }}
+                  onCancel={() => {
+                    setCropDialogOpen(false);
+                    setRawImageSrc(null);
+                  }}
+                />
               </div>
 
               <StepNavigation

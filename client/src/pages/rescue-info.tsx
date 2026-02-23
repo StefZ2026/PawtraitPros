@@ -24,6 +24,7 @@ import {
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
+import { LogoCropDialog } from "@/components/logo-crop-dialog";
 import type { Organization, SubscriptionPlan, Dog as DogType } from "@shared/schema";
 
 const IG_PREFIX = import.meta.env.VITE_INSTAGRAM_PROVIDER === 'native' ? '/api/instagram-native' : '/api/instagram';
@@ -45,6 +46,8 @@ export default function BusinessSettings() {
   const [editingSection, setEditingSection] = useState<SectionName | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null);
   const [igDisconnecting, setIgDisconnecting] = useState(false);
 
   useEffect(() => {
@@ -256,11 +259,13 @@ export default function BusinessSettings() {
     setLogoPreview(null);
   };
 
+  const ACCEPTED_LOGO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Invalid file", description: "Please upload an image file.", variant: "destructive" });
+    if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
+      toast({ title: "Invalid file type", description: "Please upload a JPG, PNG, or WebP image.", variant: "destructive" });
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -269,28 +274,11 @@ export default function BusinessSettings() {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        const size = 256;
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-        const dataUrl = canvas.toDataURL("image/png");
-        setLogoPreview(dataUrl);
-      };
-      img.src = reader.result as string;
+      setRawImageSrc(reader.result as string);
+      setCropDialogOpen(true);
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const getStatusBadge = () => {
@@ -477,12 +465,13 @@ export default function BusinessSettings() {
                     <input
                       id="logo-upload"
                       type="file"
-                      accept="image/*"
+                      accept=".jpg,.jpeg,.png,.webp"
                       className="hidden"
                       onChange={handleLogoUpload}
                       data-testid="input-logo-upload"
                     />
-                    <p className="text-xs text-muted-foreground mt-2">Square image recommended. Max 5MB.</p>
+                    <p className="text-xs text-muted-foreground mt-2">JPG, PNG, or WebP. 256x256px recommended. Max 5MB.</p>
+                    <p className="text-xs text-muted-foreground">You'll be able to crop and resize after uploading.</p>
                   </div>
                 </div>
               ) : (
@@ -502,6 +491,20 @@ export default function BusinessSettings() {
               )}
             </CardContent>
           </Card>
+
+          <LogoCropDialog
+            open={cropDialogOpen}
+            imageSrc={rawImageSrc}
+            onApply={(croppedDataUrl) => {
+              setLogoPreview(croppedDataUrl);
+              setCropDialogOpen(false);
+              setRawImageSrc(null);
+            }}
+            onCancel={() => {
+              setCropDialogOpen(false);
+              setRawImageSrc(null);
+            }}
+          />
 
           {/* Subscription Plan */}
           <Card data-testid="section-plan">

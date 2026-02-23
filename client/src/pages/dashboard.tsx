@@ -26,6 +26,7 @@ import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { LogoCropDialog } from "@/components/logo-crop-dialog";
 import type { Organization, Dog as DogType } from "@shared/schema";
 
 interface DogWithPortrait extends DogType {
@@ -369,6 +370,9 @@ interface Plan {
 
 function LogoUpload({ logoData, onLogoChange }: { logoData: string | null; onLogoChange: (data: string | null) => void }) {
   const { toast } = useToast();
+  const [cropDialogOpen, setCropDialogOpen] = useState(false);
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null);
+
   const handleFile = (file: File) => {
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
       toast({ title: "Unsupported format", description: "Please use JPG, PNG, or WebP.", variant: "destructive" });
@@ -382,20 +386,8 @@ function LogoUpload({ logoData, onLogoChange }: { logoData: string | null; onLog
     reader.onload = (e) => {
       const result = e.target?.result as string;
       if (!result) return;
-      const img = new window.Image();
-      img.onload = () => {
-        const size = 256;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d")!;
-        const min = Math.min(img.width, img.height);
-        const sx = (img.width - min) / 2;
-        const sy = (img.height - min) / 2;
-        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-        onLogoChange(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.src = result;
+      setRawImageSrc(result);
+      setCropDialogOpen(true);
     };
     reader.readAsDataURL(file);
   };
@@ -411,7 +403,7 @@ function LogoUpload({ logoData, onLogoChange }: { logoData: string | null; onLog
           </Avatar>
           <div className="flex items-center justify-center gap-2 mt-2">
             <label>
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} data-testid="input-logo-replace" />
+              <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => { if (e.target.files?.[0]) { handleFile(e.target.files[0]); e.target.value = ""; } }} data-testid="input-logo-replace" />
               <Button asChild variant="outline" size="sm" className="gap-1 cursor-pointer">
                 <span><Upload className="h-3 w-3" /> Replace</span>
               </Button>
@@ -423,13 +415,27 @@ function LogoUpload({ logoData, onLogoChange }: { logoData: string | null; onLog
         </div>
       ) : (
         <label className="cursor-pointer">
-          <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }} data-testid="input-logo-upload" />
+          <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(e) => { if (e.target.files?.[0]) { handleFile(e.target.files[0]); e.target.value = ""; } }} data-testid="input-logo-upload" />
           <div className="h-24 w-24 rounded-full border-2 border-dashed border-border flex items-center justify-center hover-elevate transition-colors">
             <Upload className="h-6 w-6 text-muted-foreground" />
           </div>
           <p className="text-xs text-muted-foreground text-center mt-1">Upload logo</p>
         </label>
       )}
+      <p className="text-xs text-muted-foreground text-center">JPG, PNG, or WebP. You can crop after upload.</p>
+      <LogoCropDialog
+        open={cropDialogOpen}
+        imageSrc={rawImageSrc}
+        onApply={(croppedDataUrl) => {
+          onLogoChange(croppedDataUrl);
+          setCropDialogOpen(false);
+          setRawImageSrc(null);
+        }}
+        onCancel={() => {
+          setCropDialogOpen(false);
+          setRawImageSrc(null);
+        }}
+      />
     </div>
   );
 }
