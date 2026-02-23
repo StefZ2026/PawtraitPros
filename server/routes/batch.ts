@@ -183,7 +183,10 @@ export function registerBatchRoutes(app: Express): void {
           // Get the latest portrait for this dog (for email image)
           const portraits = await storage.getPortraitsByDog(dog.id);
           const latestPortrait = portraits.length > 0 ? portraits[portraits.length - 1] : null;
-          const portraitImageUrl = latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : undefined;
+          // Use direct URL for email (email clients don't follow redirects)
+          const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith('https://')
+            ? latestPortrait.generatedImageUrl
+            : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : undefined;
 
           // SMS delivery (if preference includes SMS and phone exists)
           if ((notifMode === "sms" || notifMode === "both") && phone && isSmsConfigured()) {

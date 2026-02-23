@@ -69,7 +69,10 @@ export function buildDepartureEmail(
 ): { subject: string; html: string } {
   const subject = `${dogName}'s portrait from ${orgName} is ready!`;
   const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-  const logoSrc = orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
+  // Use direct URL for email (email clients don't follow redirects)
+  // Fall back to API proxy only for base64 data URIs
+  const logoSrc = orgLogoUrl?.startsWith('https://') ? orgLogoUrl
+    : orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
 
   // Build compact HTML — no extra whitespace (Gmail clips emails >102KB and trims threaded content)
   const parts: string[] = [];
