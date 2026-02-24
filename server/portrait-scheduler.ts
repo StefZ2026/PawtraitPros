@@ -14,130 +14,139 @@ import { generateImage } from './gemini';
 import { uploadToStorage } from './supabase-storage';
 import { getPackByType } from '@shared/pack-config';
 import { pool } from './db';
-import { sanitizeForPrompt, generatePetCode } from './routes/helpers';
+import { sanitizeForPrompt } from './routes/helpers';
 import { deliverPortraitToOwner } from './routes/delivery';
 
+let isRunning = false;
+
 async function processPortraitRotation() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const dogsDue = await storage.getDogsDueForPortrait(today);
-
-  if (dogsDue.length === 0) return;
-
-  console.log(`[scheduler] ${dogsDue.length} dog(s) due for portraits on ${today}`);
-
-  // Group by organization
-  const byOrg = new Map<number, typeof dogsDue>();
-  for (const dog of dogsDue) {
-    const list = byOrg.get(dog.organizationId) || [];
-    list.push(dog);
-    byOrg.set(dog.organizationId, list);
+  if (isRunning) {
+    console.log('[scheduler] Previous run still in progress, skipping');
+    return;
   }
+  isRunning = true;
 
-  for (const [orgId, orgDogs] of byOrg) {
-    const org = await storage.getOrganization(orgId);
-    if (!org || !org.isActive) continue;
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const dogsDue = await storage.getDogsDueForPortrait(today);
 
-    const allStyles = await storage.getAllPortraitStyles();
+    if (dogsDue.length === 0) return;
 
-    for (const dog of orgDogs) {
-      try {
-        const species = (dog.species || 'dog') as 'dog' | 'cat';
+    console.log(`[scheduler] ${dogsDue.length} dog(s) due for portraits on ${today}`);
 
-        // Get today's pack selection for this org + species
-        const packResult = await pool.query(
-          `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
-          [orgId, today, species]
-        );
+    // Group by organization
+    const byOrg = new Map<number, typeof dogsDue>();
+    for (const dog of dogsDue) {
+      const list = byOrg.get(dog.organizationId) || [];
+      list.push(dog);
+      byOrg.set(dog.organizationId, list);
+    }
 
-        if (packResult.rows.length === 0) {
-          // No pack selected for today — skip, will try again next run
-          continue;
-        }
+    for (const [orgId, orgDogs] of byOrg) {
+      const org = await storage.getOrganization(orgId);
+      if (!org || !org.isActive) continue;
 
-        const packType = packResult.rows[0].pack_type;
-        const pack = getPackByType(species, packType);
-        if (!pack) continue;
+      const allStyles = await storage.getAllPortraitStyles();
 
-        // Get styles this dog has already used (never-repeat)
-        const usedStyleIds = await storage.getUsedStyleIdsForDog(dog.id);
+      for (const dog of orgDogs) {
+        try {
+          const species = (dog.species || 'dog') as 'dog' | 'cat';
 
-        // Filter to unused styles in this pack
-        const availableStyleIds = pack.styleIds.filter(id => !usedStyleIds.includes(id));
+          // Get today's pack selection for this org + species
+          const packResult = await pool.query(
+            `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
+            [orgId, today, species]
+          );
 
-        if (availableStyleIds.length === 0) {
-          // All styles in this pack used — bump to next date for a different pack
-          const nextDate = calculateNextPortraitDate(dog, today);
-          await storage.advanceNextPortraitDate(dog.id, nextDate);
-          console.log(`[scheduler] ${dog.name}: all pack styles used, bumped to ${nextDate}`);
-          continue;
-        }
-
-        // Check org credits before generating
-        const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-        if (plan?.monthlyPortraitCredits) {
-          const { creditsUsed } = await storage.getAccurateCreditsUsed(orgId);
-          if (creditsUsed >= plan.monthlyPortraitCredits) {
-            console.log(`[scheduler] Org ${orgId} out of credits, skipping ${dog.name}`);
+          if (packResult.rows.length === 0) {
+            // No pack selected for today — advance date so dog doesn't get stuck
+            const nextDate = calculateNextPortraitDate(dog, today);
+            await storage.advanceNextPortraitDate(dog.id, nextDate);
+            console.log(`[scheduler] ${dog.name}: no daily pack selected for org ${orgId}, bumped to ${nextDate}`);
             continue;
           }
-        }
 
-        // Pick random available style
-        const styleId = availableStyleIds[Math.floor(Math.random() * availableStyleIds.length)];
-        const style = allStyles.find(s => s.id === styleId);
-        if (!style) continue;
+          const packType = packResult.rows[0].pack_type;
+          const pack = getPackByType(species, packType);
+          if (!pack) continue;
 
-        // Build prompt from style template
-        const breed = dog.breed || dog.species || 'dog';
-        const prompt = sanitizeForPrompt(
-          style.promptTemplate
-            .replace(/\{breed\}/g, breed)
-            .replace(/\{species\}/g, species)
-            .replace(/\{name\}/g, dog.name)
-        );
+          // Get styles this dog has already used (prefer unused, allow repeats if exhausted)
+          const usedStyleIds = await storage.getUsedStyleIdsForDog(dog.id);
+          const availableStyleIds = pack.styleIds.filter(id => !usedStyleIds.includes(id));
 
-        // Generate portrait
-        const generatedImageRaw = await generateImage(prompt, dog.originalPhotoUrl || undefined);
+          // If all styles used, allow repeats (full cycle complete — same as batch.ts)
+          const stylePool = availableStyleIds.length > 0 ? availableStyleIds : pack.styleIds;
 
-        let generatedImageUrl = generatedImageRaw;
-        try {
-          const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-          generatedImageUrl = await uploadToStorage(generatedImageRaw, 'portraits', fname);
-        } catch (err) {
-          console.error('[scheduler] Upload failed, using base64:', err);
-        }
+          if (stylePool.length === 0) {
+            const nextDate = calculateNextPortraitDate(dog, today);
+            await storage.advanceNextPortraitDate(dog.id, nextDate);
+            console.log(`[scheduler] ${dog.name}: no styles available, bumped to ${nextDate}`);
+            continue;
+          }
 
-        // Create portrait record
-        await storage.createPortrait({
-          dogId: dog.id,
-          styleId: style.id,
-          generatedImageUrl,
-          isSelected: true,
-        });
-        await storage.incrementOrgPortraitsUsed(orgId);
+          // Check org credits before generating
+          const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
+          if (plan?.monthlyPortraitCredits) {
+            const { creditsUsed } = await storage.getAccurateCreditsUsed(orgId);
+            if (creditsUsed >= plan.monthlyPortraitCredits) {
+              console.log(`[scheduler] Org ${orgId} out of credits, skipping ${dog.name}`);
+              continue;
+            }
+          }
 
-        // Ensure pet code for pawfile URL
-        if (!dog.petCode) {
-          const petCode = generatePetCode(dog.name);
-          await storage.updateDog(dog.id, { petCode } as any);
-        }
+          // Pick random style from available pool
+          const styleId = stylePool[Math.floor(Math.random() * stylePool.length)];
+          const style = allStyles.find(s => s.id === styleId);
+          if (!style) continue;
 
-        // Advance next portrait date
-        const nextDate = calculateNextPortraitDate(dog, today);
-        await storage.advanceNextPortraitDate(dog.id, nextDate);
+          // Build prompt from style template
+          const breed = dog.breed || dog.species || 'dog';
+          const prompt = sanitizeForPrompt(
+            style.promptTemplate
+              .replace(/\{breed\}/g, breed)
+              .replace(/\{species\}/g, species)
+              .replace(/\{name\}/g, dog.name)
+          );
 
-        // Deliver to owner
-        try {
-          await deliverPortraitToOwner(dog, org);
+          // Generate portrait
+          const generatedImageRaw = await generateImage(prompt, dog.originalPhotoUrl || undefined);
+
+          let generatedImageUrl = generatedImageRaw;
+          try {
+            const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+            generatedImageUrl = await uploadToStorage(generatedImageRaw, 'portraits', fname);
+          } catch (err) {
+            console.error('[scheduler] Upload failed, using base64:', err);
+          }
+
+          // Create portrait record
+          await storage.createPortrait({
+            dogId: dog.id,
+            styleId: style.id,
+            generatedImageUrl,
+            isSelected: true,
+          });
+          await storage.incrementOrgPortraitsUsed(orgId);
+
+          // Advance next portrait date
+          const nextDate = calculateNextPortraitDate(dog, today);
+          await storage.advanceNextPortraitDate(dog.id, nextDate);
+
+          // Deliver to owner (delivery.ts handles petCode generation if needed)
+          try {
+            await deliverPortraitToOwner(dog, org);
+          } catch (err: any) {
+            console.error(`[scheduler] Delivery failed for ${dog.name}:`, err.message);
+          }
+
+          console.log(`[scheduler] Generated + delivered portrait for ${dog.name} (style ${style.name}, org ${orgId}, next: ${nextDate || 'done'})`);
         } catch (err: any) {
-          console.error(`[scheduler] Delivery failed for ${dog.name}:`, err.message);
+          console.error(`[scheduler] Error processing ${dog.name} (${dog.id}):`, err.message);
         }
-
-        console.log(`[scheduler] Generated + delivered portrait for ${dog.name} (style ${style.name}, org ${orgId}, next: ${nextDate || 'done'})`);
-      } catch (err: any) {
-        console.error(`[scheduler] Error processing ${dog.name} (${dog.id}):`, err.message);
       }
     }
+  } finally {
+    isRunning = false;
   }
 }
 
@@ -148,11 +157,27 @@ async function processPortraitRotation() {
 function calculateNextPortraitDate(dog: any, currentDate: string): string | null {
   // Boarding: calculate from stay schedule
   if (dog.stayNights) {
-    const checkInDate = dog.checkedInAt || dog.createdAt?.toISOString?.()?.slice(0, 10) || currentDate;
-    const portraitDates = calculateBoardingPortraitDates(
-      typeof checkInDate === 'string' ? checkInDate.slice(0, 10) : checkInDate,
-      dog.stayNights
-    );
+    // Use checkedInAt first, then createdAt, then fall back to estimating from current date
+    let checkInDate: string;
+    if (dog.checkedInAt) {
+      checkInDate = typeof dog.checkedInAt === 'string'
+        ? dog.checkedInAt.slice(0, 10)
+        : dog.checkedInAt.toISOString().slice(0, 10);
+    } else if (dog.createdAt) {
+      checkInDate = typeof dog.createdAt === 'string'
+        ? dog.createdAt.slice(0, 10)
+        : dog.createdAt.toISOString().slice(0, 10);
+    } else {
+      // Last resort: can't determine check-in, treat as daycare fallback
+      console.warn(`[scheduler] Boarding dog ${dog.name} (${dog.id}) has no checkedInAt or createdAt — using daycare fallback`);
+      const preference = dog.updatePreference || 'weekly';
+      const daysToAdd = preference === 'biweekly' ? 14 : 7;
+      const next = new Date(currentDate);
+      next.setDate(next.getDate() + daysToAdd);
+      return next.toISOString().slice(0, 10);
+    }
+
+    const portraitDates = calculateBoardingPortraitDates(checkInDate, dog.stayNights);
 
     // Find next date after current
     const nextDate = portraitDates.find(d => d > currentDate);

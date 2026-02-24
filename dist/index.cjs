@@ -2014,96 +2014,114 @@ __export(portrait_scheduler_exports, {
   startPortraitScheduler: () => startPortraitScheduler
 });
 async function processPortraitRotation() {
-  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const dogsDue = await storage.getDogsDueForPortrait(today);
-  if (dogsDue.length === 0) return;
-  console.log(`[scheduler] ${dogsDue.length} dog(s) due for portraits on ${today}`);
-  const byOrg = /* @__PURE__ */ new Map();
-  for (const dog of dogsDue) {
-    const list = byOrg.get(dog.organizationId) || [];
-    list.push(dog);
-    byOrg.set(dog.organizationId, list);
+  if (isRunning) {
+    console.log("[scheduler] Previous run still in progress, skipping");
+    return;
   }
-  for (const [orgId, orgDogs] of byOrg) {
-    const org = await storage.getOrganization(orgId);
-    if (!org || !org.isActive) continue;
-    const allStyles = await storage.getAllPortraitStyles();
-    for (const dog of orgDogs) {
-      try {
-        const species = dog.species || "dog";
-        const packResult = await pool.query(
-          `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
-          [orgId, today, species]
-        );
-        if (packResult.rows.length === 0) {
-          continue;
-        }
-        const packType = packResult.rows[0].pack_type;
-        const pack = getPackByType(species, packType);
-        if (!pack) continue;
-        const usedStyleIds = await storage.getUsedStyleIdsForDog(dog.id);
-        const availableStyleIds = pack.styleIds.filter((id) => !usedStyleIds.includes(id));
-        if (availableStyleIds.length === 0) {
-          const nextDate2 = calculateNextPortraitDate(dog, today);
-          await storage.advanceNextPortraitDate(dog.id, nextDate2);
-          console.log(`[scheduler] ${dog.name}: all pack styles used, bumped to ${nextDate2}`);
-          continue;
-        }
-        const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-        if (plan?.monthlyPortraitCredits) {
-          const { creditsUsed } = await storage.getAccurateCreditsUsed(orgId);
-          if (creditsUsed >= plan.monthlyPortraitCredits) {
-            console.log(`[scheduler] Org ${orgId} out of credits, skipping ${dog.name}`);
+  isRunning = true;
+  try {
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const dogsDue = await storage.getDogsDueForPortrait(today);
+    if (dogsDue.length === 0) return;
+    console.log(`[scheduler] ${dogsDue.length} dog(s) due for portraits on ${today}`);
+    const byOrg = /* @__PURE__ */ new Map();
+    for (const dog of dogsDue) {
+      const list = byOrg.get(dog.organizationId) || [];
+      list.push(dog);
+      byOrg.set(dog.organizationId, list);
+    }
+    for (const [orgId, orgDogs] of byOrg) {
+      const org = await storage.getOrganization(orgId);
+      if (!org || !org.isActive) continue;
+      const allStyles = await storage.getAllPortraitStyles();
+      for (const dog of orgDogs) {
+        try {
+          const species = dog.species || "dog";
+          const packResult = await pool.query(
+            `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
+            [orgId, today, species]
+          );
+          if (packResult.rows.length === 0) {
+            const nextDate2 = calculateNextPortraitDate(dog, today);
+            await storage.advanceNextPortraitDate(dog.id, nextDate2);
+            console.log(`[scheduler] ${dog.name}: no daily pack selected for org ${orgId}, bumped to ${nextDate2}`);
             continue;
           }
-        }
-        const styleId = availableStyleIds[Math.floor(Math.random() * availableStyleIds.length)];
-        const style = allStyles.find((s) => s.id === styleId);
-        if (!style) continue;
-        const breed = dog.breed || dog.species || "dog";
-        const prompt = sanitizeForPrompt(
-          style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
-        );
-        const generatedImageRaw = await generateImage(prompt, dog.originalPhotoUrl || void 0);
-        let generatedImageUrl = generatedImageRaw;
-        try {
-          const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-          generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+          const packType = packResult.rows[0].pack_type;
+          const pack = getPackByType(species, packType);
+          if (!pack) continue;
+          const usedStyleIds = await storage.getUsedStyleIdsForDog(dog.id);
+          const availableStyleIds = pack.styleIds.filter((id) => !usedStyleIds.includes(id));
+          const stylePool = availableStyleIds.length > 0 ? availableStyleIds : pack.styleIds;
+          if (stylePool.length === 0) {
+            const nextDate2 = calculateNextPortraitDate(dog, today);
+            await storage.advanceNextPortraitDate(dog.id, nextDate2);
+            console.log(`[scheduler] ${dog.name}: no styles available, bumped to ${nextDate2}`);
+            continue;
+          }
+          const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
+          if (plan?.monthlyPortraitCredits) {
+            const { creditsUsed } = await storage.getAccurateCreditsUsed(orgId);
+            if (creditsUsed >= plan.monthlyPortraitCredits) {
+              console.log(`[scheduler] Org ${orgId} out of credits, skipping ${dog.name}`);
+              continue;
+            }
+          }
+          const styleId = stylePool[Math.floor(Math.random() * stylePool.length)];
+          const style = allStyles.find((s) => s.id === styleId);
+          if (!style) continue;
+          const breed = dog.breed || dog.species || "dog";
+          const prompt = sanitizeForPrompt(
+            style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
+          );
+          const generatedImageRaw = await generateImage(prompt, dog.originalPhotoUrl || void 0);
+          let generatedImageUrl = generatedImageRaw;
+          try {
+            const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+            generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+          } catch (err) {
+            console.error("[scheduler] Upload failed, using base64:", err);
+          }
+          await storage.createPortrait({
+            dogId: dog.id,
+            styleId: style.id,
+            generatedImageUrl,
+            isSelected: true
+          });
+          await storage.incrementOrgPortraitsUsed(orgId);
+          const nextDate = calculateNextPortraitDate(dog, today);
+          await storage.advanceNextPortraitDate(dog.id, nextDate);
+          try {
+            await deliverPortraitToOwner(dog, org);
+          } catch (err) {
+            console.error(`[scheduler] Delivery failed for ${dog.name}:`, err.message);
+          }
+          console.log(`[scheduler] Generated + delivered portrait for ${dog.name} (style ${style.name}, org ${orgId}, next: ${nextDate || "done"})`);
         } catch (err) {
-          console.error("[scheduler] Upload failed, using base64:", err);
+          console.error(`[scheduler] Error processing ${dog.name} (${dog.id}):`, err.message);
         }
-        await storage.createPortrait({
-          dogId: dog.id,
-          styleId: style.id,
-          generatedImageUrl,
-          isSelected: true
-        });
-        await storage.incrementOrgPortraitsUsed(orgId);
-        if (!dog.petCode) {
-          const petCode = generatePetCode(dog.name);
-          await storage.updateDog(dog.id, { petCode });
-        }
-        const nextDate = calculateNextPortraitDate(dog, today);
-        await storage.advanceNextPortraitDate(dog.id, nextDate);
-        try {
-          await deliverPortraitToOwner(dog, org);
-        } catch (err) {
-          console.error(`[scheduler] Delivery failed for ${dog.name}:`, err.message);
-        }
-        console.log(`[scheduler] Generated + delivered portrait for ${dog.name} (style ${style.name}, org ${orgId}, next: ${nextDate || "done"})`);
-      } catch (err) {
-        console.error(`[scheduler] Error processing ${dog.name} (${dog.id}):`, err.message);
       }
     }
+  } finally {
+    isRunning = false;
   }
 }
 function calculateNextPortraitDate(dog, currentDate) {
   if (dog.stayNights) {
-    const checkInDate = dog.checkedInAt || dog.createdAt?.toISOString?.()?.slice(0, 10) || currentDate;
-    const portraitDates = calculateBoardingPortraitDates(
-      typeof checkInDate === "string" ? checkInDate.slice(0, 10) : checkInDate,
-      dog.stayNights
-    );
+    let checkInDate;
+    if (dog.checkedInAt) {
+      checkInDate = typeof dog.checkedInAt === "string" ? dog.checkedInAt.slice(0, 10) : dog.checkedInAt.toISOString().slice(0, 10);
+    } else if (dog.createdAt) {
+      checkInDate = typeof dog.createdAt === "string" ? dog.createdAt.slice(0, 10) : dog.createdAt.toISOString().slice(0, 10);
+    } else {
+      console.warn(`[scheduler] Boarding dog ${dog.name} (${dog.id}) has no checkedInAt or createdAt \u2014 using daycare fallback`);
+      const preference2 = dog.updatePreference || "weekly";
+      const daysToAdd2 = preference2 === "biweekly" ? 14 : 7;
+      const next2 = new Date(currentDate);
+      next2.setDate(next2.getDate() + daysToAdd2);
+      return next2.toISOString().slice(0, 10);
+    }
+    const portraitDates = calculateBoardingPortraitDates(checkInDate, dog.stayNights);
     const nextDate = portraitDates.find((d) => d > currentDate);
     return nextDate || null;
   }
@@ -2149,6 +2167,7 @@ function startPortraitScheduler() {
   }, 30 * 60 * 1e3);
   console.log("[scheduler] Portrait auto-rotation started (every 30 min)");
 }
+var isRunning;
 var init_portrait_scheduler = __esm({
   "server/portrait-scheduler.ts"() {
     "use strict";
@@ -2159,6 +2178,7 @@ var init_portrait_scheduler = __esm({
     init_db();
     init_helpers();
     init_delivery();
+    isRunning = false;
   }
 });
 
