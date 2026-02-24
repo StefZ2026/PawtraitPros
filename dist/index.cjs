@@ -4989,8 +4989,8 @@ var PRINTFUL_PRODUCTS = {
     name: "Enhanced Matte Print \u2014 8\xD710",
     category: "print",
     size: "8x10",
-    priceCents: 8900
-    // $89.00
+    priceCents: 4500
+    // $45.00
   },
   // --- MUGS ---
   mug_11oz: {
@@ -4998,16 +4998,16 @@ var PRINTFUL_PRODUCTS = {
     name: "White Glossy Mug \u2014 11 oz",
     category: "mug",
     size: "11oz",
-    priceCents: 4e3
-    // $40.00
+    priceCents: 3500
+    // $35.00
   },
   mug_15oz: {
     variantId: 4830,
     name: "White Glossy Mug \u2014 15 oz",
     category: "mug",
     size: "15oz",
-    priceCents: 4500
-    // $45.00
+    priceCents: 4e3
+    // $40.00
   },
   // --- TOTE ---
   tote_natural: {

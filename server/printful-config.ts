@@ -5,10 +5,8 @@
  * Prices are retail (what the customer pays).
  * Printful charges wholesale; the difference is margin.
  *
- * Pricing strategy (Fable-benchmarked):
- *   - Prints, cards: ~90% gross margin
- *   - Mugs: ~85% gross margin
- *   - Framed prints, totes: ~80% gross margin
+ * Pricing strategy:
+ *   - 80% gross margin across the board
  *   - 70/30 profit split (business 70%, Pawtrait Pros 30%)
  *
  * IMPORTANT: These variant IDs are confirmed and must not be changed
@@ -31,7 +29,7 @@ export const PRINTFUL_PRODUCTS: Record<string, PrintfulProduct> = {
     name: "Enhanced Matte Print — 8×10",
     category: "print",
     size: "8x10",
-    priceCents: 8900, // $89.00
+    priceCents: 4500, // $45.00
   },
 
   // --- MUGS ---
@@ -40,14 +38,14 @@ export const PRINTFUL_PRODUCTS: Record<string, PrintfulProduct> = {
     name: "White Glossy Mug — 11 oz",
     category: "mug",
     size: "11oz",
-    priceCents: 4000, // $40.00
+    priceCents: 3500, // $35.00
   },
   mug_15oz: {
     variantId: 4830,
     name: "White Glossy Mug — 15 oz",
     category: "mug",
     size: "15oz",
-    priceCents: 4500, // $45.00
+    priceCents: 4000, // $40.00
   },
 
   // --- TOTE ---

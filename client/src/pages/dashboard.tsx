@@ -795,10 +795,8 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           setGenerating(false);
           setGenerationProgress(null);
           // Auto-advance wizard to review step
-          if (wizardStep === 4) {
-            setDeliverySelections(new Set(allJobEntries.map(j => j.dogId)));
-            setWizardStep(5);
-          }
+          setDeliverySelections(new Set(allJobEntries.map(j => j.dogId)));
+          setWizardStep(5);
           if (failed > 0) {
             toast({ title: "Batch complete", description: `${completed} portrait${completed !== 1 ? "s" : ""} created, ${failed} failed.` });
           } else {
