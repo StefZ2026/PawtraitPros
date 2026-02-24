@@ -45,7 +45,7 @@ export default function SmsOptIn() {
                   <div className="space-y-3 mb-4">
                     <label className="flex items-start gap-2 text-sm text-muted-foreground">
                       <input type="checkbox" disabled className="mt-0.5 rounded border-gray-300" />
-                      <span>I agree to send an SMS to this number via Pawtrait Pros. Message &amp; data rates may apply. Recipient can reply STOP to opt out.</span>
+                      <span>By providing this phone number, you agree to receive SMS messages from Pawtrait Pros. Message frequency may vary. Standard message and data rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.</span>
                     </label>
                     <label className="flex items-start gap-2 text-sm text-muted-foreground">
                       <input type="checkbox" disabled className="mt-0.5 rounded border-gray-300" />
@@ -70,9 +70,10 @@ export default function SmsOptIn() {
                 <ul className="space-y-2 text-muted-foreground">
                   <li><strong>Opt-out:</strong> Reply STOP to any message to stop receiving texts from this number.</li>
                   <li><strong>Help:</strong> Reply HELP for support information, or email stefanie@pawtraitpros.com.</li>
-                  <li><strong>No marketing:</strong> We do not send marketing or promotional messages. SMS is only sent when a user explicitly initiates a share action.</li>
-                  <li><strong>Frequency:</strong> One message per share action — no recurring or automated texts.</li>
-                  <li><strong>Data:</strong> Phone numbers are not stored after delivery. Standard message and data rates may apply.</li>
+                  <li><strong>Messaging:</strong> Message frequency may vary. SMS is sent when a user explicitly initiates a share action or to deliver service notifications.</li>
+                  <li><strong>Data rates:</strong> Standard message and data rates may apply.</li>
+                  <li><strong>No sharing:</strong> We will not share mobile information with third parties for promotional or marketing purposes.</li>
+                  <li><strong>Data:</strong> Phone numbers are not stored after delivery.</li>
                   <li><strong>Privacy:</strong> See our full <a href="/privacy" className="underline text-primary">Privacy Policy</a> (Section 7: SMS/Text Messaging).</li>
                 </ul>
               </div>

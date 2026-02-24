@@ -289,7 +289,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
                 onChange={(e) => setSmsConsent(e.target.checked)}
                 className="mt-0.5 rounded border-gray-300"
               />
-              <span>I agree to send an SMS to this number via Pawtrait Pros. Message &amp; data rates may apply. Recipient can reply STOP to opt out.</span>
+              <span>By providing this phone number, you agree to receive SMS messages from Pawtrait Pros. Message frequency may vary. Standard message and data rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.</span>
             </label>
             <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
               <input
