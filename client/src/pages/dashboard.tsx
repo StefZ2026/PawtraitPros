@@ -967,56 +967,16 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                 <p className="font-medium">Choose today's portrait pack</p>
               </div>
               <div className="grid md:grid-cols-3 gap-3">
-                {packs.map((pack: any) => {
-                  const isPreview = previewPackType === pack.type;
-                  return (
-                    <div
-                      key={pack.type}
-                      className={`rounded-lg border-2 transition-colors cursor-pointer ${isPreview ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}
-                      onClick={() => setPreviewPackType(isPreview ? null : pack.type)}
-                    >
-                      <div className="p-4 text-center">
-                        <span className="font-semibold capitalize text-base">{pack.name}</span>
-                        <p className="text-xs text-muted-foreground mt-1">{pack.description}</p>
-                      </div>
-                      {isPreview && pack.styles && (
-                        <div className="px-3 pb-3">
-                          <div className="grid grid-cols-3 gap-1.5 mb-3">
-                            {pack.styles.slice(0, 6).map((style: any) => {
-                              const previewImg = stylePreviewImages[style.name];
-                              return (
-                                <div key={style.id} className="text-center">
-                                  <div className="aspect-square rounded bg-muted overflow-hidden">
-                                    {previewImg ? (
-                                      <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center">
-                                        <Palette className="h-4 w-4 text-muted-foreground/30" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <Button
-                            className="w-full gap-2"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPackMutation.mutate(pack.type);
-                            }}
-                            disabled={setPackMutation.isPending}
-                          >
-                            <Check className="h-4 w-4" />
-                            Use This Pack
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {packs.map((pack: any) => (
+                  <div
+                    key={pack.type}
+                    className="rounded-lg border-2 border-border hover:border-primary/40 transition-colors cursor-pointer p-4 text-center"
+                    onClick={() => setPackMutation.mutate(pack.type)}
+                  >
+                    <span className="font-semibold capitalize text-base">{pack.name}</span>
+                    <p className="text-xs text-muted-foreground mt-1">{pack.description}</p>
+                  </div>
+                ))}
               </div>
             </div>
           ) : (
@@ -1165,9 +1125,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                 <Card className="overflow-hidden group">
                   <div className="aspect-square relative bg-muted">
                     {dog.portrait?.generatedImageUrl ? (
-                      <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" draggable={false} />
+                      <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover object-top" draggable={false} />
                     ) : dog.originalPhotoUrl ? (
-                      <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover opacity-60" draggable={false} />
+                      <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover object-top opacity-60" draggable={false} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         {dog.species === "cat" ? <Cat className="h-12 w-12 text-muted-foreground/30" /> : <Dog className="h-12 w-12 text-muted-foreground/30" />}
