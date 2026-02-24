@@ -190,6 +190,18 @@ export const dailyPackSelections = pgTable("daily_pack_selections", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// Visit photos — multiple activity photos per pet per day (boarders, daycares, groomers)
+export const visitPhotos = pgTable("visit_photos", {
+  id: serial("id").primaryKey(),
+  dogId: integer("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  photoUrl: text("photo_url").notNull(), // Supabase Storage HTTPS URL (NOT base64)
+  visitDate: text("visit_date").notNull(), // YYYY-MM-DD
+  caption: text("caption"), // optional staff note
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 // Insert schemas
 export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
   id: true,
@@ -245,6 +257,11 @@ export const insertDailyPackSelectionSchema = createInsertSchema(dailyPackSelect
   createdAt: true,
 });
 
+export const insertVisitPhotoSchema = createInsertSchema(visitPhotos).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
@@ -278,3 +295,6 @@ export type InsertBatchPhoto = z.infer<typeof insertBatchPhotoSchema>;
 
 export type DailyPackSelection = typeof dailyPackSelections.$inferSelect;
 export type InsertDailyPackSelection = z.infer<typeof insertDailyPackSelectionSchema>;
+
+export type VisitPhoto = typeof visitPhotos.$inferSelect;
+export type InsertVisitPhoto = z.infer<typeof insertVisitPhotoSchema>;

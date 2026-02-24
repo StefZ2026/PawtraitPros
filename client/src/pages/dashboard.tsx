@@ -20,7 +20,7 @@ import {
   Sparkles, ExternalLink, LayoutDashboard, Shield,
   ArrowLeft, Heart, Trash2, LogIn, Eye, Upload, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap
+  ChevronDown, ChevronUp, Zap, Search
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
@@ -540,6 +540,10 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<{ done: number; total: number } | null>(null);
 
+  // All Pets search + expand
+  const [allPetsSearch, setAllPetsSearch] = useState("");
+  const [showAllPets, setShowAllPets] = useState(false);
+
   // Quick-add client form state
   const [newPetName, setNewPetName] = useState("");
   const [newPetSpecies, setNewPetSpecies] = useState<"dog" | "cat">("dog");
@@ -565,6 +569,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const hasPlan = !!organization.planId && organization.subscriptionStatus !== "inactive" && !isCanceled && !isTrialExpired;
 
   const industryType = (organization as any).industryType || "groomer";
+  const visitPhotoLimit = industryType === "groomer" ? 4 : 5;
 
   // Species-aware pack selection
   const speciesHandled = organization.speciesHandled || "dogs";
@@ -613,6 +618,23 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     });
   }, [dogs, today]);
 
+  // All Pets except today (for search/check-in)
+  const allPetsExceptToday = useMemo(() => {
+    return dogs.filter(d => !todaysDogs.includes(d));
+  }, [dogs, todaysDogs]);
+
+  const filteredAllPets = useMemo(() => {
+    if (!allPetsSearch.trim()) return allPetsExceptToday;
+    const q = allPetsSearch.toLowerCase().trim();
+    return allPetsExceptToday.filter(d => {
+      const name = (d.name || "").toLowerCase();
+      const breed = (d.breed || "").toLowerCase();
+      const phone = ((d as any).ownerPhone || "").toLowerCase();
+      const email = ((d as any).ownerEmail || "").toLowerCase();
+      return name.includes(q) || breed.includes(q) || phone.includes(q) || email.includes(q);
+    });
+  }, [allPetsExceptToday, allPetsSearch]);
+
   // Pet selection for batch generation
   const [selectedPetIds, setSelectedPetIds] = useState<Set<number>>(new Set());
 
@@ -643,6 +665,51 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Visit photos for today's dogs
+  const { data: visitPhotosMap = {} } = useQuery<Record<number, any[]>>({
+    queryKey: ["/api/visit-photos-today", organization.id, today],
+    queryFn: async () => {
+      const headers = await getAuthHeaders();
+      const result: Record<number, any[]> = {};
+      await Promise.all(
+        todaysDogs.map(async (dog) => {
+          try {
+            const res = await fetch(`/api/dogs/${dog.id}/visit-photos?date=${today}`, { headers });
+            if (res.ok) result[dog.id] = await res.json();
+          } catch {}
+        })
+      );
+      return result;
+    },
+    enabled: hasPlan && todaysDogs.length > 0,
+  });
+
+  // Upload a visit photo
+  const uploadVisitPhotoMutation = useMutation({
+    mutationFn: async ({ dogId, photo, caption }: { dogId: number; photo: string; caption?: string }) => {
+      return apiRequest("POST", `/api/dogs/${dogId}/visit-photos`, { photo, caption });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/visit-photos-today"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Delete a visit photo
+  const deleteVisitPhotoMutation = useMutation({
+    mutationFn: async ({ dogId, photoId }: { dogId: number; photoId: number }) => {
+      return apiRequest("DELETE", `/api/dogs/${dogId}/visit-photos/${photoId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/visit-photos-today"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1133,7 +1200,83 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                       <h3 className="font-semibold text-white text-sm">{dog.name}</h3>
                     </div>
                   </div>
-                  <div className="p-2 flex items-center gap-1">
+                  {/* Visit photo strip */}
+                  <div className="px-2 pt-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                    <div className="flex gap-1.5 items-center overflow-x-auto">
+                      {(visitPhotosMap[dog.id] || []).map((p: any) => (
+                        <div key={p.id} className="relative w-9 h-9 rounded shrink-0 overflow-hidden border group/thumb">
+                          <img src={p.photoUrl} alt="" className="w-full h-full object-cover" />
+                          <button
+                            className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-opacity"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (confirm("Delete this photo?")) {
+                                deleteVisitPhotoMutation.mutate({ dogId: dog.id, photoId: p.id });
+                              }
+                            }}
+                          >
+                            <X className="h-3 w-3 text-white" />
+                          </button>
+                        </div>
+                      ))}
+                      {(visitPhotosMap[dog.id] || []).length < visitPhotoLimit && (
+                        <label className="w-9 h-9 rounded border-2 border-dashed border-muted-foreground/30 flex items-center justify-center cursor-pointer shrink-0 hover:border-primary/50 transition-colors">
+                          <input
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              if (file.size > 20 * 1024 * 1024) {
+                                toast({ title: "File too large", description: "Max 20 MB", variant: "destructive" });
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const dataUrl = ev.target?.result as string;
+                                if (!dataUrl) return;
+                                // Resize to max 1024px
+                                const img = new window.Image();
+                                img.onload = () => {
+                                  let { width, height } = img;
+                                  if (width > 1024 || height > 1024) {
+                                    if (width > height) {
+                                      height = Math.round(height * (1024 / width));
+                                      width = 1024;
+                                    } else {
+                                      width = Math.round(width * (1024 / height));
+                                      height = 1024;
+                                    }
+                                  }
+                                  const canvas = document.createElement("canvas");
+                                  canvas.width = width;
+                                  canvas.height = height;
+                                  const ctx = canvas.getContext("2d")!;
+                                  ctx.drawImage(img, 0, 0, width, height);
+                                  const resized = canvas.toDataURL("image/jpeg", 0.85);
+                                  uploadVisitPhotoMutation.mutate({ dogId: dog.id, photo: resized });
+                                };
+                                img.src = dataUrl;
+                              };
+                              reader.readAsDataURL(file);
+                              e.target.value = "";
+                            }}
+                          />
+                          {uploadVisitPhotoMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                        </label>
+                      )}
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        {(visitPhotosMap[dog.id] || []).length}/{visitPhotoLimit}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-2 pt-1 flex items-center gap-1">
                     {(dog as any).ownerPhone && (
                       <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
                         <Phone className="h-3 w-3" /> {(dog as any).ownerPhone}
@@ -1732,11 +1875,11 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         </Card>
       )}
 
-      {/* All Pets (collapsed, expandable) */}
-      {dogs.length > todaysDogs.length && (
+      {/* All Pets — searchable, expandable */}
+      {allPetsExceptToday.length > 0 && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">All Pets ({dogs.length})</h2>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h2 className="text-lg font-semibold">All Pets ({allPetsExceptToday.length})</h2>
             <div className="flex gap-2">
               {organization.slug && (
                 <Button variant="ghost" size="sm" className="gap-1" asChild>
@@ -1745,8 +1888,31 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               )}
             </div>
           </div>
+
+          {/* Search bar */}
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, breed, phone, or email..."
+              value={allPetsSearch}
+              onChange={(e) => { setAllPetsSearch(e.target.value); setShowAllPets(false); }}
+              className="pl-9"
+            />
+            {allPetsSearch && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => { setAllPetsSearch(""); setShowAllPets(false); }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+
+          {/* Results */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {dogs.filter(d => !todaysDogs.includes(d)).slice(0, 8).map((dog) => (
+            {filteredAllPets.slice(0, showAllPets ? undefined : 8).map((dog) => (
               <div key={dog.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
                 <Link href={`/pawfile/${dog.id}`} className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0">
@@ -1778,10 +1944,27 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               </div>
             ))}
           </div>
-          {dogs.length > todaysDogs.length + 8 && (
-            <p className="text-sm text-muted-foreground text-center mt-3">
-              + {dogs.length - todaysDogs.length - 8} more pets
+
+          {/* No results */}
+          {allPetsSearch && filteredAllPets.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No pets found matching "{allPetsSearch}"
             </p>
+          )}
+
+          {/* Show more / show less */}
+          {filteredAllPets.length > 8 && (
+            <div className="text-center mt-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAllPets(!showAllPets)}
+              >
+                {showAllPets
+                  ? "Show less"
+                  : `Show all ${filteredAllPets.length} pets`}
+              </Button>
+            </div>
           )}
         </div>
       )}

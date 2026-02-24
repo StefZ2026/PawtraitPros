@@ -6,6 +6,7 @@ import {
   dogs,
   portraits,
   portraitStyles,
+  visitPhotos,
   type Organization,
   type InsertOrganization,
   type SubscriptionPlan,
@@ -14,6 +15,8 @@ import {
   type Portrait,
   type InsertPortrait,
   type PortraitStyle,
+  type VisitPhoto,
+  type InsertVisitPhoto,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 
@@ -64,6 +67,12 @@ export interface IStorage {
   getAccurateCreditsUsed(orgId: number): Promise<{ creditsUsed: number; billingCycleStart: Date | null }>;
   syncOrgCredits(orgId: number): Promise<Organization | undefined>;
   recalculateAllOrgCredits(): Promise<{ orgId: number; name: string; old: number; new: number }[]>;
+
+  // Visit Photos
+  getVisitPhotos(dogId: number, visitDate?: string): Promise<VisitPhoto[]>;
+  createVisitPhoto(photo: InsertVisitPhoto): Promise<VisitPhoto>;
+  deleteVisitPhoto(id: number): Promise<void>;
+  countVisitPhotosForDate(dogId: number, visitDate: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -343,6 +352,34 @@ export class DatabaseStorage implements IStorage {
     }
 
     return results;
+  }
+
+  // Visit Photos
+  async getVisitPhotos(dogId: number, visitDate?: string): Promise<VisitPhoto[]> {
+    if (visitDate) {
+      return db.select().from(visitPhotos)
+        .where(and(eq(visitPhotos.dogId, dogId), eq(visitPhotos.visitDate, visitDate)))
+        .orderBy(visitPhotos.sortOrder);
+    }
+    return db.select().from(visitPhotos)
+      .where(eq(visitPhotos.dogId, dogId))
+      .orderBy(desc(visitPhotos.createdAt));
+  }
+
+  async createVisitPhoto(photo: InsertVisitPhoto): Promise<VisitPhoto> {
+    const [created] = await db.insert(visitPhotos).values(photo).returning();
+    return created;
+  }
+
+  async deleteVisitPhoto(id: number): Promise<void> {
+    await db.delete(visitPhotos).where(eq(visitPhotos.id, id));
+  }
+
+  async countVisitPhotosForDate(dogId: number, visitDate: string): Promise<number> {
+    const rows = await db.select({ count: sql<number>`count(*)` })
+      .from(visitPhotos)
+      .where(and(eq(visitPhotos.dogId, dogId), eq(visitPhotos.visitDate, visitDate)));
+    return Number(rows[0]?.count ?? 0);
   }
 
   async repairSequences(): Promise<string[]> {

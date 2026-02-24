@@ -614,4 +614,127 @@ export function registerDogRoutes(app: Express): void {
       res.status(500).send("Error loading photo");
     }
   });
+
+  // --- VISIT PHOTOS ---
+
+  // GET /api/dogs/:id/visit-photos — list visit photos for a pet
+  app.get("/api/dogs/:id/visit-photos", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const dog = await storage.getDog(dogId);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+
+      const visitDate = req.query.date as string | undefined;
+      const photos = await storage.getVisitPhotos(dogId, visitDate);
+      res.json(photos);
+    } catch (error) {
+      console.error("Error fetching visit photos:", error);
+      res.status(500).json({ error: "Failed to fetch visit photos" });
+    }
+  });
+
+  // POST /api/dogs/:id/visit-photos — upload a visit photo
+  app.post("/api/dogs/:id/visit-photos", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const dog = await storage.getDog(dogId);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      let org;
+      if (userIsAdmin) {
+        org = await storage.getOrganization(dog.organizationId);
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      const { photo, caption } = req.body;
+      if (!photo) return res.status(400).json({ error: "Photo data is required" });
+
+      // Photo limit by industry type
+      const industryType = (org as any).industryType || "groomer";
+      const photoLimits: Record<string, number> = { groomer: 4, boarding: 5, daycare: 5 };
+      const limit = photoLimits[industryType] || 4;
+
+      const visitDate = new Date().toISOString().split("T")[0];
+      const currentCount = await storage.countVisitPhotosForDate(dogId, visitDate);
+      if (currentCount >= limit) {
+        return res.status(400).json({
+          error: `Photo limit reached (${limit} per ${industryType === "groomer" ? "visit" : "day"})`,
+        });
+      }
+
+      // Always upload to Supabase Storage — no base64 in visit_photos
+      let photoUrl: string;
+      if (isDataUri(photo)) {
+        const fname = `visit-${dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+        photoUrl = await uploadToStorage(photo, "originals", fname);
+      } else {
+        photoUrl = photo;
+      }
+
+      const visitPhoto = await storage.createVisitPhoto({
+        dogId,
+        organizationId: org.id,
+        photoUrl,
+        visitDate,
+        caption: caption || null,
+        sortOrder: currentCount,
+      });
+
+      res.status(201).json(visitPhoto);
+    } catch (error: any) {
+      console.error("Error uploading visit photo:", error);
+      res.status(500).json({ error: "Failed to upload visit photo" });
+    }
+  });
+
+  // DELETE /api/dogs/:id/visit-photos/:photoId — remove a visit photo
+  app.delete("/api/dogs/:id/visit-photos/:photoId", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const photoId = parseInt(req.params.photoId);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      // Verify the photo exists and belongs to this dog
+      const photos = await storage.getVisitPhotos(dogId);
+      const photo = photos.find(p => p.id === photoId);
+      if (!photo) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || photo.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+
+      await storage.deleteVisitPhoto(photoId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting visit photo:", error);
+      res.status(500).json({ error: "Failed to delete visit photo" });
+    }
+  });
 }

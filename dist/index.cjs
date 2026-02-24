@@ -70,15 +70,17 @@ __export(schema_exports, {
   insertPortraitSchema: () => insertPortraitSchema,
   insertPortraitStyleSchema: () => insertPortraitStyleSchema,
   insertSubscriptionPlanSchema: () => insertSubscriptionPlanSchema,
+  insertVisitPhotoSchema: () => insertVisitPhotoSchema,
   merchOrderItems: () => merchOrderItems,
   merchOrders: () => merchOrders,
   organizations: () => organizations,
   portraitStyles: () => portraitStyles,
   portraits: () => portraits,
   subscriptionPlans: () => subscriptionPlans,
-  users: () => users
+  users: () => users,
+  visitPhotos: () => visitPhotos
 });
-var import_drizzle_orm2, import_pg_core2, import_drizzle_zod, subscriptionPlans, organizations, dogs, portraitStyles, portraits, merchOrders, merchOrderItems, customerSessions, batchSessions, batchPhotos, dailyPackSelections, insertSubscriptionPlanSchema, insertOrganizationSchema, insertDogSchema, insertPortraitStyleSchema, insertPortraitSchema, insertMerchOrderSchema, insertMerchOrderItemSchema, insertCustomerSessionSchema, insertBatchSessionSchema, insertBatchPhotoSchema, insertDailyPackSelectionSchema;
+var import_drizzle_orm2, import_pg_core2, import_drizzle_zod, subscriptionPlans, organizations, dogs, portraitStyles, portraits, merchOrders, merchOrderItems, customerSessions, batchSessions, batchPhotos, dailyPackSelections, visitPhotos, insertSubscriptionPlanSchema, insertOrganizationSchema, insertDogSchema, insertPortraitStyleSchema, insertPortraitSchema, insertMerchOrderSchema, insertMerchOrderItemSchema, insertCustomerSessionSchema, insertBatchSessionSchema, insertBatchPhotoSchema, insertDailyPackSelectionSchema, insertVisitPhotoSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -279,6 +281,19 @@ var init_schema = __esm({
       // staff userId who selected
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
+    visitPhotos = (0, import_pg_core2.pgTable)("visit_photos", {
+      id: (0, import_pg_core2.serial)("id").primaryKey(),
+      dogId: (0, import_pg_core2.integer)("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+      organizationId: (0, import_pg_core2.integer)("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+      photoUrl: (0, import_pg_core2.text)("photo_url").notNull(),
+      // Supabase Storage HTTPS URL (NOT base64)
+      visitDate: (0, import_pg_core2.text)("visit_date").notNull(),
+      // YYYY-MM-DD
+      caption: (0, import_pg_core2.text)("caption"),
+      // optional staff note
+      sortOrder: (0, import_pg_core2.integer)("sort_order").default(0).notNull(),
+      createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
+    });
     insertSubscriptionPlanSchema = (0, import_drizzle_zod.createInsertSchema)(subscriptionPlans).omit({
       id: true,
       createdAt: true
@@ -319,6 +334,10 @@ var init_schema = __esm({
       createdAt: true
     });
     insertDailyPackSelectionSchema = (0, import_drizzle_zod.createInsertSchema)(dailyPackSelections).omit({
+      id: true,
+      createdAt: true
+    });
+    insertVisitPhotoSchema = (0, import_drizzle_zod.createInsertSchema)(visitPhotos).omit({
       id: true,
       createdAt: true
     });
@@ -990,6 +1009,24 @@ var DatabaseStorage = class {
       }
     }
     return results;
+  }
+  // Visit Photos
+  async getVisitPhotos(dogId, visitDate) {
+    if (visitDate) {
+      return db.select().from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate))).orderBy(visitPhotos.sortOrder);
+    }
+    return db.select().from(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(visitPhotos.createdAt));
+  }
+  async createVisitPhoto(photo) {
+    const [created] = await db.insert(visitPhotos).values(photo).returning();
+    return created;
+  }
+  async deleteVisitPhoto(id) {
+    await db.delete(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.id, id));
+  }
+  async countVisitPhotosForDate(dogId, visitDate) {
+    const rows = await db.select({ count: import_drizzle_orm4.sql`count(*)` }).from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate)));
+    return Number(rows[0]?.count ?? 0);
   }
   async repairSequences() {
     const fixes = [];
@@ -3689,6 +3726,104 @@ function registerDogRoutes(app2) {
     } catch (error) {
       console.error("Error serving pet photo:", error);
       res.status(500).send("Error loading photo");
+    }
+  });
+  app2.get("/api/dogs/:id/visit-photos", isAuthenticated, async (req, res) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      const dog = await storage.getDog(dogId);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      const visitDate = req.query.date;
+      const photos = await storage.getVisitPhotos(dogId, visitDate);
+      res.json(photos);
+    } catch (error) {
+      console.error("Error fetching visit photos:", error);
+      res.status(500).json({ error: "Failed to fetch visit photos" });
+    }
+  });
+  app2.post("/api/dogs/:id/visit-photos", isAuthenticated, async (req, res) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      const dog = await storage.getDog(dogId);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      let org;
+      if (userIsAdmin) {
+        org = await storage.getOrganization(dog.organizationId);
+      } else {
+        org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      const { photo, caption } = req.body;
+      if (!photo) return res.status(400).json({ error: "Photo data is required" });
+      const industryType = org.industryType || "groomer";
+      const photoLimits = { groomer: 4, boarding: 5, daycare: 5 };
+      const limit = photoLimits[industryType] || 4;
+      const visitDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const currentCount = await storage.countVisitPhotosForDate(dogId, visitDate);
+      if (currentCount >= limit) {
+        return res.status(400).json({
+          error: `Photo limit reached (${limit} per ${industryType === "groomer" ? "visit" : "day"})`
+        });
+      }
+      let photoUrl;
+      if (isDataUri(photo)) {
+        const fname = `visit-${dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+        photoUrl = await uploadToStorage(photo, "originals", fname);
+      } else {
+        photoUrl = photo;
+      }
+      const visitPhoto = await storage.createVisitPhoto({
+        dogId,
+        organizationId: org.id,
+        photoUrl,
+        visitDate,
+        caption: caption || null,
+        sortOrder: currentCount
+      });
+      res.status(201).json(visitPhoto);
+    } catch (error) {
+      console.error("Error uploading visit photo:", error);
+      res.status(500).json({ error: "Failed to upload visit photo" });
+    }
+  });
+  app2.delete("/api/dogs/:id/visit-photos/:photoId", isAuthenticated, async (req, res) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      const photoId = parseInt(req.params.photoId);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      const photos = await storage.getVisitPhotos(dogId);
+      const photo = photos.find((p) => p.id === photoId);
+      if (!photo) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || photo.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      await storage.deleteVisitPhoto(photoId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting visit photo:", error);
+      res.status(500).json({ error: "Failed to delete visit photo" });
     }
   });
 }
@@ -7912,6 +8047,17 @@ async function seedDatabase() {
             END IF;
           END $$;
         `);
+        await pool.query(`CREATE TABLE IF NOT EXISTS visit_photos (
+          id SERIAL PRIMARY KEY,
+          dog_id INTEGER NOT NULL REFERENCES dogs(id) ON DELETE CASCADE,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          photo_url TEXT NOT NULL,
+          visit_date TEXT NOT NULL,
+          caption TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_visit_photos_dog_date ON visit_photos (dog_id, visit_date)`);
         console.log("[migration] Pros tables ready");
       })(),
       migTimeout

@@ -175,6 +175,19 @@ export async function seedDatabase() {
           END $$;
         `);
 
+        // Visit photos table (multi-photo per visit)
+        await pool.query(`CREATE TABLE IF NOT EXISTS visit_photos (
+          id SERIAL PRIMARY KEY,
+          dog_id INTEGER NOT NULL REFERENCES dogs(id) ON DELETE CASCADE,
+          organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          photo_url TEXT NOT NULL,
+          visit_date TEXT NOT NULL,
+          caption TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )`);
+        await pool.query(`CREATE INDEX IF NOT EXISTS idx_visit_photos_dog_date ON visit_photos (dog_id, visit_date)`);
+
         console.log('[migration] Pros tables ready');
       })(),
       migTimeout,
