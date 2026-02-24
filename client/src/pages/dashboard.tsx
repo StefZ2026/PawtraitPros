@@ -604,16 +604,61 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const selectedPack = packs.find((p: any) => p.type === selectedPackType);
   const [previewPackType, setPreviewPackType] = useState<string | null>(null);
 
-  // Filter dogs to today's clients
+  // Filter dogs to today's clients (checked-in today OR created today)
   const todaysDogs = useMemo(() => {
     return dogs.filter(d => {
+      if ((d as any).checkedInAt === today) return true;
       const created = new Date(d.createdAt).toISOString().split("T")[0];
       return created === today;
     });
   }, [dogs, today]);
 
+  // Pet selection for batch generation
+  const [selectedPetIds, setSelectedPetIds] = useState<Set<number>>(new Set());
+
   const readyForGeneration = todaysDogs.filter(d => d.originalPhotoUrl && !d.portrait?.generatedImageUrl);
   const generatedToday = todaysDogs.filter(d => d.portrait?.generatedImageUrl);
+
+  // Wizard state
+  const [wizardStep, setWizardStep] = useState<number | null>(null);
+  const [styleMode, setStyleMode] = useState<"one-for-all" | "individual">("one-for-all");
+  const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
+  const [styleAssignments, setStyleAssignments] = useState<Map<number, number>>(new Map());
+  const [contactEdits, setContactEdits] = useState<Map<number, { phone: string; email: string }>>(new Map());
+  const [deliverySelections, setDeliverySelections] = useState<Set<number>>(new Set());
+  const [savingContacts, setSavingContacts] = useState(false);
+
+  // Check in a pet for today (All Pets section)
+  const checkInMutation = useMutation({
+    mutationFn: async (dogId: number) => {
+      return apiRequest("POST", `/api/dogs/${dogId}/check-in`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+      toast({ title: "Checked in!", description: "Pet added to today's list." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleStartWizard = () => {
+    setSelectedPetIds(new Set(readyForGeneration.map(d => d.id)));
+    setStyleMode("one-for-all");
+    setSelectedStyleId(null);
+    setStyleAssignments(new Map());
+    setContactEdits(new Map());
+    setDeliverySelections(new Set());
+    setSavingContacts(false);
+    setWizardStep(1);
+  };
+
+  const handleExitWizard = () => {
+    setWizardStep(null);
+    setGenerating(false);
+    setGenerationProgress(null);
+  };
 
   // Set daily pack (per species)
   const setPackMutation = useMutation({
@@ -631,9 +676,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Quick add client
   const addClientMutation = useMutation({
     mutationFn: async () => {
-      if (!newPetOwnerEmail && !newPetOwnerPhone) {
-        throw new Error("Please provide the owner's email or phone number");
-      }
       const body: any = {
         name: newPetName,
         species: newPetSpecies,
@@ -660,15 +702,15 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     },
   });
 
-  // Batch generate — async with polling
-  const handleBatchGenerate = async (autoSelect: boolean) => {
+  // Batch generate — async with polling, wizard-aware
+  const handleBatchGenerate = async () => {
     if (!selectedPackType) {
       toast({ title: "Select a pack first", description: "Choose today's pack before generating.", variant: "destructive" });
       return;
     }
-    const dogIds = readyForGeneration.map(d => d.id);
+    const dogIds = readyForGeneration.filter(d => selectedPetIds.has(d.id)).map(d => d.id);
     if (dogIds.length === 0) {
-      toast({ title: "No pets ready", description: "Add pets with photos first.", variant: "destructive" });
+      toast({ title: "No pets selected", description: "Select pets with photos to generate portraits.", variant: "destructive" });
       return;
     }
 
@@ -677,42 +719,69 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
 
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch("/api/generate-batch", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dogIds,
-          packType: selectedPackType,
-          autoSelect,
-          organizationId: isAdmin ? organization.id : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: "Generation failed", description: data.error, variant: "destructive" });
+      let allJobEntries: { dogId: number; jobId: string }[] = [];
+
+      if (styleMode === "individual" && styleAssignments.size > 0) {
+        // Group dogs by assigned style, one batch call per style group
+        const groups = new Map<number, number[]>();
+        for (const id of dogIds) {
+          const sId = styleAssignments.get(id);
+          if (!sId) continue;
+          const list = groups.get(sId) || [];
+          list.push(id);
+          groups.set(sId, list);
+        }
+        for (const [sId, ids] of groups) {
+          const res = await fetch("/api/generate-batch", {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              dogIds: ids,
+              packType: selectedPackType,
+              styleId: sId,
+              organizationId: isAdmin ? organization.id : undefined,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.jobIds) allJobEntries.push(...data.jobIds);
+        }
+      } else {
+        // One style for all
+        const res = await fetch("/api/generate-batch", {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dogIds,
+            packType: selectedPackType,
+            styleId: selectedStyleId || undefined,
+            organizationId: isAdmin ? organization.id : undefined,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast({ title: "Generation failed", description: data.error, variant: "destructive" });
+          setGenerating(false);
+          setGenerationProgress(null);
+          return;
+        }
+        allJobEntries = data.jobIds || [];
+      }
+
+      if (allJobEntries.length === 0) {
+        toast({ title: "No portraits queued", description: "All pets were skipped.", variant: "destructive" });
         setGenerating(false);
         setGenerationProgress(null);
         return;
       }
 
-      // data = { jobIds: [{dogId, jobId}, ...], errors: [...], status, totalQueued }
-      const jobEntries: { dogId: number; jobId: string }[] = data.jobIds || [];
-      if (jobEntries.length === 0) {
-        toast({ title: "No portraits queued", description: data.errors?.[0]?.error || "All pets were skipped.", variant: "destructive" });
-        setGenerating(false);
-        setGenerationProgress(null);
-        return;
-      }
-
-      const totalJobs = jobEntries.length;
-      const jobIdList = jobEntries.map(j => j.jobId);
+      const totalJobs = allJobEntries.length;
+      const jobIdList = allJobEntries.map(j => j.jobId);
       setGenerationProgress({ done: 0, total: totalJobs });
 
-      // Poll until all jobs complete or fail
+      // Poll until all jobs complete
       const poll = async (): Promise<void> => {
         const pollHeaders = await getAuthHeaders();
-        const idsParam = jobIdList.join(",");
-        const pollRes = await fetch(`/api/jobs?ids=${idsParam}`, { headers: pollHeaders });
+        const pollRes = await fetch(`/api/jobs?ids=${jobIdList.join(",")}`, { headers: pollHeaders });
         if (!pollRes.ok) return;
         const jobs: any[] = await pollRes.json();
         const completed = jobs.filter(j => j?.status === "completed").length;
@@ -721,32 +790,28 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         setGenerationProgress({ done: completed, total: totalJobs });
 
         if (done >= totalJobs) {
-          // All jobs finished
           queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
           queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
           setGenerating(false);
           setGenerationProgress(null);
+          // Auto-advance wizard to review step
+          if (wizardStep === 4) {
+            setDeliverySelections(new Set(allJobEntries.map(j => j.dogId)));
+            setWizardStep(5);
+          }
           if (failed > 0) {
-            toast({ title: "Batch complete", description: `${completed} portrait${completed !== 1 ? "s" : ""} created, ${failed} failed.`, variant: completed > 0 ? "default" : "destructive" });
+            toast({ title: "Batch complete", description: `${completed} portrait${completed !== 1 ? "s" : ""} created, ${failed} failed.` });
           } else {
             toast({ title: "Portraits generated!", description: `${completed} portrait${completed !== 1 ? "s" : ""} created.` });
           }
           return;
         }
 
-        // Continue polling
         await new Promise(r => setTimeout(r, 2000));
         return poll();
       };
 
-      // Start polling loop
       await poll();
-
-      // Show any pre-validation errors from the batch endpoint
-      if (data.errors && data.errors.length > 0) {
-        const skipped = data.errors.length;
-        toast({ title: `${skipped} pet${skipped !== 1 ? "s" : ""} skipped`, description: data.errors[0].error, variant: "default" });
-      }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setGenerating(false);
@@ -1052,7 +1117,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                   <div>
                     <label className="text-sm font-medium mb-1 flex items-center gap-1"><Mail className="h-3 w-3" /> Owner Email</label>
                     <Input placeholder="owner@email.com" value={newPetOwnerEmail} onChange={(e) => setNewPetOwnerEmail(e.target.value)} />
-                    <p className="text-xs text-muted-foreground mt-1">Email or phone required.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Optional — needed for delivery later.</p>
                   </div>
                 </div>
                 <div className="space-y-3">
@@ -1096,8 +1161,8 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {todaysDogs.map((dog) => (
-              <Card key={dog.id} className="overflow-hidden group">
-                <Link href={`/pawfile/${dog.id}`}>
+              <Link key={dog.id} href={`/pawfile/${dog.id}`}>
+                <Card className="overflow-hidden group">
                   <div className="aspect-square relative bg-muted">
                     {dog.portrait?.generatedImageUrl ? (
                       <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" draggable={false} />
@@ -1108,7 +1173,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                         {dog.species === "cat" ? <Cat className="h-12 w-12 text-muted-foreground/30" /> : <Dog className="h-12 w-12 text-muted-foreground/30" />}
                       </div>
                     )}
-                    {/* Status badge */}
                     <div className="absolute top-2 right-2">
                       {dog.portrait?.generatedImageUrl ? (
                         <div className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow">
@@ -1124,98 +1188,498 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                       <h3 className="font-semibold text-white text-sm">{dog.name}</h3>
                     </div>
                   </div>
-                </Link>
-                <div className="p-2 flex items-center gap-1">
-                  {(dog as any).ownerPhone && (
-                    <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
-                      <Phone className="h-3 w-3" /> {(dog as any).ownerPhone}
-                    </span>
-                  )}
-                  <div className="flex-1" />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive"
-                    onClick={() => {
-                      if (confirm(`Remove ${dog.name}?`)) onDeleteDog(dog.id);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </Card>
+                  <div className="p-2 flex items-center gap-1">
+                    {(dog as any).ownerPhone && (
+                      <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
+                        <Phone className="h-3 w-3" /> {(dog as any).ownerPhone}
+                      </span>
+                    )}
+                    <div className="flex-1" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (confirm(`Remove ${dog.name}?`)) onDeleteDog(dog.id);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </Card>
+              </Link>
             ))}
           </div>
         )}
       </div>
 
-      {/* SECTION 3: Generate Portraits */}
-      {selectedPackType && readyForGeneration.length > 0 && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="pt-6">
-            <div className="text-center mb-4">
-              <Sparkles className="h-8 w-8 mx-auto mb-2 text-primary" />
-              <h3 className="font-semibold text-lg">Generate Portraits</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                {readyForGeneration.length} pet{readyForGeneration.length !== 1 ? "s" : ""} ready — how do you want to assign styles?
-              </p>
-            </div>
-            {generationProgress && (
-              <div className="max-w-xs mx-auto mb-4">
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${(generationProgress.done / generationProgress.total) * 100}%` }}
-                  />
+      {/* End-of-Day: Entry point (when wizard is NOT active) */}
+      {selectedPackType && wizardStep === null && (readyForGeneration.length > 0 || generatedToday.length > 0) && (
+        <div className="flex flex-col items-center gap-3 py-4">
+          {readyForGeneration.length > 0 && (
+            <Button className="gap-2" size="lg" onClick={handleStartWizard}>
+              <Zap className="h-5 w-5" />
+              Start End-of-Day — {readyForGeneration.length} pet{readyForGeneration.length !== 1 ? "s" : ""} ready
+            </Button>
+          )}
+          {generatedToday.length > 0 && (
+            <Card className="w-full border-green-300 bg-green-50 dark:bg-green-950/20">
+              <CardContent className="pt-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Check className="h-5 w-5 text-green-500" />
+                      {generatedToday.length} Portrait{generatedToday.length !== 1 ? "s" : ""} Ready
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">Generated earlier — ready to deliver!</p>
+                  </div>
+                  <Button variant="outline" className="gap-2" onClick={handleBatchDeliver}>
+                    <Send className="h-4 w-4" />
+                    Send to Clients
+                  </Button>
                 </div>
-                <p className="text-xs text-muted-foreground text-center mt-1">{generationProgress.done} / {generationProgress.total}</p>
-              </div>
-            )}
-            <div className="grid sm:grid-cols-2 gap-3 max-w-lg mx-auto">
-              <Button
-                className="gap-2 h-auto py-4 flex-col"
-                onClick={() => handleBatchGenerate(true)}
-                disabled={generating}
-              >
-                {generating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Zap className="h-5 w-5" />}
-                <span className="font-semibold">Auto-Select for All</span>
-                <span className="text-xs opacity-80 font-normal">System picks a style from today's pack for each pet</span>
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2 h-auto py-4 flex-col"
-                asChild
-              >
-                <Link href={isAdmin ? `/create?org=${organization.id}&species=${packSpecies}` : `/create?species=${packSpecies}`}>
-                  <Palette className="h-5 w-5" />
-                  <span className="font-semibold">Choose per Pet</span>
-                  <span className="text-xs opacity-80 font-normal">Pick a specific style for each pet yourself</span>
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
-      {/* SECTION 3b: Deliver Portraits */}
-      {selectedPackType && readyForGeneration.length === 0 && generatedToday.length > 0 && (
-        <Card className="border-primary/30 bg-primary/5">
+      {/* End-of-Day Wizard */}
+      {wizardStep !== null && (
+        <Card className="border-primary/30">
           <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Check className="h-5 w-5 text-green-500" />
-                  Portraits Ready
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {generatedToday.length} portrait{generatedToday.length !== 1 ? "s" : ""} generated — ready to send!
-                </p>
-              </div>
-              <Button variant="outline" className="gap-2" onClick={handleBatchDeliver}>
-                <Send className="h-4 w-4" />
-                Send to {generatedToday.length} Client{generatedToday.length !== 1 ? "s" : ""}
-              </Button>
+            {/* Progress bar */}
+            <div className="flex items-center gap-1.5 mb-6">
+              {[1, 2, 3, 4, 5, 6].map(step => (
+                <div key={step} className={`h-1.5 flex-1 rounded-full transition-colors ${step <= wizardStep ? "bg-primary" : "bg-muted"}`} />
+              ))}
             </div>
+
+            {/* Step 1: Select Pets */}
+            {wizardStep === 1 && (
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Select Pets</h3>
+                <p className="text-sm text-muted-foreground mb-4">Choose which pets to create portraits for.</p>
+
+                <div className="flex items-center gap-2 mb-3">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedPetIds(new Set(readyForGeneration.map(d => d.id)))}>Select All</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedPetIds(new Set())}>Deselect All</Button>
+                  <span className="text-sm text-muted-foreground ml-auto">{selectedPetIds.size} selected</span>
+                </div>
+
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-6">
+                  {readyForGeneration.map(dog => {
+                    const isSelected = selectedPetIds.has(dog.id);
+                    return (
+                      <div
+                        key={dog.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"}`}
+                        onClick={() => setSelectedPetIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(dog.id)) next.delete(dog.id); else next.add(dog.id);
+                          return next;
+                        })}
+                      >
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${isSelected ? "bg-primary border-primary" : "border-gray-300"}`}>
+                          {isSelected && <Check className="h-3 w-3 text-white" />}
+                        </div>
+                        <div className="w-10 h-10 rounded bg-muted overflow-hidden shrink-0">
+                          {dog.originalPhotoUrl && <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{dog.name}</p>
+                          <p className="text-xs text-muted-foreground">{dog.breed || dog.species}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <Button variant="ghost" onClick={handleExitWizard}>Cancel</Button>
+                  <Button
+                    onClick={() => {
+                      const selected = readyForGeneration.filter(d => selectedPetIds.has(d.id));
+                      const missing = selected.filter(d => !(d as any).ownerPhone && !(d as any).ownerEmail);
+                      if (missing.length > 0) {
+                        const edits = new Map<number, { phone: string; email: string }>();
+                        missing.forEach(d => edits.set(d.id, { phone: "", email: "" }));
+                        setContactEdits(edits);
+                        setWizardStep(2);
+                      } else {
+                        setWizardStep(3);
+                      }
+                    }}
+                    disabled={selectedPetIds.size === 0}
+                  >
+                    Continue with {selectedPetIds.size} pet{selectedPetIds.size !== 1 ? "s" : ""}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Validate Contact Info */}
+            {wizardStep === 2 && (
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Contact Info Needed</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  We need at least an email or phone for each pet so we can deliver their portrait.
+                </p>
+
+                <div className="space-y-3 mb-6">
+                  {Array.from(contactEdits.entries()).map(([dogId, contact]) => {
+                    const dog = readyForGeneration.find(d => d.id === dogId);
+                    if (!dog) return null;
+                    const hasContact = !!(contact.phone.trim() || contact.email.trim());
+                    return (
+                      <div key={dogId} className={`p-3 rounded-lg border ${hasContact ? "border-green-300 bg-green-50 dark:bg-green-950/20" : "border-amber-300 bg-amber-50 dark:bg-amber-950/20"}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-8 h-8 rounded bg-muted overflow-hidden shrink-0">
+                            {dog.originalPhotoUrl && <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />}
+                          </div>
+                          <span className="font-medium text-sm">{dog.name}</span>
+                          {hasContact && <Check className="h-4 w-4 text-green-600 ml-auto" />}
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1"><Phone className="h-3 w-3" /> Phone</label>
+                            <Input
+                              placeholder="(555) 123-4567"
+                              value={contact.phone}
+                              onChange={(e) => setContactEdits(prev => {
+                                const next = new Map(prev);
+                                next.set(dogId, { ...contact, phone: e.target.value });
+                                return next;
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1"><Mail className="h-3 w-3" /> Email</label>
+                            <Input
+                              placeholder="owner@email.com"
+                              value={contact.email}
+                              onChange={(e) => setContactEdits(prev => {
+                                const next = new Map(prev);
+                                next.set(dogId, { ...contact, email: e.target.value });
+                                return next;
+                              })}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <Button variant="ghost" onClick={() => setWizardStep(1)}>Back</Button>
+                  <Button
+                    onClick={async () => {
+                      setSavingContacts(true);
+                      try {
+                        const headers = await getAuthHeaders();
+                        for (const [dogId, contact] of contactEdits.entries()) {
+                          if (contact.phone.trim() || contact.email.trim()) {
+                            await fetch(`/api/dogs/${dogId}`, {
+                              method: "PATCH",
+                              headers: { ...headers, "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                ownerPhone: contact.phone.trim() || undefined,
+                                ownerEmail: contact.email.trim() || undefined,
+                              }),
+                            });
+                          }
+                        }
+                        queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+                        queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+                        setWizardStep(3);
+                      } catch (err: any) {
+                        toast({ title: "Error saving contacts", description: err.message, variant: "destructive" });
+                      } finally {
+                        setSavingContacts(false);
+                      }
+                    }}
+                    disabled={
+                      savingContacts ||
+                      Array.from(contactEdits.values()).some(c => !c.phone.trim() && !c.email.trim())
+                    }
+                  >
+                    {savingContacts && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    Continue
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Choose Styles */}
+            {wizardStep === 3 && (
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Choose Styles</h3>
+                <p className="text-sm text-muted-foreground mb-4">Pick how to style {selectedPetIds.size} portrait{selectedPetIds.size !== 1 ? "s" : ""}.</p>
+
+                <div className="flex gap-2 mb-4">
+                  <Button
+                    variant={styleMode === "one-for-all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setStyleMode("one-for-all"); setStyleAssignments(new Map()); }}
+                  >
+                    One style for everyone
+                  </Button>
+                  <Button
+                    variant={styleMode === "individual" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setStyleMode("individual"); setSelectedStyleId(null); }}
+                  >
+                    Assign individually
+                  </Button>
+                </div>
+
+                {styleMode === "one-for-all" && selectedPack?.styles && (
+                  <div className="flex flex-wrap gap-3 justify-center mb-4">
+                    {selectedPack.styles.map((style: any) => {
+                      const previewImg = stylePreviewImages[style.name];
+                      const isChosen = selectedStyleId === style.id;
+                      return (
+                        <button
+                          key={style.id}
+                          className={`shrink-0 w-24 text-center rounded-lg border-2 transition-colors p-1 ${isChosen ? "border-primary bg-primary/10" : "border-transparent hover:border-primary/40"}`}
+                          onClick={() => setSelectedStyleId(style.id)}
+                        >
+                          <div className="w-full aspect-square rounded-lg bg-muted overflow-hidden">
+                            {previewImg ? (
+                              <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Palette className="h-6 w-6 text-muted-foreground/30" />
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs mt-1 truncate font-medium">{style.name}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {styleMode === "individual" && selectedPack?.styles && (
+                  <div className="space-y-3 mb-4">
+                    {readyForGeneration.filter(d => selectedPetIds.has(d.id)).map(dog => {
+                      const assignedId = styleAssignments.get(dog.id);
+                      return (
+                        <div key={dog.id} className="p-3 rounded-lg border">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-8 h-8 rounded bg-muted overflow-hidden shrink-0">
+                              {dog.originalPhotoUrl && <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />}
+                            </div>
+                            <span className="font-medium text-sm">{dog.name}</span>
+                            {assignedId && <Check className="h-4 w-4 text-green-600 ml-auto" />}
+                          </div>
+                          <div className="flex gap-1.5 flex-wrap">
+                            {selectedPack.styles.map((style: any) => {
+                              const previewImg = stylePreviewImages[style.name];
+                              const isChosen = assignedId === style.id;
+                              return (
+                                <button
+                                  key={style.id}
+                                  className={`w-16 text-center rounded border-2 p-0.5 transition-colors ${isChosen ? "border-primary bg-primary/10" : "border-transparent hover:border-primary/30"}`}
+                                  onClick={() => setStyleAssignments(prev => { const next = new Map(prev); next.set(dog.id, style.id); return next; })}
+                                >
+                                  <div className="w-full aspect-square rounded bg-muted overflow-hidden">
+                                    {previewImg ? (
+                                      <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <Palette className="h-3 w-3 text-muted-foreground/30" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center">
+                  <Button variant="ghost" onClick={() => setWizardStep(contactEdits.size > 0 ? 2 : 1)}>Back</Button>
+                  <Button
+                    onClick={() => { setWizardStep(4); handleBatchGenerate(); }}
+                    disabled={
+                      styleMode === "one-for-all" ? !selectedStyleId :
+                      readyForGeneration.filter(d => selectedPetIds.has(d.id)).some(d => !styleAssignments.has(d.id))
+                    }
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Generate Portraits
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Generating */}
+            {wizardStep === 4 && (
+              <div className="text-center py-8">
+                <Loader2 className="h-10 w-10 mx-auto mb-3 text-primary animate-spin" />
+                <h3 className="font-semibold text-lg mb-1">Creating Portraits</h3>
+                <p className="text-sm text-muted-foreground">This usually takes about 10 seconds per pet.</p>
+                {generationProgress && (
+                  <div className="max-w-xs mx-auto mt-4">
+                    <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(5, (generationProgress.done / generationProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground text-center mt-2">
+                      {generationProgress.done} of {generationProgress.total} complete
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 5: Review */}
+            {wizardStep === 5 && (() => {
+              const generatedInWizard = todaysDogs.filter(d => d.portrait?.generatedImageUrl && selectedPetIds.has(d.id));
+              if (generatedInWizard.length === 0) {
+                return (
+                  <div className="text-center py-8">
+                    <Loader2 className="h-8 w-8 mx-auto mb-2 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading portraits...</p>
+                  </div>
+                );
+              }
+              return (
+                <div>
+                  <h3 className="font-semibold text-lg mb-1">Review Portraits</h3>
+                  <p className="text-sm text-muted-foreground mb-4">Check the results. You can redo any you'd like to change.</p>
+
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+                    {generatedInWizard.map(dog => (
+                      <div key={dog.id} className="rounded-lg border overflow-hidden">
+                        <div className="aspect-square bg-muted">
+                          <img src={dog.portrait!.generatedImageUrl!} alt={dog.name} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="p-2 flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-sm">{dog.name}</p>
+                            <p className="text-xs text-muted-foreground">{dog.portrait?.style?.name || "Portrait"}</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs gap-1"
+                            onClick={() => {
+                              window.location.href = isAdmin ? `/create?org=${organization.id}&dog=${dog.id}` : `/create?dog=${dog.id}`;
+                            }}
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            Redo
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <Button variant="ghost" onClick={() => setWizardStep(3)}>Back</Button>
+                    <Button onClick={() => {
+                      const generatedIds = todaysDogs
+                        .filter(d => d.portrait?.generatedImageUrl && selectedPetIds.has(d.id))
+                        .map(d => d.id);
+                      setDeliverySelections(new Set(generatedIds));
+                      setWizardStep(6);
+                    }}>
+                      <Check className="h-4 w-4 mr-2" />
+                      Looks Good — Send
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Step 6: Send */}
+            {wizardStep === 6 && (
+              <div>
+                <h3 className="font-semibold text-lg mb-1">Send to Clients</h3>
+                <p className="text-sm text-muted-foreground mb-4">Confirm which clients to notify. Deselect any you'd like to skip.</p>
+
+                <div className="space-y-2 mb-6">
+                  {todaysDogs.filter(d => d.portrait?.generatedImageUrl && selectedPetIds.has(d.id)).map(dog => {
+                    const isDeliverySelected = deliverySelections.has(dog.id);
+                    const phone = (dog as any).ownerPhone;
+                    const email = (dog as any).ownerEmail;
+                    return (
+                      <div
+                        key={dog.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${isDeliverySelected ? "border-primary bg-primary/5" : "border-border"}`}
+                        onClick={() => setDeliverySelections(prev => {
+                          const next = new Set(prev);
+                          if (next.has(dog.id)) next.delete(dog.id); else next.add(dog.id);
+                          return next;
+                        })}
+                      >
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${isDeliverySelected ? "bg-primary border-primary" : "border-gray-300"}`}>
+                          {isDeliverySelected && <Check className="h-3 w-3 text-white" />}
+                        </div>
+                        <div className="w-10 h-10 rounded bg-muted overflow-hidden shrink-0">
+                          <img src={dog.portrait!.generatedImageUrl!} alt={dog.name} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm">{dog.name}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {phone && <Phone className="h-3.5 w-3.5 text-muted-foreground" title={`SMS: ${phone}`} />}
+                          {email && <Mail className="h-3.5 w-3.5 text-muted-foreground" title={`Email: ${email}`} />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <Button variant="ghost" onClick={() => setWizardStep(5)}>Back</Button>
+                  <Button
+                    onClick={async () => {
+                      const dogIds = Array.from(deliverySelections);
+                      if (dogIds.length === 0) return;
+                      try {
+                        const headers = await getAuthHeaders();
+                        const res = await fetch("/api/deliver-batch", {
+                          method: "POST",
+                          headers: { ...headers, "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            dogIds,
+                            organizationId: isAdmin ? organization.id : undefined,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (res.ok) {
+                          toast({ title: "Sent!", description: `Delivered to ${data.totalSent} client${data.totalSent !== 1 ? "s" : ""}.` });
+                          handleExitWizard();
+                        }
+                      } catch (err: any) {
+                        toast({ title: "Error", description: err.message, variant: "destructive" });
+                      }
+                    }}
+                    disabled={deliverySelections.size === 0}
+                    className="gap-2"
+                  >
+                    <Send className="h-4 w-4" />
+                    Send to {deliverySelections.size} Client{deliverySelections.size !== 1 ? "s" : ""}
+                  </Button>
+                </div>
+              </div>
+            )}
+
           </CardContent>
         </Card>
       )}
@@ -1235,8 +1699,8 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {dogs.filter(d => !todaysDogs.includes(d)).slice(0, 8).map((dog) => (
-              <Link key={dog.id} href={`/pawfile/${dog.id}`}>
-                <div className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
+              <div key={dog.id} className="flex items-center gap-3 p-2 rounded-lg border hover:bg-muted/50 transition-colors">
+                <Link href={`/pawfile/${dog.id}`} className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0">
                     {dog.portrait?.generatedImageUrl ? (
                       <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" />
@@ -1252,8 +1716,18 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     <p className="font-medium text-sm truncate">{dog.name}</p>
                     <p className="text-xs text-muted-foreground truncate">{dog.breed}</p>
                   </div>
-                </div>
-              </Link>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1 text-xs"
+                  onClick={() => checkInMutation.mutate(dog.id)}
+                  disabled={checkInMutation.isPending}
+                >
+                  <LogIn className="h-3 w-3" />
+                  Check In
+                </Button>
+              </div>
             ))}
           </div>
           {dogs.length > todaysDogs.length + 8 && (

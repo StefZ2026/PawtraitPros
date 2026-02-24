@@ -18,7 +18,7 @@ export function registerBatchRoutes(app: Express): void {
       const userEmail = req.user.claims.email || "";
       const userIsAdmin = userEmail === ADMIN_EMAIL;
 
-      const { dogIds, packType, autoSelect, organizationId } = req.body;
+      const { dogIds, packType, styleId, organizationId } = req.body;
       if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
         return res.status(400).json({ error: "dogIds array is required" });
       }
@@ -67,14 +67,18 @@ export function registerBatchRoutes(app: Express): void {
           continue;
         }
 
-        // Pick style: auto-select randomly from pack, or skip (client will pick manually)
+        // Pick style: use provided styleId, or random from pack
         let style;
-        if (autoSelect) {
-          style = packStyles[Math.floor(Math.random() * packStyles.length)];
+        if (styleId) {
+          // Staff picked a specific style — use it for all pets
+          style = packStyles.find((s: any) => s.id === parseInt(styleId));
+          if (!style) {
+            errors.push({ dogId, error: "Selected style not in this pack" });
+            continue;
+          }
         } else {
-          // For manual selection, skip generation — client will pick styles and call generate-portrait individually
-          jobIds.push({ dogId, jobId: "" });
-          continue;
+          // No specific style — random from pack
+          style = packStyles[Math.floor(Math.random() * packStyles.length)];
         }
 
         if (!style) {

@@ -177,6 +177,8 @@ var init_schema = __esm({
       // pet owner's phone (Pros only)
       petCode: (0, import_pg_core2.varchar)("pet_code", { length: 10 }),
       // short lookup code e.g. "BEL-2847"
+      checkedInAt: (0, import_pg_core2.text)("checked_in_at"),
+      // YYYY-MM-DD — date the pet was checked in for today's workflow
       isAvailable: (0, import_pg_core2.boolean)("is_available").default(true).notNull(),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
@@ -3557,13 +3559,13 @@ function registerDogRoutes(app2) {
         return res.status(400).json({ error: "Please choose a family-friendly name" });
       }
       if (!dogData.breed || !dogData.breed.trim()) {
-        return res.status(400).json({ error: "Breed is required" });
+        dogData.breed = "Mixed";
       }
-      if (!isValidBreed(dogData.breed, dogData.species)) {
+      if (dogData.breed && !isValidBreed(dogData.breed, dogData.species)) {
         return res.status(400).json({ error: "Please select a valid breed from the list" });
       }
-      if (!dogData.ownerEmail && !dogData.ownerPhone) {
-        return res.status(400).json({ error: "Owner email or phone is required" });
+      if (!dogData.checkedInAt) {
+        dogData.checkedInAt = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       }
       const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
       res.status(201).json(dog);
@@ -3614,6 +3616,28 @@ function registerDogRoutes(app2) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error updating pet:", errMsg, error);
       res.status(500).json({ error: `Failed to update pet: ${errMsg}` });
+    }
+  });
+  app2.post("/api/dogs/:id/check-in", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      const date = req.body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      await storage.updateDog(id, { checkedInAt: date });
+      res.json({ success: true, checkedInAt: date });
+    } catch (error) {
+      console.error("Error checking in pet:", error);
+      res.status(500).json({ error: "Failed to check in pet" });
     }
   });
   app2.delete("/api/dogs/:id", isAuthenticated, async (req, res) => {
@@ -4609,7 +4633,7 @@ function registerBatchRoutes(app2) {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email || "";
       const userIsAdmin = userEmail === ADMIN_EMAIL;
-      const { dogIds, packType, autoSelect, organizationId } = req.body;
+      const { dogIds, packType, styleId, organizationId } = req.body;
       if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
         return res.status(400).json({ error: "dogIds array is required" });
       }
@@ -4649,11 +4673,14 @@ function registerBatchRoutes(app2) {
           continue;
         }
         let style;
-        if (autoSelect) {
-          style = packStyles[Math.floor(Math.random() * packStyles.length)];
+        if (styleId) {
+          style = packStyles.find((s) => s.id === parseInt(styleId));
+          if (!style) {
+            errors.push({ dogId, error: "Selected style not in this pack" });
+            continue;
+          }
         } else {
-          jobIds.push({ dogId, jobId: "" });
-          continue;
+          style = packStyles[Math.floor(Math.random() * packStyles.length)];
         }
         if (!style) {
           errors.push({ dogId, error: "Could not select style" });

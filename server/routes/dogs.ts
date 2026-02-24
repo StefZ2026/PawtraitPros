@@ -451,15 +451,19 @@ export function registerDogRoutes(app: Express): void {
       }
 
       if (!dogData.breed || !dogData.breed.trim()) {
-        return res.status(400).json({ error: "Breed is required" });
+        dogData.breed = "Mixed";
       }
 
-      if (!isValidBreed(dogData.breed, dogData.species)) {
+      if (dogData.breed && !isValidBreed(dogData.breed, dogData.species)) {
         return res.status(400).json({ error: "Please select a valid breed from the list" });
       }
 
-      if (!dogData.ownerEmail && !dogData.ownerPhone) {
-        return res.status(400).json({ error: "Owner email or phone is required" });
+      // Owner contact info is optional at creation — can be added later before delivery
+      // (daycares/boarders may not have it at check-in time)
+
+      // Auto-set checkedInAt to today on creation
+      if (!dogData.checkedInAt) {
+        dogData.checkedInAt = new Date().toISOString().split("T")[0];
       }
 
       const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
@@ -521,6 +525,33 @@ export function registerDogRoutes(app: Express): void {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error updating pet:", errMsg, error);
       res.status(500).json({ error: `Failed to update pet: ${errMsg}` });
+    }
+  });
+
+  // Check in a pet for today (or a specific date)
+  app.post("/api/dogs/:id/check-in", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+
+      const date = req.body.date || new Date().toISOString().split("T")[0];
+      await storage.updateDog(id, { checkedInAt: date } as any);
+      res.json({ success: true, checkedInAt: date });
+    } catch (error) {
+      console.error("Error checking in pet:", error);
+      res.status(500).json({ error: "Failed to check in pet" });
     }
   });
 

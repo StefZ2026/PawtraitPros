@@ -85,6 +85,7 @@ export const dogs = pgTable("dogs", {
   ownerEmail: text("owner_email"), // pet owner's email (Pros only)
   ownerPhone: text("owner_phone"), // pet owner's phone (Pros only)
   petCode: varchar("pet_code", { length: 10 }), // short lookup code e.g. "BEL-2847"
+  checkedInAt: text("checked_in_at"), // YYYY-MM-DD — date the pet was checked in for today's workflow
   isAvailable: boolean("is_available").default(true).notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
