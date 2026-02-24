@@ -1175,17 +1175,31 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         )}
       </div>
 
-      {/* End-of-Day: Entry point (when wizard is NOT active) */}
+      {/* End-of-Day: Prompt (when wizard is NOT active) */}
       {selectedPackType && wizardStep === null && (readyForGeneration.length > 0 || generatedToday.length > 0) && (
-        <div className="flex flex-col items-center gap-3 py-4">
+        <div className="space-y-3">
           {readyForGeneration.length > 0 && (
-            <Button className="gap-2" size="lg" onClick={handleStartWizard}>
-              <Zap className="h-5 w-5" />
-              Start End-of-Day — {readyForGeneration.length} pet{readyForGeneration.length !== 1 ? "s" : ""} ready
-            </Button>
+            <Card className="border-primary/40 bg-primary/5">
+              <CardContent className="pt-6 pb-5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-primary" />
+                      Ready to create today's portraits?
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {readyForGeneration.length} pet{readyForGeneration.length !== 1 ? "s" : ""} with photos — let's make some portraits!
+                    </p>
+                  </div>
+                  <Button className="gap-2 shrink-0" size="lg" onClick={handleStartWizard}>
+                    Let's Go
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
           {generatedToday.length > 0 && (
-            <Card className="w-full border-green-300 bg-green-50 dark:bg-green-950/20">
+            <Card className="border-green-300 bg-green-50 dark:bg-green-950/20">
               <CardContent className="pt-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
