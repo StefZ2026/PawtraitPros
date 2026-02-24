@@ -1393,108 +1393,102 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             {wizardStep === 3 && (
               <div>
                 <h3 className="font-semibold text-lg mb-1">Choose Styles</h3>
-                <p className="text-sm text-muted-foreground mb-4">Pick how to style {selectedPetIds.size} portrait{selectedPetIds.size !== 1 ? "s" : ""}.</p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  How would you like to style {selectedPetIds.size} portrait{selectedPetIds.size !== 1 ? "s" : ""}?
+                </p>
 
-                <div className="flex gap-2 mb-4">
-                  <Button
-                    variant={styleMode === "one-for-all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => { setStyleMode("one-for-all"); setStyleAssignments(new Map()); }}
-                  >
-                    One style for everyone
-                  </Button>
-                  <Button
-                    variant={styleMode === "individual" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => { setStyleMode("individual"); setSelectedStyleId(null); }}
-                  >
-                    Assign individually
-                  </Button>
-                </div>
-
-                {styleMode === "one-for-all" && selectedPack?.styles && (
-                  <div className="flex flex-wrap gap-3 justify-center mb-4">
-                    {selectedPack.styles.map((style: any) => {
-                      const previewImg = stylePreviewImages[style.name];
-                      const isChosen = selectedStyleId === style.id;
-                      return (
-                        <button
-                          key={style.id}
-                          className={`shrink-0 w-24 text-center rounded-lg border-2 transition-colors p-1 ${isChosen ? "border-primary bg-primary/10" : "border-transparent hover:border-primary/40"}`}
-                          onClick={() => setSelectedStyleId(style.id)}
-                        >
-                          <div className="w-full aspect-square rounded-lg bg-muted overflow-hidden">
-                            {previewImg ? (
-                              <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Palette className="h-6 w-6 text-muted-foreground/30" />
+                {styleMode === "one-for-all" ? (
+                  /* Initial choice: Choose for me vs I'll pick */
+                  <div className="grid sm:grid-cols-2 gap-4 mb-6">
+                    <button
+                      className="p-6 rounded-lg border-2 border-border hover:border-primary/40 transition-colors text-center"
+                      onClick={() => {
+                        // Auto-assign styles: distribute across pack styles for variety
+                        const styles = selectedPack?.styles || [];
+                        if (styles.length === 0) return;
+                        const dogs = readyForGeneration.filter(d => selectedPetIds.has(d.id));
+                        const newAssignments = new Map<number, number>();
+                        dogs.forEach((dog, i) => {
+                          newAssignments.set(dog.id, styles[i % styles.length].id);
+                        });
+                        setStyleAssignments(newAssignments);
+                        setStyleMode("individual");
+                        // Go straight to generation
+                        setWizardStep(4);
+                        handleBatchGenerate();
+                      }}
+                    >
+                      <Zap className="h-8 w-8 mx-auto mb-2 text-primary" />
+                      <span className="font-semibold text-base block">Choose for me</span>
+                      <p className="text-xs text-muted-foreground mt-1">We'll pick the best style for each pet</p>
+                    </button>
+                    <button
+                      className="p-6 rounded-lg border-2 border-border hover:border-primary/40 transition-colors text-center"
+                      onClick={() => { setStyleMode("individual"); setStyleAssignments(new Map()); }}
+                    >
+                      <Palette className="h-8 w-8 mx-auto mb-2 text-primary" />
+                      <span className="font-semibold text-base block">I'll pick</span>
+                      <p className="text-xs text-muted-foreground mt-1">Choose a style for each pet yourself</p>
+                    </button>
+                  </div>
+                ) : (
+                  /* Individual style picker per pet */
+                  <>
+                    {selectedPack?.styles && (
+                      <div className="space-y-3 mb-4">
+                        {readyForGeneration.filter(d => selectedPetIds.has(d.id)).map(dog => {
+                          const assignedId = styleAssignments.get(dog.id);
+                          return (
+                            <div key={dog.id} className="p-3 rounded-lg border">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-8 h-8 rounded bg-muted overflow-hidden shrink-0">
+                                  {dog.originalPhotoUrl && <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />}
+                                </div>
+                                <span className="font-medium text-sm">{dog.name}</span>
+                                {assignedId && <Check className="h-4 w-4 text-green-600 ml-auto" />}
                               </div>
-                            )}
-                          </div>
-                          <p className="text-xs mt-1 truncate font-medium">{style.name}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {styleMode === "individual" && selectedPack?.styles && (
-                  <div className="space-y-3 mb-4">
-                    {readyForGeneration.filter(d => selectedPetIds.has(d.id)).map(dog => {
-                      const assignedId = styleAssignments.get(dog.id);
-                      return (
-                        <div key={dog.id} className="p-3 rounded-lg border">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-8 h-8 rounded bg-muted overflow-hidden shrink-0">
-                              {dog.originalPhotoUrl && <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />}
-                            </div>
-                            <span className="font-medium text-sm">{dog.name}</span>
-                            {assignedId && <Check className="h-4 w-4 text-green-600 ml-auto" />}
-                          </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {selectedPack.styles.map((style: any) => {
-                              const previewImg = stylePreviewImages[style.name];
-                              const isChosen = assignedId === style.id;
-                              return (
-                                <button
-                                  key={style.id}
-                                  className={`w-16 text-center rounded border-2 p-0.5 transition-colors ${isChosen ? "border-primary bg-primary/10" : "border-transparent hover:border-primary/30"}`}
-                                  onClick={() => setStyleAssignments(prev => { const next = new Map(prev); next.set(dog.id, style.id); return next; })}
-                                >
-                                  <div className="w-full aspect-square rounded bg-muted overflow-hidden">
-                                    {previewImg ? (
-                                      <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center">
-                                        <Palette className="h-3 w-3 text-muted-foreground/30" />
+                              <div className="flex gap-1.5 flex-wrap">
+                                {selectedPack.styles.map((style: any) => {
+                                  const previewImg = stylePreviewImages[style.name];
+                                  const isChosen = assignedId === style.id;
+                                  return (
+                                    <button
+                                      key={style.id}
+                                      className={`w-16 text-center rounded border-2 p-0.5 transition-colors ${isChosen ? "border-primary bg-primary/10" : "border-transparent hover:border-primary/30"}`}
+                                      onClick={() => setStyleAssignments(prev => { const next = new Map(prev); next.set(dog.id, style.id); return next; })}
+                                    >
+                                      <div className="w-full aspect-square rounded bg-muted overflow-hidden">
+                                        {previewImg ? (
+                                          <img src={previewImg} alt={style.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center">
+                                            <Palette className="h-3 w-3 text-muted-foreground/30" />
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
-                                  <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                                      <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{style.name}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                <div className="flex justify-between items-center">
-                  <Button variant="ghost" onClick={() => setWizardStep(contactEdits.size > 0 ? 2 : 1)}>Back</Button>
-                  <Button
-                    onClick={() => { setWizardStep(4); handleBatchGenerate(); }}
-                    disabled={
-                      styleMode === "one-for-all" ? !selectedStyleId :
-                      readyForGeneration.filter(d => selectedPetIds.has(d.id)).some(d => !styleAssignments.has(d.id))
-                    }
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Generate Portraits
-                  </Button>
-                </div>
+                    <div className="flex justify-between items-center">
+                      <Button variant="ghost" onClick={() => { setStyleMode("one-for-all"); setStyleAssignments(new Map()); }}>Back</Button>
+                      <Button
+                        onClick={() => { setWizardStep(4); handleBatchGenerate(); }}
+                        disabled={readyForGeneration.filter(d => selectedPetIds.has(d.id)).some(d => !styleAssignments.has(d.id))}
+                      >
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Generate Portraits
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
