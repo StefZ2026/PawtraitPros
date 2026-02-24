@@ -5,6 +5,14 @@ import { stripeService } from "../stripeService";
 import { getStripePublishableKey, getStripeClient, getPriceId } from "../stripeClient";
 import { ADMIN_EMAIL, MAX_ADDITIONAL_SLOTS, validateAndCleanStripeData } from "./helpers";
 
+/** Get the correct Stripe price ID for a plan based on test/live mode */
+function getEffectivePlanPrice(plan: any, testMode: boolean): string | null {
+  if (testMode === false) {
+    return plan.stripeLivePriceId || plan.stripePriceId || null;
+  }
+  return plan.stripePriceId || null;
+}
+
 export function registerPlansBillingRoutes(app: Express): void {
 
   // Subscription plans
@@ -41,7 +49,8 @@ export function registerPlansBillingRoutes(app: Express): void {
       }
 
       const plan = await storage.getSubscriptionPlan(planId);
-      if (!plan || !plan.stripePriceId) {
+      const effectivePrice = plan ? getEffectivePlanPrice(plan, testMode) : null;
+      if (!plan || !effectivePrice) {
         return res.status(400).json({ error: "Invalid plan selected" });
       }
 
@@ -88,7 +97,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
       const session = await stripeService.createCheckoutSession(
         customerId,
-        plan.stripePriceId,
+        effectivePrice,
         `${baseUrl}/dashboard?subscription=success&plan=${planId}&session_id={CHECKOUT_SESSION_ID}&orgId=${org.id}&testMode=${testMode}`,
         `${baseUrl}/dashboard`,
         testMode,
@@ -157,12 +166,12 @@ export function registerPlansBillingRoutes(app: Express): void {
         subscription = await stripeService.retrieveSubscription(subscriptionId, testMode);
       }
 
-      if (subscription && plan.stripePriceId) {
+      const confirmEffectivePrice = getEffectivePlanPrice(plan, testMode);
+      if (subscription && confirmEffectivePrice) {
         const subItems = subscription.items?.data || [];
-        const effectivePriceId = getPriceId(plan.stripePriceId, testMode);
         const matchesPlan = subItems.some((item: any) => {
           const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
-          return priceId === plan.stripePriceId || priceId === effectivePriceId;
+          return priceId === confirmEffectivePrice || priceId === plan.stripePriceId || priceId === plan.stripeLivePriceId;
         });
         if (!matchesPlan) {
           return res.status(400).json({ error: "Subscription does not match the selected plan" });
@@ -314,13 +323,16 @@ export function registerPlansBillingRoutes(app: Express): void {
       }
 
       const plan = await storage.getSubscriptionPlan(planId);
-      if (!plan || !plan.stripePriceId) {
-        return res.status(400).json({ error: "Invalid plan selected" });
-      }
 
       const org = await storage.getOrganization(orgId);
       if (!org) {
         return res.status(400).json({ error: "Organization not found" });
+      }
+
+      const orgTestMode = (org as any).stripeTestMode ?? true;
+      const changePlanPrice = plan ? getEffectivePlanPrice(plan, orgTestMode) : null;
+      if (!plan || !changePlanPrice) {
+        return res.status(400).json({ error: "Invalid plan selected" });
       }
 
       const callerEmail = req.user.claims.email;
@@ -348,7 +360,7 @@ export function registerPlansBillingRoutes(app: Express): void {
         return res.json({ action: 'upgrade', planId: plan.id });
       }
 
-      const result = await stripeService.scheduleDowngrade(org.stripeSubscriptionId, plan.stripePriceId, org.stripeTestMode);
+      const result = await stripeService.scheduleDowngrade(org.stripeSubscriptionId, changePlanPrice, orgTestMode);
 
       await storage.updateOrganization(org.id, {
         pendingPlanId: plan.id,
@@ -391,8 +403,10 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       if (org.stripeSubscriptionId) {
         const currentPlan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-        if (currentPlan?.stripePriceId) {
-          await stripeService.scheduleDowngrade(org.stripeSubscriptionId, currentPlan.stripePriceId, org.stripeTestMode);
+        const cancelOrgTestMode = (org as any).stripeTestMode ?? true;
+        const currentPrice = currentPlan ? getEffectivePlanPrice(currentPlan, cancelOrgTestMode) : null;
+        if (currentPrice) {
+          await stripeService.scheduleDowngrade(org.stripeSubscriptionId, currentPrice, cancelOrgTestMode);
         }
       }
 

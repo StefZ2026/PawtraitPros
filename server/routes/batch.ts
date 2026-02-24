@@ -3,10 +3,8 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { getPacks } from "@shared/pack-config";
-import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
-import { sendEmail, isEmailConfigured, buildDepartureEmail } from "./email";
-import { ADMIN_EMAIL, sanitizeForPrompt, generatePetCode } from "./helpers";
-import { uploadToStorage, isDataUri } from "../supabase-storage";
+import { deliverPortraitToOwner } from "./delivery";
+import { ADMIN_EMAIL, sanitizeForPrompt } from "./helpers";
 import { enqueue } from "../job-queue";
 
 export function registerBatchRoutes(app: Express): void {
@@ -67,7 +65,7 @@ export function registerBatchRoutes(app: Express): void {
           continue;
         }
 
-        // Pick style: use provided styleId, or random from pack
+        // Pick style: use provided styleId, or auto-select with deduplication
         let style;
         if (styleId) {
           // Staff picked a specific style — use it for all pets
@@ -77,8 +75,15 @@ export function registerBatchRoutes(app: Express): void {
             continue;
           }
         } else {
-          // No specific style — random from pack
-          style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          // Auto-select: prefer styles this dog hasn't used before
+          const usedStyleIds = await storage.getUsedStyleIdsForDog(dogId);
+          const availableStyles = packStyles.filter((s: any) => !usedStyleIds.includes(s!.id));
+          if (availableStyles.length > 0) {
+            style = availableStyles[Math.floor(Math.random() * availableStyles.length)];
+          } else {
+            // All pack styles used — allow repeat (full cycle complete)
+            style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          }
         }
 
         if (!style) {
@@ -152,71 +157,8 @@ export function registerBatchRoutes(app: Express): void {
             continue;
           }
 
-          if (!(dog as any).ownerPhone && !(dog as any).ownerEmail) {
-            results.push({ dogId, sent: false, error: "No owner contact info" });
-            continue;
-          }
-
-          // Ensure pet has a code
-          let petCode = (dog as any).petCode;
-          if (!petCode) {
-            petCode = generatePetCode(dog.name);
-            await storage.updateDog(dog.id, { petCode } as any);
-          }
-
-          const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-          const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
-          const notifMode = (org as any).notificationMode || "both";
-          const phone = (dog as any).ownerPhone;
-          const email = (dog as any).ownerEmail;
-          const methods: string[] = [];
-          let sent = false;
-
-          // Get the latest portrait for this dog (for email image)
-          const portraits = await storage.getPortraitsByDog(dog.id);
-          const latestPortrait = portraits.length > 0 ? portraits[portraits.length - 1] : null;
-          // Use direct URL for email (email clients don't follow redirects)
-          const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith('https://')
-            ? latestPortrait.generatedImageUrl
-            : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : undefined;
-
-          // SMS delivery (if preference includes SMS and phone exists)
-          if ((notifMode === "sms" || notifMode === "both") && phone && isSmsConfigured()) {
-            try {
-              const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
-              const smsResult = await sendSms(phone, smsBody);
-              if (smsResult.success) {
-                methods.push("sms");
-                sent = true;
-              } else {
-                console.error(`[deliver-batch] SMS failed for ${dog.name}:`, smsResult.error);
-              }
-            } catch (smsErr: any) {
-              console.error(`[deliver-batch] SMS error:`, smsErr.message);
-            }
-          }
-
-          // Email delivery (if preference includes email and email exists)
-          if ((notifMode === "email" || notifMode === "both") && email && isEmailConfigured()) {
-            try {
-              const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl, portraitImageUrl, org.id);
-              const emailResult = await sendEmail(email, subject, html, undefined, org.name);
-              if (emailResult.success) {
-                methods.push("email");
-                sent = true;
-              } else {
-                console.error(`[deliver-batch] Email failed for ${dog.name}:`, emailResult.error);
-              }
-            } catch (emailErr: any) {
-              console.error(`[deliver-batch] Email error:`, emailErr.message);
-            }
-          }
-
-          if (sent) {
-            results.push({ dogId, sent: true, method: methods.join("+") });
-          } else {
-            results.push({ dogId, sent: false, method: "link_only", error: "No notification channel available or all failed" });
-          }
+          const result = await deliverPortraitToOwner(dog, org);
+          results.push({ dogId, ...result });
         } catch (err: any) {
           results.push({ dogId, sent: false, error: err.message });
         }

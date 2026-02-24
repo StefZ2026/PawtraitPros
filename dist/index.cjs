@@ -94,8 +94,14 @@ var init_schema = __esm({
       description: (0, import_pg_core2.text)("description"),
       priceMonthly: (0, import_pg_core2.integer)("price_monthly").notNull(),
       // in cents
+      vertical: (0, import_pg_core2.text)("vertical"),
+      // "groomer" | "boarding" | "daycare" | null (null = legacy/generic)
+      unitType: (0, import_pg_core2.text)("unit_type"),
+      // "grooms" | "dogs_in_program" | "dogs_boarded" — what the limit measures
+      unitLimit: (0, import_pg_core2.integer)("unit_limit"),
+      // max units per month (80 grooms, 25 dogs, 50 boardings, etc.)
       dogsLimit: (0, import_pg_core2.integer)("dogs_limit"),
-      // max active pets allowed
+      // max active pets allowed (legacy, kept for backward compat)
       monthlyPortraitCredits: (0, import_pg_core2.integer)("monthly_portrait_credits").default(45),
       // portrait generations per month (edits are free)
       overagePriceCents: (0, import_pg_core2.integer)("overage_price_cents").default(400),
@@ -104,6 +110,8 @@ var init_schema = __esm({
       // trial period in days
       stripeProductId: (0, import_pg_core2.text)("stripe_product_id"),
       stripePriceId: (0, import_pg_core2.text)("stripe_price_id"),
+      stripeLivePriceId: (0, import_pg_core2.text)("stripe_live_price_id"),
+      stripeProductLiveId: (0, import_pg_core2.text)("stripe_product_live_id"),
       isActive: (0, import_pg_core2.boolean)("is_active").default(true).notNull(),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
@@ -181,6 +189,16 @@ var init_schema = __esm({
       // short lookup code e.g. "BEL-2847"
       checkedInAt: (0, import_pg_core2.text)("checked_in_at"),
       // YYYY-MM-DD — date the pet was checked in for today's workflow
+      visitFrequency: (0, import_pg_core2.text)("visit_frequency"),
+      // "daily" | "several_weekly" | "weekly" | "occasional" (daycare)
+      updatePreference: (0, import_pg_core2.text)("update_preference"),
+      // "weekly" | "biweekly" | null (daycare — how often owner gets portrait updates)
+      stayNights: (0, import_pg_core2.integer)("stay_nights"),
+      // number of nights for boarding stay
+      nextPortraitDate: (0, import_pg_core2.text)("next_portrait_date"),
+      // YYYY-MM-DD — when this dog is next due for auto-rotation
+      lastPortraitStyleId: (0, import_pg_core2.integer)("last_portrait_style_id"),
+      // track last style used for never-repeat logic
       isAvailable: (0, import_pg_core2.boolean)("is_available").default(true).notNull(),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
@@ -383,6 +401,1462 @@ var init_db = __esm({
   }
 });
 
+// server/storage.ts
+var import_drizzle_orm4, DatabaseStorage, storage;
+var init_storage = __esm({
+  "server/storage.ts"() {
+    "use strict";
+    init_db();
+    import_drizzle_orm4 = require("drizzle-orm");
+    init_schema();
+    init_auth();
+    DatabaseStorage = class {
+      // Users
+      async getUser(id) {
+        const [user] = await db.select().from(users).where((0, import_drizzle_orm4.eq)(users.id, id));
+        return user;
+      }
+      async getAllUsers() {
+        return db.select().from(users);
+      }
+      // Subscription Plans
+      async getSubscriptionPlan(id) {
+        const [plan] = await db.select().from(subscriptionPlans).where((0, import_drizzle_orm4.eq)(subscriptionPlans.id, id));
+        return plan;
+      }
+      async getAllSubscriptionPlans() {
+        return db.select().from(subscriptionPlans).where((0, import_drizzle_orm4.eq)(subscriptionPlans.isActive, true));
+      }
+      async updateSubscriptionPlan(id, data) {
+        await db.update(subscriptionPlans).set(data).where((0, import_drizzle_orm4.eq)(subscriptionPlans.id, id));
+      }
+      // Organizations
+      async getOrganization(id) {
+        const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
+        return org;
+      }
+      async getOrganizationBySlug(slug) {
+        const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.slug, slug));
+        return org;
+      }
+      async getOrganizationByOwner(ownerId) {
+        const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.ownerId, ownerId));
+        return org;
+      }
+      async getAllOrganizations() {
+        return db.select().from(organizations).orderBy((0, import_drizzle_orm4.desc)(organizations.createdAt));
+      }
+      async createOrganization(org) {
+        const [created] = await db.insert(organizations).values(org).returning();
+        return created;
+      }
+      async updateOrganization(id, org) {
+        const [updated] = await db.update(organizations).set(org).where((0, import_drizzle_orm4.eq)(organizations.id, id)).returning();
+        return updated;
+      }
+      async updateOrganizationStripeInfo(id, stripeInfo) {
+        const { stripeTestMode, ...drizzleFields } = stripeInfo;
+        if (Object.keys(drizzleFields).length > 0) {
+          await db.update(organizations).set(drizzleFields).where((0, import_drizzle_orm4.eq)(organizations.id, id));
+        }
+        if (stripeTestMode !== void 0) {
+          try {
+            await pool.query("UPDATE organizations SET stripe_test_mode = $1 WHERE id = $2", [stripeTestMode, id]);
+          } catch (e) {
+            console.warn("[stripe] Could not set stripeTestMode:", e.message);
+          }
+        }
+        const [updated] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
+        return updated;
+      }
+      async getOrgStripeTestMode(orgId) {
+        try {
+          const result = await pool.query("SELECT stripe_test_mode FROM organizations WHERE id = $1", [orgId]);
+          return result.rows[0]?.stripe_test_mode ?? true;
+        } catch {
+          return true;
+        }
+      }
+      async clearOrganizationOwner(id) {
+        await db.update(organizations).set({ ownerId: null }).where((0, import_drizzle_orm4.eq)(organizations.id, id));
+      }
+      async deleteOrganization(id) {
+        await db.delete(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
+      }
+      // Dogs
+      async getDog(id) {
+        const [dog] = await db.select().from(dogs).where((0, import_drizzle_orm4.eq)(dogs.id, id));
+        return dog;
+      }
+      async getDogsByOrganization(orgId) {
+        return db.select().from(dogs).where((0, import_drizzle_orm4.eq)(dogs.organizationId, orgId)).orderBy((0, import_drizzle_orm4.desc)(dogs.createdAt));
+      }
+      async getAllDogs() {
+        return db.select().from(dogs).orderBy((0, import_drizzle_orm4.desc)(dogs.createdAt));
+      }
+      async createDog(dog) {
+        const [created] = await db.insert(dogs).values(dog).returning();
+        return created;
+      }
+      async updateDog(id, dog) {
+        const [updated] = await db.update(dogs).set(dog).where((0, import_drizzle_orm4.eq)(dogs.id, id)).returning();
+        return updated;
+      }
+      async deleteDog(id) {
+        await db.delete(dogs).where((0, import_drizzle_orm4.eq)(dogs.id, id));
+      }
+      // Portrait Styles
+      async getPortraitStyle(id) {
+        const [style] = await db.select().from(portraitStyles).where((0, import_drizzle_orm4.eq)(portraitStyles.id, id));
+        return style;
+      }
+      async getAllPortraitStyles() {
+        return db.select().from(portraitStyles);
+      }
+      // Portraits
+      async getPortrait(id) {
+        const [portrait] = await db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.id, id));
+        return portrait;
+      }
+      async getPortraitByDogAndStyle(dogId, styleId) {
+        const [portrait] = await db.select().from(portraits).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.dogId, dogId), (0, import_drizzle_orm4.eq)(portraits.styleId, styleId)));
+        return portrait;
+      }
+      async getPortraitsByDog(dogId) {
+        return db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt));
+      }
+      async getSelectedPortraitByDog(dogId) {
+        const [selected] = await db.select().from(portraits).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.dogId, dogId), (0, import_drizzle_orm4.eq)(portraits.isSelected, true))).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt)).limit(1);
+        if (selected) return selected;
+        const [fallback] = await db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt)).limit(1);
+        return fallback;
+      }
+      async createPortrait(portrait) {
+        const [created] = await db.insert(portraits).values(portrait).returning();
+        return created;
+      }
+      async updatePortrait(id, portrait) {
+        const [updated] = await db.update(portraits).set(portrait).where((0, import_drizzle_orm4.eq)(portraits.id, id)).returning();
+        return updated;
+      }
+      async selectPortraitForGallery(dogId, portraitId) {
+        await db.transaction(async (tx) => {
+          await tx.update(portraits).set({ isSelected: false }).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId));
+          await tx.update(portraits).set({ isSelected: true }).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.id, portraitId), (0, import_drizzle_orm4.eq)(portraits.dogId, dogId)));
+        });
+      }
+      async incrementPortraitEditCount(portraitId) {
+        await db.update(portraits).set({ editCount: import_drizzle_orm4.sql`COALESCE(${portraits.editCount}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(portraits.id, portraitId));
+      }
+      async incrementOrgPortraitsUsed(orgId) {
+        await db.update(organizations).set({ portraitsUsedThisMonth: import_drizzle_orm4.sql`COALESCE(${organizations.portraitsUsedThisMonth}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
+      }
+      async getAccurateCreditsUsed(orgId) {
+        const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
+        if (!org) return { creditsUsed: 0, billingCycleStart: null };
+        const now = /* @__PURE__ */ new Date();
+        let effectiveCycleStart = org.billingCycleStart;
+        if (effectiveCycleStart && org.createdAt && effectiveCycleStart > org.createdAt) {
+          effectiveCycleStart = org.createdAt;
+        }
+        if (effectiveCycleStart) {
+          const cycleMonth = effectiveCycleStart.getMonth();
+          const cycleYear = effectiveCycleStart.getFullYear();
+          const currentMonth = now.getMonth();
+          const currentYear = now.getFullYear();
+          if (cycleMonth !== currentMonth || cycleYear !== currentYear) {
+            effectiveCycleStart = new Date(currentYear, currentMonth, effectiveCycleStart.getDate());
+            if (effectiveCycleStart > now) {
+              effectiveCycleStart = new Date(currentYear, currentMonth, 1);
+            }
+          }
+        } else {
+          effectiveCycleStart = org.createdAt || now;
+        }
+        const rows = await db.select({ count: import_drizzle_orm4.sql`count(*)` }).from(portraits).innerJoin(dogs, (0, import_drizzle_orm4.eq)(portraits.dogId, dogs.id)).where(
+          (0, import_drizzle_orm4.and)(
+            (0, import_drizzle_orm4.eq)(dogs.organizationId, orgId),
+            (0, import_drizzle_orm4.gte)(portraits.createdAt, effectiveCycleStart)
+          )
+        );
+        const creditsUsed = Number(rows[0]?.count ?? 0);
+        return { creditsUsed, billingCycleStart: effectiveCycleStart };
+      }
+      async syncOrgCredits(orgId) {
+        const { creditsUsed, billingCycleStart } = await this.getAccurateCreditsUsed(orgId);
+        const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
+        if (!org) return void 0;
+        const updates = {};
+        if (org.portraitsUsedThisMonth !== creditsUsed) {
+          updates.portraitsUsedThisMonth = creditsUsed;
+        }
+        if (billingCycleStart && (!org.billingCycleStart || org.billingCycleStart.getTime() !== billingCycleStart.getTime())) {
+          updates.billingCycleStart = billingCycleStart;
+        }
+        if (Object.keys(updates).length > 0) {
+          const [updated] = await db.update(organizations).set(updates).where((0, import_drizzle_orm4.eq)(organizations.id, orgId)).returning();
+          return updated;
+        }
+        return org;
+      }
+      async recalculateAllOrgCredits() {
+        const allOrgs = await db.select().from(organizations);
+        const results = [];
+        for (const org of allOrgs) {
+          const { creditsUsed, billingCycleStart } = await this.getAccurateCreditsUsed(org.id);
+          const updates = {};
+          if (creditsUsed !== org.portraitsUsedThisMonth) {
+            updates.portraitsUsedThisMonth = creditsUsed;
+          }
+          if (billingCycleStart && (!org.billingCycleStart || org.billingCycleStart.getTime() !== billingCycleStart.getTime())) {
+            updates.billingCycleStart = billingCycleStart;
+          }
+          if (Object.keys(updates).length > 0) {
+            await db.update(organizations).set(updates).where((0, import_drizzle_orm4.eq)(organizations.id, org.id));
+            if (creditsUsed !== org.portraitsUsedThisMonth) {
+              results.push({ orgId: org.id, name: org.name, old: org.portraitsUsedThisMonth, new: creditsUsed });
+            }
+          }
+        }
+        return results;
+      }
+      // Visit Photos
+      async getVisitPhotos(dogId, visitDate) {
+        if (visitDate) {
+          return db.select().from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate))).orderBy(visitPhotos.sortOrder);
+        }
+        return db.select().from(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(visitPhotos.createdAt));
+      }
+      async createVisitPhoto(photo) {
+        const [created] = await db.insert(visitPhotos).values(photo).returning();
+        return created;
+      }
+      async deleteVisitPhoto(id) {
+        await db.delete(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.id, id));
+      }
+      async countVisitPhotosForDate(dogId, visitDate) {
+        const rows = await db.select({ count: import_drizzle_orm4.sql`count(*)` }).from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate)));
+        return Number(rows[0]?.count ?? 0);
+      }
+      // Scheduling & Auto-Rotation
+      async getDogsDueForPortrait(today) {
+        return db.select().from(dogs).where(import_drizzle_orm4.sql`${dogs.nextPortraitDate} IS NOT NULL AND ${dogs.nextPortraitDate} <= ${today}`);
+      }
+      async getUsedStyleIdsForDog(dogId) {
+        const rows = await db.select({ styleId: portraits.styleId }).from(portraits).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId));
+        return [...new Set(rows.map((r) => r.styleId))];
+      }
+      async advanceNextPortraitDate(dogId, newDate) {
+        await db.update(dogs).set({ nextPortraitDate: newDate }).where((0, import_drizzle_orm4.eq)(dogs.id, dogId));
+      }
+      async repairSequences() {
+        const fixes = [];
+        const tables = [
+          { table: "organizations", seq: "organizations_id_seq" },
+          { table: "dogs", seq: "dogs_id_seq" },
+          { table: "portraits", seq: "portraits_id_seq" },
+          { table: "portrait_styles", seq: "portrait_styles_id_seq" },
+          { table: "subscription_plans", seq: "subscription_plans_id_seq" }
+        ];
+        for (const { table, seq } of tables) {
+          await db.execute(import_drizzle_orm4.sql.raw(
+            `SELECT setval('${seq}', GREATEST((SELECT COALESCE(MAX(id), 0) FROM ${table}), 1))`
+          ));
+          const maxResult = await db.execute(import_drizzle_orm4.sql.raw(`SELECT MAX(id) as max_id FROM ${table}`));
+          const seqResult = await db.execute(import_drizzle_orm4.sql.raw(`SELECT last_value FROM ${seq}`));
+          const maxId = Number(maxResult.rows?.[0]?.max_id ?? 0);
+          const seqVal = Number(seqResult.rows?.[0]?.last_value ?? 0);
+          if (seqVal > 0 && maxId > 0 && seqVal === maxId) {
+            fixes.push(`${table}: sequence synced to ${maxId}`);
+          }
+        }
+        return fixes;
+      }
+    };
+    storage = new DatabaseStorage();
+  }
+});
+
+// server/stripeClient.ts
+function getStripeClient(testMode) {
+  return testMode === false ? liveStripe : testStripe;
+}
+function getStripePublishableKey(testMode) {
+  return testMode === false ? process.env.STRIPE_LIVE_PUBLISHABLE_KEY : process.env.STRIPE_PUBLISHABLE_KEY;
+}
+function getWebhookSecret(testMode) {
+  return testMode === false ? process.env.STRIPE_LIVE_WEBHOOK_SECRET : process.env.STRIPE_WEBHOOK_SECRET;
+}
+function getPriceId(priceId, testMode) {
+  if (testMode === false) return TEST_TO_LIVE_PRICE[priceId] || priceId;
+  return priceId;
+}
+function mapStripeStatusToInternal(stripeStatus, currentStatus) {
+  switch (stripeStatus) {
+    case "active":
+      return "active";
+    case "trialing":
+      return "trial";
+    case "past_due":
+      return "past_due";
+    case "canceled":
+    case "unpaid":
+    case "incomplete":
+    case "incomplete_expired":
+    case "paused":
+      return "canceled";
+    default:
+      return currentStatus || "inactive";
+  }
+}
+var import_stripe, testStripe, liveStripe, TEST_TO_LIVE_PRICE, STRIPE_PLAN_PRICE_MAP;
+var init_stripeClient = __esm({
+  "server/stripeClient.ts"() {
+    "use strict";
+    import_stripe = __toESM(require("stripe"), 1);
+    testStripe = new import_stripe.default(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-11-17.clover"
+    });
+    liveStripe = new import_stripe.default(process.env.STRIPE_LIVE_SECRET_KEY, {
+      apiVersion: "2025-11-17.clover"
+    });
+    TEST_TO_LIVE_PRICE = {
+      "price_1T1NpB2LfX3IuyBIb44I2uwq": "price_1SxgIU2LfX3IuyBI3iXCfRn5",
+      // Starter $39
+      "price_1T1NpC2LfX3IuyBIBj9Mdx3f": "price_1SxgIU2LfX3IuyBIbG1jtLcC",
+      // Professional $79
+      "price_1T1NpC2LfX3IuyBIPtezJkZ0": "price_1SxgIU2LfX3IuyBIUy4rwplJ"
+      // Executive $349
+    };
+    STRIPE_PLAN_PRICE_MAP = {
+      // Test price IDs
+      "price_1T1NpB2LfX3IuyBIb44I2uwq": { id: 6, name: "Starter" },
+      "price_1T1NpC2LfX3IuyBIBj9Mdx3f": { id: 7, name: "Professional" },
+      "price_1T1NpC2LfX3IuyBIPtezJkZ0": { id: 8, name: "Executive" },
+      // Live price IDs
+      "price_1SxgIU2LfX3IuyBI3iXCfRn5": { id: 6, name: "Starter" },
+      "price_1SxgIU2LfX3IuyBIbG1jtLcC": { id: 7, name: "Professional" },
+      "price_1SxgIU2LfX3IuyBIUy4rwplJ": { id: 8, name: "Executive" }
+    };
+  }
+});
+
+// server/subscription.ts
+function getTrialEndDate(org) {
+  if (org.trialEndsAt) return new Date(org.trialEndsAt);
+  if (org.createdAt) return new Date(new Date(org.createdAt).getTime() + TRIAL_DURATION_MS);
+  return null;
+}
+function isTrialExpired(org) {
+  if (org.subscriptionStatus !== "trial") return false;
+  const trialEnd = getTrialEndDate(org);
+  return trialEnd ? trialEnd < /* @__PURE__ */ new Date() : false;
+}
+function isWithinTrialWindow(org) {
+  const trialEnd = getTrialEndDate(org);
+  return trialEnd ? trialEnd > /* @__PURE__ */ new Date() : false;
+}
+async function getFreeTrial() {
+  const plans = await storage.getAllSubscriptionPlans();
+  return plans.find((p) => p.name === "Free Trial");
+}
+async function revertToFreeTrial(orgId) {
+  const freeTrial = await getFreeTrial();
+  if (!freeTrial) return false;
+  await storage.updateOrganizationStripeInfo(orgId, {
+    subscriptionStatus: "trial",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null
+  });
+  await storage.updateOrganization(orgId, {
+    planId: freeTrial.id,
+    additionalPetSlots: 0
+  });
+  return true;
+}
+async function handleCancellation(orgId, org) {
+  if (isWithinTrialWindow(org)) {
+    const reverted = await revertToFreeTrial(orgId);
+    if (reverted) return "reverted_to_trial";
+  }
+  await storage.updateOrganizationStripeInfo(orgId, {
+    subscriptionStatus: "canceled",
+    stripeCustomerId: null,
+    stripeSubscriptionId: null
+  });
+  await storage.updateOrganization(orgId, {
+    additionalPetSlots: 0,
+    planId: null
+  });
+  return "canceled";
+}
+function canStartFreeTrial(org) {
+  if (org.hasUsedFreeTrial) return false;
+  if (org.trialEndsAt) return false;
+  return true;
+}
+async function markFreeTrialUsed(orgId) {
+  await storage.updateOrganization(orgId, { hasUsedFreeTrial: true });
+}
+var TRIAL_DURATION_MS;
+var init_subscription = __esm({
+  "server/subscription.ts"() {
+    "use strict";
+    init_storage();
+    TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1e3;
+  }
+});
+
+// server/supabase-storage.ts
+async function uploadToStorage(base64DataUri, bucket, filename) {
+  const match = base64DataUri.match(/^data:([^;]+);base64,(.+)$/s);
+  if (!match) throw new Error("Invalid base64 data URI");
+  const contentType = match[1];
+  const buffer = Buffer.from(match[2], "base64");
+  const res = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/${bucket}/${filename}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        "Content-Type": contentType,
+        "x-upsert": "true"
+      },
+      body: buffer
+    }
+  );
+  if (!res.ok) {
+    const text2 = await res.text();
+    throw new Error(`Storage upload failed (${res.status}): ${text2}`);
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${filename}`;
+}
+async function fetchImageAsBuffer(urlOrDataUri) {
+  if (urlOrDataUri.startsWith("data:")) {
+    const base64Data = urlOrDataUri.replace(/^data:image\/\w+;base64,/, "");
+    return Buffer.from(base64Data, "base64");
+  }
+  const res = await fetch(urlOrDataUri);
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+function isDataUri(value) {
+  return value.startsWith("data:");
+}
+var SUPABASE_URL, SUPABASE_SERVICE_KEY;
+var init_supabase_storage = __esm({
+  "server/supabase-storage.ts"() {
+    "use strict";
+    SUPABASE_URL = process.env.SUPABASE_URL;
+    SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  }
+});
+
+// server/routes/helpers.ts
+function sanitizeForPrompt(input) {
+  return input.replace(/[^\w\s\-'.,:;!?()]/g, "").trim();
+}
+async function generateUniqueSlug(name, excludeOrgId) {
+  let baseSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  let slug = baseSlug;
+  let attempts = 0;
+  while (attempts < 10) {
+    const existing = await storage.getOrganizationBySlug(slug);
+    if (!existing || excludeOrgId && existing.id === excludeOrgId) break;
+    slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
+    attempts++;
+  }
+  return slug;
+}
+async function validateAndCleanStripeData(orgId) {
+  const org = await storage.getOrganization(orgId);
+  if (!org) return { customerId: null, subscriptionId: null, subscriptionStatus: null, cleaned: false };
+  const testMode = org.stripeTestMode;
+  let cleaned = false;
+  let validCustomerId = org.stripeCustomerId || null;
+  let validSubscriptionId = org.stripeSubscriptionId || null;
+  let currentStatus = org.subscriptionStatus || null;
+  if (validCustomerId) {
+    try {
+      const stripe = getStripeClient(testMode);
+      const customer = await stripe.customers.retrieve(validCustomerId);
+      if (customer.deleted) {
+        console.warn(`[stripe-cleanup] Customer ${validCustomerId} is deleted in Stripe for org ${orgId}, clearing`);
+        validCustomerId = null;
+        validSubscriptionId = null;
+        cleaned = true;
+      }
+    } catch (err) {
+      if (err?.type === "StripeInvalidRequestError" || err?.statusCode === 404 || err?.code === "resource_missing") {
+        console.warn(`[stripe-cleanup] Stale customer ${validCustomerId} for org ${orgId}, clearing`);
+        validCustomerId = null;
+        validSubscriptionId = null;
+        cleaned = true;
+      }
+    }
+  }
+  if (validSubscriptionId) {
+    try {
+      const stripe = getStripeClient(testMode);
+      const sub = await stripe.subscriptions.retrieve(validSubscriptionId);
+      if (sub.status === "canceled" || sub.status === "incomplete_expired") {
+        console.warn(`[stripe-cleanup] Subscription ${validSubscriptionId} is ${sub.status} in Stripe for org ${orgId}, clearing`);
+        validSubscriptionId = null;
+        cleaned = true;
+      }
+    } catch (err) {
+      if (err?.type === "StripeInvalidRequestError" || err?.statusCode === 404 || err?.code === "resource_missing") {
+        console.warn(`[stripe-cleanup] Stale subscription ${validSubscriptionId} for org ${orgId}, clearing`);
+        validSubscriptionId = null;
+        cleaned = true;
+      }
+    }
+  }
+  if (cleaned) {
+    const stripeUpdate = {
+      stripeCustomerId: validCustomerId,
+      stripeSubscriptionId: validSubscriptionId
+    };
+    if (!validSubscriptionId && currentStatus === "active") {
+      stripeUpdate.subscriptionStatus = "canceled";
+      currentStatus = "canceled";
+    }
+    await storage.updateOrganizationStripeInfo(orgId, stripeUpdate);
+    const orgUpdates = {};
+    if (!validSubscriptionId && (org.additionalPetSlots || 0) > 0) {
+      orgUpdates.additionalPetSlots = 0;
+    }
+    if (Object.keys(orgUpdates).length > 0) {
+      await storage.updateOrganization(orgId, orgUpdates);
+    }
+  }
+  return { customerId: validCustomerId, subscriptionId: validSubscriptionId, subscriptionStatus: currentStatus, cleaned };
+}
+function computePetLimitInfo(org, plan, petCount) {
+  const basePetLimit = plan?.dogsLimit ?? null;
+  const effectivePetLimit = basePetLimit != null ? basePetLimit + (org.additionalPetSlots || 0) : null;
+  return {
+    petCount,
+    petLimit: effectivePetLimit,
+    basePetLimit,
+    additionalPetSlots: org.additionalPetSlots || 0,
+    maxAdditionalSlots: MAX_ADDITIONAL_SLOTS,
+    isPaidPlan: plan ? plan.priceMonthly > 0 : false
+  };
+}
+async function checkDogLimit(orgId) {
+  const org = await storage.getOrganization(orgId);
+  if (!org) return "Organization not found.";
+  if (org.subscriptionStatus === "canceled") return "Your subscription has been canceled. Please choose a new plan.";
+  if (isTrialExpired(org)) return "Your 30-day free trial has expired. Please upgrade to a paid plan to continue.";
+  if (!org.planId) return "No plan selected. Please choose a plan before adding pets.";
+  const plan = await storage.getSubscriptionPlan(org.planId);
+  if (!plan) return "Plan not found. Please contact support.";
+  if (!plan.dogsLimit) return null;
+  const effectiveLimit = plan.dogsLimit + (org.additionalPetSlots || 0);
+  const orgDogs = await storage.getDogsByOrganization(orgId);
+  if (orgDogs.length >= effectiveLimit) {
+    return `You've reached your pet limit of ${effectiveLimit}. Add extra slots or upgrade your plan.`;
+  }
+  return null;
+}
+function generatePetCode(name) {
+  const prefix = (name || "PET").substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
+  const suffix = Math.floor(1e3 + Math.random() * 9e3);
+  return `${prefix}-${suffix}`;
+}
+async function createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId) {
+  if (!dogData.petCode) {
+    dogData.petCode = generatePetCode(dogData.name);
+  }
+  let photoUrl = originalPhotoUrl;
+  if (photoUrl && isDataUri(photoUrl)) {
+    try {
+      const fname = `dog-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      photoUrl = await uploadToStorage(photoUrl, "originals", fname);
+    } catch (err) {
+      console.error("[storage-upload] Dog photo upload failed, using base64 fallback:", err);
+    }
+  }
+  let portraitUrl = generatedPortraitUrl;
+  if (portraitUrl && isDataUri(portraitUrl)) {
+    try {
+      const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      portraitUrl = await uploadToStorage(portraitUrl, "portraits", fname);
+    } catch (err) {
+      console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+    }
+  }
+  const dog = await storage.createDog({
+    ...dogData,
+    originalPhotoUrl: photoUrl,
+    organizationId: orgId
+  });
+  if (portraitUrl && styleId) {
+    const existingPortrait = await storage.getPortraitByDogAndStyle(dog.id, styleId);
+    if (!existingPortrait) {
+      await storage.createPortrait({
+        dogId: dog.id,
+        styleId,
+        generatedImageUrl: portraitUrl,
+        isSelected: true
+      });
+      await storage.incrementOrgPortraitsUsed(orgId);
+    } else {
+      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: portraitUrl });
+    }
+  }
+  return dog;
+}
+function toPublicOrg(org) {
+  return {
+    id: org.id,
+    name: org.name,
+    slug: org.slug,
+    description: org.description,
+    websiteUrl: org.websiteUrl,
+    logoUrl: org.logoUrl,
+    isActive: org.isActive,
+    createdAt: org.createdAt
+  };
+}
+async function resolveOrgForUser(userId, userEmail, dogId) {
+  const userIsAdmin = userEmail === ADMIN_EMAIL;
+  if (dogId) {
+    const dog = await storage.getDog(dogId);
+    if (!dog || !dog.organizationId) {
+      return { org: null, error: "Pet not found", status: 404 };
+    }
+    const org2 = await storage.getOrganization(dog.organizationId);
+    if (!org2) {
+      return { org: null, error: "Organization not found", status: 404 };
+    }
+    if (userIsAdmin || org2.ownerId === userId) {
+      return { org: org2 };
+    }
+    return { org: null, error: "Not authorized to access this dog", status: 403 };
+  }
+  const org = await storage.getOrganizationByOwner(userId);
+  if (org) {
+    return { org };
+  }
+  if (userIsAdmin) {
+    return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific business.", status: 400 };
+  }
+  return { org: null, error: "You need to create an organization first", status: 400 };
+}
+var import_express_rate_limit2, ADMIN_EMAIL, aiRateLimiter, apiRateLimiter, MAX_ADDITIONAL_SLOTS, MAX_EDITS_PER_IMAGE, isAdmin;
+var init_helpers = __esm({
+  "server/routes/helpers.ts"() {
+    "use strict";
+    import_express_rate_limit2 = __toESM(require("express-rate-limit"), 1);
+    init_storage();
+    init_stripeClient();
+    init_subscription();
+    init_supabase_storage();
+    ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+    aiRateLimiter = (0, import_express_rate_limit2.default)({
+      windowMs: 60 * 1e3,
+      max: 10,
+      message: { error: "Too many requests. Please wait a minute before generating more portraits." },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req) => req.user?.claims?.sub || "anonymous",
+      validate: { xForwardedForHeader: false }
+    });
+    apiRateLimiter = (0, import_express_rate_limit2.default)({
+      windowMs: 60 * 1e3,
+      max: 100,
+      message: { error: "Too many requests. Please try again shortly." },
+      standardHeaders: true,
+      legacyHeaders: false
+    });
+    MAX_ADDITIONAL_SLOTS = 5;
+    MAX_EDITS_PER_IMAGE = 4;
+    isAdmin = async (req, res, next) => {
+      if (!req.user?.claims?.email || req.user.claims.email !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      next();
+    };
+  }
+});
+
+// server/stripeService.ts
+var stripeService_exports = {};
+__export(stripeService_exports, {
+  StripeService: () => StripeService,
+  stripeService: () => stripeService
+});
+function isTestMode(testMode) {
+  return testMode !== false;
+}
+var import_drizzle_orm5, cachedTestAddonPriceId, cachedLiveAddonPriceId, StripeService, stripeService;
+var init_stripeService = __esm({
+  "server/stripeService.ts"() {
+    "use strict";
+    init_stripeClient();
+    init_db();
+    init_schema();
+    import_drizzle_orm5 = require("drizzle-orm");
+    cachedTestAddonPriceId = null;
+    cachedLiveAddonPriceId = null;
+    StripeService = class {
+      async createCustomer(email, orgId, organizationName, testMode) {
+        const stripe = getStripeClient(testMode);
+        return await stripe.customers.create({
+          email,
+          name: organizationName,
+          metadata: { orgId: String(orgId), organizationName }
+        });
+      }
+      async retrieveCustomer(customerId, testMode) {
+        const stripe = getStripeClient(testMode);
+        return await stripe.customers.retrieve(customerId);
+      }
+      async createCheckoutSession(customerId, priceId, successUrl, cancelUrl, testMode, trialDays, metadata) {
+        const stripe = getStripeClient(testMode);
+        const effectivePriceId = getPriceId(priceId, testMode);
+        const sessionParams = {
+          customer: customerId,
+          payment_method_types: ["card"],
+          line_items: [{ price: effectivePriceId, quantity: 1 }],
+          mode: "subscription",
+          success_url: successUrl,
+          cancel_url: cancelUrl
+        };
+        if (trialDays && trialDays > 0) {
+          sessionParams.subscription_data = {
+            trial_period_days: trialDays
+          };
+        }
+        if (metadata) {
+          sessionParams.metadata = metadata;
+        }
+        return await stripe.checkout.sessions.create(sessionParams);
+      }
+      async createCustomerPortalSession(customerId, returnUrl, testMode) {
+        const stripe = getStripeClient(testMode);
+        return await stripe.billingPortal.sessions.create({
+          customer: customerId,
+          return_url: returnUrl
+        });
+      }
+      async retrieveCheckoutSession(sessionId, testMode) {
+        const stripe = getStripeClient(testMode);
+        return await stripe.checkout.sessions.retrieve(sessionId, {
+          expand: ["subscription"]
+        });
+      }
+      async retrieveSubscription(subscriptionId, testMode) {
+        const stripe = getStripeClient(testMode);
+        return await stripe.subscriptions.retrieve(subscriptionId);
+      }
+      async getOrCreateAddonPriceId(testMode) {
+        const test = isTestMode(testMode);
+        const cached = test ? cachedTestAddonPriceId : cachedLiveAddonPriceId;
+        if (cached) return cached;
+        if (process.env.STRIPE_ADDON_PRICE_ID) {
+          const val = process.env.STRIPE_ADDON_PRICE_ID;
+          if (test) cachedTestAddonPriceId = val;
+          else cachedLiveAddonPriceId = val;
+          return val;
+        }
+        const stripe = getStripeClient(testMode);
+        const products = await stripe.products.search({
+          query: "metadata['type']:'pet_slot_addon'"
+        });
+        let product;
+        if (products.data.length > 0) {
+          product = products.data[0];
+        } else {
+          product = await stripe.products.create({
+            name: "Extra Pet Slot",
+            description: "Additional pet slot for your business ($3/month per slot)",
+            metadata: { type: "pet_slot_addon" }
+          });
+        }
+        const prices = await stripe.prices.list({
+          product: product.id,
+          active: true,
+          type: "recurring"
+        });
+        let price = prices.data.find(
+          (p) => p.unit_amount === 300 && p.recurring?.interval === "month"
+        );
+        if (!price) {
+          price = await stripe.prices.create({
+            product: product.id,
+            unit_amount: 300,
+            currency: "usd",
+            recurring: { interval: "month" },
+            metadata: { type: "pet_slot_addon" }
+          });
+        }
+        if (test) cachedTestAddonPriceId = price.id;
+        else cachedLiveAddonPriceId = price.id;
+        return price.id;
+      }
+      async updateAddonSlots(subscriptionId, quantity, testMode) {
+        const stripe = getStripeClient(testMode);
+        const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const existingItem = subscription.items.data.find((item) => {
+          const priceId = typeof item.price === "string" ? item.price : item.price?.id;
+          return priceId === addonPriceId;
+        });
+        if (quantity === 0 && existingItem) {
+          await stripe.subscriptionItems.del(existingItem.id, {
+            proration_behavior: "create_prorations"
+          });
+        } else if (quantity > 0 && existingItem) {
+          await stripe.subscriptionItems.update(existingItem.id, {
+            quantity,
+            proration_behavior: "create_prorations"
+          });
+        } else if (quantity > 0 && !existingItem) {
+          await stripe.subscriptionItems.create({
+            subscription: subscriptionId,
+            price: addonPriceId,
+            quantity,
+            proration_behavior: "create_prorations"
+          });
+        }
+      }
+      async removeAddonFromSubscription(subscriptionId, testMode) {
+        const stripe = getStripeClient(testMode);
+        const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const existingItem = subscription.items.data.find((item) => {
+          const priceId = typeof item.price === "string" ? item.price : item.price?.id;
+          return priceId === addonPriceId;
+        });
+        if (existingItem) {
+          await stripe.subscriptionItems.del(existingItem.id, {
+            proration_behavior: "create_prorations"
+          });
+        }
+      }
+      async getAddonPriceId(testMode) {
+        return this.getOrCreateAddonPriceId(testMode);
+      }
+      async scheduleDowngrade(subscriptionId, newPriceId, testMode) {
+        const stripe = getStripeClient(testMode);
+        const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const mainItem = subscription.items.data.find((item) => {
+          const priceId = typeof item.price === "string" ? item.price : item.price?.id;
+          return priceId !== addonPriceId;
+        }) || subscription.items.data[0];
+        const effectivePriceId = getPriceId(newPriceId, testMode);
+        await stripe.subscriptions.update(subscriptionId, {
+          proration_behavior: "none",
+          items: [{
+            id: mainItem.id,
+            price: effectivePriceId
+          }],
+          cancel_at_period_end: false
+        });
+        const periodEnd = new Date(subscription.current_period_end * 1e3);
+        return { currentPeriodEnd: periodEnd };
+      }
+      async getSubscriptionPeriodEnd(subscriptionId, testMode) {
+        const stripe = getStripeClient(testMode);
+        try {
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          return new Date(subscription.current_period_end * 1e3);
+        } catch {
+          return null;
+        }
+      }
+      /**
+       * Ensure Stripe products + prices exist for all vertical-specific plans.
+       * Idempotent — safe to run on every startup. Only creates what's missing.
+       * testMode=true stores in stripePriceId/stripeProductId,
+       * testMode=false stores in stripeLivePriceId/stripeProductLiveId.
+       */
+      async ensureVerticalPlanProducts(testMode) {
+        const test = isTestMode(testMode);
+        const stripe = getStripeClient(testMode);
+        const allPlans = await db.select().from(subscriptionPlans);
+        for (const plan of allPlans) {
+          if (!plan.vertical) continue;
+          if (plan.priceMonthly === 0) continue;
+          const existingPrice = test ? plan.stripePriceId : plan.stripeLivePriceId;
+          if (existingPrice) continue;
+          try {
+            const products = await stripe.products.search({
+              query: `metadata['prosplanid']:'${plan.id}'`
+            });
+            let product;
+            if (products.data.length > 0) {
+              product = products.data[0];
+            } else {
+              product = await stripe.products.create({
+                name: plan.name,
+                description: plan.description || `${plan.name} plan`,
+                metadata: {
+                  prosplanid: String(plan.id),
+                  vertical: plan.vertical || "",
+                  unitType: plan.unitType || ""
+                }
+              });
+            }
+            const prices = await stripe.prices.list({
+              product: product.id,
+              active: true,
+              type: "recurring"
+            });
+            let price = prices.data.find(
+              (p) => p.unit_amount === plan.priceMonthly && p.recurring?.interval === "month"
+            );
+            if (!price) {
+              price = await stripe.prices.create({
+                product: product.id,
+                unit_amount: plan.priceMonthly,
+                currency: "usd",
+                recurring: { interval: "month" },
+                metadata: { prosplanid: String(plan.id) }
+              });
+            }
+            const updateData = {};
+            if (test) {
+              updateData.stripePriceId = price.id;
+              updateData.stripeProductId = product.id;
+            } else {
+              updateData.stripeLivePriceId = price.id;
+              updateData.stripeProductLiveId = product.id;
+            }
+            await db.update(subscriptionPlans).set(updateData).where((0, import_drizzle_orm5.eq)(subscriptionPlans.id, plan.id));
+            console.log(`[stripe] Ensured ${test ? "test" : "live"} product/price for plan ${plan.id} (${plan.name})`);
+          } catch (err) {
+            console.error(`[stripe] Error ensuring product for plan ${plan.id}:`, err.message);
+          }
+        }
+      }
+    };
+    stripeService = new StripeService();
+  }
+});
+
+// shared/pack-config.ts
+function getPacks(species) {
+  const packs = species === "dog" ? DOG_PACKS : CAT_PACKS;
+  return [packs.celebrate, packs.fun, packs.artistic];
+}
+function getPackByType(species, packType) {
+  const packs = species === "dog" ? DOG_PACKS : CAT_PACKS;
+  return packs[packType];
+}
+var DOG_PACKS, CAT_PACKS;
+var init_pack_config = __esm({
+  "shared/pack-config.ts"() {
+    "use strict";
+    DOG_PACKS = {
+      celebrate: {
+        type: "celebrate",
+        name: "Celebrate",
+        description: "Seasonal favorites, cozy vibes & celebrations",
+        styleIds: [23, 22, 10, 19, 11]
+        // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party
+      },
+      artistic: {
+        type: "artistic",
+        name: "Artistic",
+        description: "Fine art & classical \u2014 elegant framed keepsakes",
+        styleIds: [1, 5, 26, 24, 2, 6]
+        // Renaissance Noble, Art Nouveau Beauty, Impressionist Garden, Vintage Classic, Victorian Gentleman, Steampunk Explorer
+      },
+      fun: {
+        type: "fun",
+        name: "Fun",
+        description: "Costumes, adventures & bold characters",
+        styleIds: [14, 12, 17, 29, 30, 31]
+        // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party
+      }
+    };
+    CAT_PACKS = {
+      celebrate: {
+        type: "celebrate",
+        name: "Celebrate",
+        description: "Seasonal favorites, cozy vibes & celebrations",
+        styleIds: [112, 113, 114, 104, 111]
+        // Halloween Black Cat, Holiday Stocking, Spring Blossoms, Sunbeam Napper, Cozy Blanket
+      },
+      artistic: {
+        type: "artistic",
+        name: "Artistic",
+        description: "Refined classical portraits & fine art",
+        styleIds: [101, 102, 103, 109]
+        // Egyptian Royalty, Renaissance Feline, Victorian Lady, Garden Explorer
+      },
+      fun: {
+        type: "fun",
+        name: "Fun",
+        description: "Playful adventures & quirky characters",
+        styleIds: [106, 115, 116, 117, 118, 119]
+        // Purrista Barista, Box Inspector, Tea Party Guest, Pool Party, Campfire, Sleepover Party
+      }
+    };
+  }
+});
+
+// server/semaphore.ts
+var Semaphore;
+var init_semaphore = __esm({
+  "server/semaphore.ts"() {
+    "use strict";
+    Semaphore = class {
+      constructor(maxConcurrent) {
+        this.maxConcurrent = maxConcurrent;
+      }
+      queue = [];
+      active = 0;
+      async acquire() {
+        if (this.active < this.maxConcurrent) {
+          this.active++;
+          return;
+        }
+        return new Promise((resolve) => {
+          this.queue.push(() => {
+            this.active++;
+            resolve();
+          });
+        });
+      }
+      release() {
+        this.active--;
+        const next = this.queue.shift();
+        if (next) next();
+      }
+      async run(fn) {
+        await this.acquire();
+        try {
+          return await fn();
+        } finally {
+          this.release();
+        }
+      }
+    };
+  }
+});
+
+// server/gemini.ts
+function extractImageFromResponse(response) {
+  const part = response.candidates?.[0]?.content?.parts?.find(
+    (p) => p.inlineData
+  );
+  if (!part?.inlineData?.data) return null;
+  const mime = part.inlineData.mimeType || "image/png";
+  return `data:${mime};base64,${part.inlineData.data}`;
+}
+function parseBase64(dataUrl) {
+  const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+  const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
+  return { mimeType, data };
+}
+function isRetryableError(err) {
+  const status = err?.status || err?.httpStatusCode || err?.code;
+  if (status === 429 || status === 503) return true;
+  const msg = String(err?.message || "").toLowerCase();
+  return msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable");
+}
+async function callWithRetry(fn, label) {
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delay = Math.pow(2, attempt + 1) * 1e3 + Math.random() * 1e3;
+        console.warn(`[gemini] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: all retries exhausted`);
+}
+async function generateImage(prompt, sourceImage) {
+  if (sourceImage) {
+    try {
+      const result = await generateWithImage(prompt, sourceImage);
+      if (result) return result;
+    } catch {
+    }
+  }
+  return generateTextOnly(prompt);
+}
+async function generateWithImage(prompt, sourceImage) {
+  const { mimeType, data } = parseBase64(sourceImage);
+  const enhancedPrompt = FIDELITY_PREFIX + prompt;
+  return geminiSemaphore.run(
+    () => callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
+        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+      });
+      return extractImageFromResponse(response);
+    }, "generateWithImage")
+  );
+}
+async function generateTextOnly(prompt) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await geminiSemaphore.run(
+      () => callWithRetry(async () => {
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash-image",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+        });
+        return extractImageFromResponse(response);
+      }, "generateTextOnly")
+    );
+    if (result) return result;
+  }
+  throw new Error("Failed to generate image after retries");
+}
+async function editImage(currentImage, editPrompt) {
+  const { mimeType, data } = parseBase64(currentImage);
+  return geminiSemaphore.run(
+    () => callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-image",
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data } },
+            { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` }
+          ]
+        }],
+        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+      });
+      const result = extractImageFromResponse(response);
+      if (!result) throw new Error("Failed to edit image");
+      return result;
+    }, "editImage")
+  );
+}
+var import_genai, ai, geminiSemaphore, FIDELITY_PREFIX;
+var init_gemini = __esm({
+  "server/gemini.ts"() {
+    "use strict";
+    import_genai = require("@google/genai");
+    init_semaphore();
+    ai = new import_genai.GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY
+    });
+    geminiSemaphore = new Semaphore(10);
+    FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 THE PHOTO IS THE GROUND TRUTH.
+Study the attached photo carefully. This is the EXACT animal you must depict.
+
+CRITICAL RULE \u2014 PHOTO OVERRIDES TEXT:
+The style description below may mention a breed name (e.g., "Beagle", "Labrador", "Persian cat"). IGNORE any breed name in the text if it does not match what you see in the photo. The PHOTO is the sole authority on what this animal looks like. If the text says "Beagle" but the photo shows a Chow Chow, you MUST depict a Chow Chow. If the text says "Tabby" but the photo shows a Siamese, you MUST depict a Siamese. NEVER generate an animal that matches the text breed instead of the photo \u2014 the photo always wins.
+
+COLOR AND PATTERN MATCHING IS THE #1 PRIORITY:
+Most animals are NOT one uniform color. Study WHERE each color appears on this specific animal's body:
+- Note which areas are lighter vs darker (chest, belly, legs, face, back, ears, tail)
+- Note any two-tone or multi-tone patterns \u2014 e.g., white chest with reddish back, dark face with lighter body, tabby stripes, tuxedo markings, brindle patterns
+- Note the EXACT boundaries where one color transitions to another
+You must reproduce the PRECISE color of EACH body area \u2014 not a uniform "average" color, not a "typical" breed color, not a slightly different shade. If the chest is white and the back is reddish, the portrait must show a white chest and a reddish back in those same proportions. If there are patches, spots, or gradients, they must appear in the same locations. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT let the artistic style, scene lighting, or background colors influence or shift the animal's actual coat colors.
+
+You MUST also faithfully reproduce THIS SPECIFIC animal's:
+- Face shape, muzzle, and facial structure
+- Ear shape, size, and positioning
+- Fur/coat texture and length
+- Eye color and shape
+- Body size and proportions
+- Any unique distinguishing features (spots, patches, scars, etc.)
+
+DO NOT substitute a generic or different-looking animal. DO NOT default to a "breed typical" appearance. The generated portrait must be unmistakably recognizable as the SAME individual animal in the reference photo.
+
+Now apply the following artistic style while preserving this exact animal's appearance, coloring, and color distribution:
+
+`;
+  }
+});
+
+// server/routes/sms.ts
+function formatPhoneNumber(raw) {
+  const cleaned = raw.replace(/[\s\-().]/g, "");
+  return cleaned.startsWith("+") ? cleaned : cleaned.startsWith("1") ? `+${cleaned}` : `+1${cleaned}`;
+}
+function isTwilioConfigured() {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const msgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  const hasAuthToken = !!process.env.TWILIO_AUTH_TOKEN;
+  const hasApiKey = !!(process.env.TWILIO_API_KEY_SID && process.env.TWILIO_API_KEY_SECRET);
+  return !!(sid && msgSvc && (hasAuthToken || hasApiKey));
+}
+function isTelnyxConfigured() {
+  return !!(process.env.TELNYX_API_KEY && process.env.TELNYX_PHONE_NUMBER);
+}
+function isSmsConfigured() {
+  return isTwilioConfigured() || isTelnyxConfigured();
+}
+async function sendViaTwilio(phone, body) {
+  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioMsgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  let authHeader;
+  if (process.env.TWILIO_AUTH_TOKEN) {
+    authHeader = `Basic ${Buffer.from(`${twilioSid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`;
+  } else {
+    authHeader = `Basic ${Buffer.from(`${process.env.TWILIO_API_KEY_SID}:${process.env.TWILIO_API_KEY_SECRET}`).toString("base64")}`;
+  }
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": authHeader
+    },
+    body: new URLSearchParams({ To: phone, MessagingServiceSid: twilioMsgSvc, Body: body }).toString()
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    return { success: false, error: `Twilio: ${err.message || err.code || "Failed"}`, provider: "twilio" };
+  }
+  return { success: true, provider: "twilio" };
+}
+async function sendViaTelnyx(phone, body) {
+  const apiKey = process.env.TELNYX_API_KEY;
+  const from = process.env.TELNYX_PHONE_NUMBER;
+  const res = await fetch("https://api.telnyx.com/v2/messages", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ from, to: phone, text: body })
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    const detail = err.errors?.[0]?.detail || err.errors?.[0]?.title || "Failed";
+    return { success: false, error: `Telnyx: ${detail}`, provider: "telnyx" };
+  }
+  const data = await res.json();
+  const status = data.data?.to?.[0]?.status;
+  if (status === "delivery_failed") {
+    const errDetail = data.data?.errors?.[0]?.detail || "Delivery failed";
+    return { success: false, error: `Telnyx: ${errDetail}`, provider: "telnyx" };
+  }
+  return { success: true, provider: "telnyx" };
+}
+async function sendSms(to, body) {
+  const phone = formatPhoneNumber(to);
+  const errors = [];
+  if (isTwilioConfigured()) {
+    try {
+      const result = await sendViaTwilio(phone, body);
+      if (result.success) {
+        console.log(`[sms] Sent via Twilio to ${phone}`);
+        return result;
+      }
+      console.warn(`[sms] Twilio failed: ${result.error}`);
+      errors.push(result.error || "Twilio failed");
+    } catch (err) {
+      console.warn(`[sms] Twilio error: ${err.message}`);
+      errors.push(`Twilio: ${err.message}`);
+    }
+  }
+  if (isTelnyxConfigured()) {
+    try {
+      const result = await sendViaTelnyx(phone, body);
+      if (result.success) {
+        console.log(`[sms] Sent via Telnyx to ${phone}`);
+        return result;
+      }
+      console.warn(`[sms] Telnyx failed: ${result.error}`);
+      errors.push(result.error || "Telnyx failed");
+    } catch (err) {
+      console.warn(`[sms] Telnyx error: ${err.message}`);
+      errors.push(`Telnyx: ${err.message}`);
+    }
+  }
+  if (errors.length === 0) {
+    return { success: false, error: "No SMS provider configured" };
+  }
+  return { success: false, error: errors.join("; ") };
+}
+var init_sms = __esm({
+  "server/routes/sms.ts"() {
+    "use strict";
+  }
+});
+
+// server/routes/email.ts
+function isEmailConfigured() {
+  return !!process.env.RESEND_API_KEY;
+}
+async function sendEmail(to, subject, html, attachments, fromName) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: "Email service is not configured" };
+  }
+  try {
+    const emailAddr = process.env.RESEND_FROM_ADDRESS || "noreply@pawtraitpros.com";
+    const displayName = fromName || "Pawtrait Pros";
+    const payload = {
+      from: `${displayName} <${emailAddr}>`,
+      to: [to],
+      subject,
+      html
+    };
+    if (attachments && attachments.length > 0) {
+      payload.attachments = attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString("base64")
+      }));
+    }
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      const message = err?.message || err?.statusCode || "Failed to send email";
+      console.error(`[email] Send failed to ${to}:`, message);
+      return { success: false, error: String(message) };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error(`[email] Error sending to ${to}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+function buildDepartureEmail(orgName, orgLogoUrl, dogName, pawfileUrl, portraitImageUrl, orgId, sourcePhotoUrl) {
+  const subject = `${dogName}'s portrait from ${orgName} is ready!`;
+  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+  const logoSrc = orgLogoUrl?.startsWith("https://") ? orgLogoUrl : orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
+  const parts = [];
+  parts.push(`<div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">`);
+  parts.push(`<div style="text-align:center;margin-bottom:20px;">`);
+  if (logoSrc) {
+    parts.push(`<img src="${logoSrc}" alt="${orgName}" style="max-height:60px;margin-bottom:12px;" /><br/>`);
+  }
+  parts.push(`<h2 style="color:#1a1a1a;margin:0;">${orgName}</h2></div>`);
+  parts.push(`<p style="font-size:16px;color:#333;line-height:1.5;">We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you!</p>`);
+  if (portraitImageUrl) {
+    parts.push(`<div style="text-align:center;margin:20px 0;"><a href="${pawfileUrl}"><img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:380px;width:100%;border-radius:12px;" /></a></div>`);
+  }
+  if (sourcePhotoUrl) {
+    parts.push(`<div style="text-align:center;margin:16px 0 8px;"><p style="font-size:13px;color:#888;font-style:italic;margin:0 0 8px;">Behind the Portrait \u2014 ${dogName} in action</p><img src="${sourcePhotoUrl}" alt="${dogName}" style="max-width:240px;width:60%;border-radius:8px;opacity:0.9;" /></div>`);
+  }
+  parts.push(`<div style="text-align:center;margin:24px 0;"><a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">View & Order a Keepsake</a></div>`);
+  parts.push(`<p style="font-size:14px;color:#666;text-align:center;line-height:1.5;">Love it? Order a framed print, mug, tote, or other keepsake featuring ${dogName}.</p>`);
+  parts.push(`<p style="font-size:12px;color:#999;text-align:center;margin-top:24px;">Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a></p>`);
+  parts.push(`</div>`);
+  return { subject, html: parts.join("") };
+}
+function buildOrderConfirmationEmail(orgName, dogName, orderId, totalCents, itemDescriptions) {
+  const subject = `Order #${orderId} confirmed \u2014 ${dogName}'s portrait keepsake`;
+  const total = (totalCents / 100).toFixed(2);
+  const itemsHtml = itemDescriptions.map((desc2) => `<li style="margin-bottom:4px;">${desc2}</li>`).join("");
+  const html = `
+    <div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">
+      <h2 style="color:#1a1a1a;text-align:center;">Order Confirmed!</h2>
+      <p style="font-size:16px;color:#333;line-height:1.6;">
+        Thank you for your order from <strong>${orgName}</strong>!
+        Your keepsake${itemDescriptions.length > 1 ? "s" : ""} featuring <strong>${dogName}</strong> will be on the way soon.
+      </p>
+      <div style="background:#f9fafb;border-radius:8px;padding:16px;margin:20px 0;">
+        <p style="margin:0 0 8px;font-weight:600;color:#333;">Order #${orderId}</p>
+        <ul style="margin:0;padding-left:20px;color:#555;">
+          ${itemsHtml}
+        </ul>
+        <p style="margin:12px 0 0;font-weight:600;color:#333;">Total: $${total}</p>
+      </div>
+      <p style="font-size:16px;color:#333;line-height:1.6;">
+        Your hi-res digital download with ${orgName}'s logo is attached to this email \u2014 it's yours to keep!
+      </p>
+      <p style="font-size:16px;color:#333;line-height:1.6;">
+        We'll email you tracking information once your order ships.
+      </p>
+      <p style="font-size:13px;color:#999;text-align:center;margin-top:32px;">
+        Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a>
+      </p>
+    </div>
+  `;
+  return { subject, html };
+}
+var init_email = __esm({
+  "server/routes/email.ts"() {
+    "use strict";
+  }
+});
+
+// server/routes/delivery.ts
+async function deliverPortraitToOwner(dog, org) {
+  if (!dog.ownerPhone && !dog.ownerEmail) {
+    return { sent: false, error: "No owner contact info" };
+  }
+  let petCode = dog.petCode;
+  if (!petCode) {
+    petCode = generatePetCode(dog.name);
+    await storage.updateDog(dog.id, { petCode });
+  }
+  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+  const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
+  const notifMode = org.notificationMode || "both";
+  const methods = [];
+  let sent = false;
+  const portraits2 = await storage.getPortraitsByDog(dog.id);
+  const latestPortrait = portraits2.length > 0 ? portraits2[0] : null;
+  const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith("https://") ? latestPortrait.generatedImageUrl : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : void 0;
+  const sourcePhotoUrl = dog.originalPhotoUrl?.startsWith("https://") ? dog.originalPhotoUrl : void 0;
+  if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
+    try {
+      const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
+      const smsResult = await sendSms(dog.ownerPhone, smsBody);
+      if (smsResult.success) {
+        methods.push("sms");
+        sent = true;
+      } else {
+        console.error(`[deliver] SMS failed for ${dog.name}:`, smsResult.error);
+      }
+    } catch (smsErr) {
+      console.error(`[deliver] SMS error:`, smsErr.message);
+    }
+  }
+  if ((notifMode === "email" || notifMode === "both") && dog.ownerEmail && isEmailConfigured()) {
+    try {
+      const { subject, html } = buildDepartureEmail(
+        org.name,
+        org.logoUrl,
+        dog.name,
+        pawfileUrl,
+        portraitImageUrl,
+        org.id,
+        sourcePhotoUrl
+      );
+      const emailResult = await sendEmail(dog.ownerEmail, subject, html, void 0, org.name);
+      if (emailResult.success) {
+        methods.push("email");
+        sent = true;
+      } else {
+        console.error(`[deliver] Email failed for ${dog.name}:`, emailResult.error);
+      }
+    } catch (emailErr) {
+      console.error(`[deliver] Email error:`, emailErr.message);
+    }
+  }
+  return sent ? { sent: true, method: methods.join("+") } : { sent: false, method: "link_only", error: "No notification channel available or all failed" };
+}
+var init_delivery = __esm({
+  "server/routes/delivery.ts"() {
+    "use strict";
+    init_storage();
+    init_sms();
+    init_email();
+    init_helpers();
+  }
+});
+
 // server/gelato-config.ts
 var gelato_config_exports = {};
 __export(gelato_config_exports, {
@@ -531,6 +2005,160 @@ var init_gelato = __esm({
     "use strict";
     GELATO_ORDER_BASE = "https://order.gelatoapis.com/v4";
     GELATO_PRODUCT_BASE = "https://product.gelatoapis.com/v3";
+  }
+});
+
+// server/portrait-scheduler.ts
+var portrait_scheduler_exports = {};
+__export(portrait_scheduler_exports, {
+  startPortraitScheduler: () => startPortraitScheduler
+});
+async function processPortraitRotation() {
+  const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const dogsDue = await storage.getDogsDueForPortrait(today);
+  if (dogsDue.length === 0) return;
+  console.log(`[scheduler] ${dogsDue.length} dog(s) due for portraits on ${today}`);
+  const byOrg = /* @__PURE__ */ new Map();
+  for (const dog of dogsDue) {
+    const list = byOrg.get(dog.organizationId) || [];
+    list.push(dog);
+    byOrg.set(dog.organizationId, list);
+  }
+  for (const [orgId, orgDogs] of byOrg) {
+    const org = await storage.getOrganization(orgId);
+    if (!org || !org.isActive) continue;
+    const allStyles = await storage.getAllPortraitStyles();
+    for (const dog of orgDogs) {
+      try {
+        const species = dog.species || "dog";
+        const packResult = await pool.query(
+          `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
+          [orgId, today, species]
+        );
+        if (packResult.rows.length === 0) {
+          continue;
+        }
+        const packType = packResult.rows[0].pack_type;
+        const pack = getPackByType(species, packType);
+        if (!pack) continue;
+        const usedStyleIds = await storage.getUsedStyleIdsForDog(dog.id);
+        const availableStyleIds = pack.styleIds.filter((id) => !usedStyleIds.includes(id));
+        if (availableStyleIds.length === 0) {
+          const nextDate2 = calculateNextPortraitDate(dog, today);
+          await storage.advanceNextPortraitDate(dog.id, nextDate2);
+          console.log(`[scheduler] ${dog.name}: all pack styles used, bumped to ${nextDate2}`);
+          continue;
+        }
+        const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
+        if (plan?.monthlyPortraitCredits) {
+          const { creditsUsed } = await storage.getAccurateCreditsUsed(orgId);
+          if (creditsUsed >= plan.monthlyPortraitCredits) {
+            console.log(`[scheduler] Org ${orgId} out of credits, skipping ${dog.name}`);
+            continue;
+          }
+        }
+        const styleId = availableStyleIds[Math.floor(Math.random() * availableStyleIds.length)];
+        const style = allStyles.find((s) => s.id === styleId);
+        if (!style) continue;
+        const breed = dog.breed || dog.species || "dog";
+        const prompt = sanitizeForPrompt(
+          style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
+        );
+        const generatedImageRaw = await generateImage(prompt, dog.originalPhotoUrl || void 0);
+        let generatedImageUrl = generatedImageRaw;
+        try {
+          const fname = `portrait-${dog.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+          generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+        } catch (err) {
+          console.error("[scheduler] Upload failed, using base64:", err);
+        }
+        await storage.createPortrait({
+          dogId: dog.id,
+          styleId: style.id,
+          generatedImageUrl,
+          isSelected: true
+        });
+        await storage.incrementOrgPortraitsUsed(orgId);
+        if (!dog.petCode) {
+          const petCode = generatePetCode(dog.name);
+          await storage.updateDog(dog.id, { petCode });
+        }
+        const nextDate = calculateNextPortraitDate(dog, today);
+        await storage.advanceNextPortraitDate(dog.id, nextDate);
+        try {
+          await deliverPortraitToOwner(dog, org);
+        } catch (err) {
+          console.error(`[scheduler] Delivery failed for ${dog.name}:`, err.message);
+        }
+        console.log(`[scheduler] Generated + delivered portrait for ${dog.name} (style ${style.name}, org ${orgId}, next: ${nextDate || "done"})`);
+      } catch (err) {
+        console.error(`[scheduler] Error processing ${dog.name} (${dog.id}):`, err.message);
+      }
+    }
+  }
+}
+function calculateNextPortraitDate(dog, currentDate) {
+  if (dog.stayNights) {
+    const checkInDate = dog.checkedInAt || dog.createdAt?.toISOString?.()?.slice(0, 10) || currentDate;
+    const portraitDates = calculateBoardingPortraitDates(
+      typeof checkInDate === "string" ? checkInDate.slice(0, 10) : checkInDate,
+      dog.stayNights
+    );
+    const nextDate = portraitDates.find((d) => d > currentDate);
+    return nextDate || null;
+  }
+  const preference = dog.updatePreference || "weekly";
+  const daysToAdd = preference === "biweekly" ? 14 : 7;
+  const next = new Date(currentDate);
+  next.setDate(next.getDate() + daysToAdd);
+  return next.toISOString().slice(0, 10);
+}
+function calculateBoardingPortraitDates(checkInDate, nights) {
+  let count;
+  if (nights <= 3) count = 1;
+  else if (nights <= 7) count = 2;
+  else if (nights <= 14) count = 3;
+  else count = Math.min(Math.ceil(nights / 5), 7);
+  const dates = [];
+  const start = new Date(checkInDate);
+  if (count === 1) {
+    const checkout = new Date(start);
+    checkout.setDate(checkout.getDate() + nights);
+    dates.push(checkout.toISOString().slice(0, 10));
+  } else {
+    const interval = Math.floor(nights / count);
+    for (let i = 1; i <= count; i++) {
+      const day = i === count ? nights : i * interval;
+      const date = new Date(start);
+      date.setDate(date.getDate() + day);
+      dates.push(date.toISOString().slice(0, 10));
+    }
+  }
+  return dates;
+}
+function startPortraitScheduler() {
+  setTimeout(() => {
+    processPortraitRotation().catch((err) => {
+      console.error("[scheduler] Initial run error:", err.message);
+    });
+  }, 1e4);
+  setInterval(() => {
+    processPortraitRotation().catch((err) => {
+      console.error("[scheduler] Periodic run error:", err.message);
+    });
+  }, 30 * 60 * 1e3);
+  console.log("[scheduler] Portrait auto-rotation started (every 30 min)");
+}
+var init_portrait_scheduler = __esm({
+  "server/portrait-scheduler.ts"() {
+    "use strict";
+    init_storage();
+    init_gemini();
+    init_supabase_storage();
+    init_pack_config();
+    init_db();
+    init_helpers();
+    init_delivery();
   }
 });
 
@@ -792,644 +2420,14 @@ function registerAuthRoutes(app2) {
   });
 }
 
-// server/routes/helpers.ts
-var import_express_rate_limit2 = __toESM(require("express-rate-limit"), 1);
-
-// server/storage.ts
-init_db();
-var import_drizzle_orm4 = require("drizzle-orm");
-init_schema();
-init_auth();
-var DatabaseStorage = class {
-  // Users
-  async getUser(id) {
-    const [user] = await db.select().from(users).where((0, import_drizzle_orm4.eq)(users.id, id));
-    return user;
-  }
-  async getAllUsers() {
-    return db.select().from(users);
-  }
-  // Subscription Plans
-  async getSubscriptionPlan(id) {
-    const [plan] = await db.select().from(subscriptionPlans).where((0, import_drizzle_orm4.eq)(subscriptionPlans.id, id));
-    return plan;
-  }
-  async getAllSubscriptionPlans() {
-    return db.select().from(subscriptionPlans).where((0, import_drizzle_orm4.eq)(subscriptionPlans.isActive, true));
-  }
-  async updateSubscriptionPlan(id, data) {
-    await db.update(subscriptionPlans).set(data).where((0, import_drizzle_orm4.eq)(subscriptionPlans.id, id));
-  }
-  // Organizations
-  async getOrganization(id) {
-    const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
-    return org;
-  }
-  async getOrganizationBySlug(slug) {
-    const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.slug, slug));
-    return org;
-  }
-  async getOrganizationByOwner(ownerId) {
-    const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.ownerId, ownerId));
-    return org;
-  }
-  async getAllOrganizations() {
-    return db.select().from(organizations).orderBy((0, import_drizzle_orm4.desc)(organizations.createdAt));
-  }
-  async createOrganization(org) {
-    const [created] = await db.insert(organizations).values(org).returning();
-    return created;
-  }
-  async updateOrganization(id, org) {
-    const [updated] = await db.update(organizations).set(org).where((0, import_drizzle_orm4.eq)(organizations.id, id)).returning();
-    return updated;
-  }
-  async updateOrganizationStripeInfo(id, stripeInfo) {
-    const { stripeTestMode, ...drizzleFields } = stripeInfo;
-    if (Object.keys(drizzleFields).length > 0) {
-      await db.update(organizations).set(drizzleFields).where((0, import_drizzle_orm4.eq)(organizations.id, id));
-    }
-    if (stripeTestMode !== void 0) {
-      try {
-        await pool.query("UPDATE organizations SET stripe_test_mode = $1 WHERE id = $2", [stripeTestMode, id]);
-      } catch (e) {
-        console.warn("[stripe] Could not set stripeTestMode:", e.message);
-      }
-    }
-    const [updated] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
-    return updated;
-  }
-  async getOrgStripeTestMode(orgId) {
-    try {
-      const result = await pool.query("SELECT stripe_test_mode FROM organizations WHERE id = $1", [orgId]);
-      return result.rows[0]?.stripe_test_mode ?? true;
-    } catch {
-      return true;
-    }
-  }
-  async clearOrganizationOwner(id) {
-    await db.update(organizations).set({ ownerId: null }).where((0, import_drizzle_orm4.eq)(organizations.id, id));
-  }
-  async deleteOrganization(id) {
-    await db.delete(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
-  }
-  // Dogs
-  async getDog(id) {
-    const [dog] = await db.select().from(dogs).where((0, import_drizzle_orm4.eq)(dogs.id, id));
-    return dog;
-  }
-  async getDogsByOrganization(orgId) {
-    return db.select().from(dogs).where((0, import_drizzle_orm4.eq)(dogs.organizationId, orgId)).orderBy((0, import_drizzle_orm4.desc)(dogs.createdAt));
-  }
-  async getAllDogs() {
-    return db.select().from(dogs).orderBy((0, import_drizzle_orm4.desc)(dogs.createdAt));
-  }
-  async createDog(dog) {
-    const [created] = await db.insert(dogs).values(dog).returning();
-    return created;
-  }
-  async updateDog(id, dog) {
-    const [updated] = await db.update(dogs).set(dog).where((0, import_drizzle_orm4.eq)(dogs.id, id)).returning();
-    return updated;
-  }
-  async deleteDog(id) {
-    await db.delete(dogs).where((0, import_drizzle_orm4.eq)(dogs.id, id));
-  }
-  // Portrait Styles
-  async getPortraitStyle(id) {
-    const [style] = await db.select().from(portraitStyles).where((0, import_drizzle_orm4.eq)(portraitStyles.id, id));
-    return style;
-  }
-  async getAllPortraitStyles() {
-    return db.select().from(portraitStyles);
-  }
-  // Portraits
-  async getPortrait(id) {
-    const [portrait] = await db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.id, id));
-    return portrait;
-  }
-  async getPortraitByDogAndStyle(dogId, styleId) {
-    const [portrait] = await db.select().from(portraits).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.dogId, dogId), (0, import_drizzle_orm4.eq)(portraits.styleId, styleId)));
-    return portrait;
-  }
-  async getPortraitsByDog(dogId) {
-    return db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt));
-  }
-  async getSelectedPortraitByDog(dogId) {
-    const [selected] = await db.select().from(portraits).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.dogId, dogId), (0, import_drizzle_orm4.eq)(portraits.isSelected, true))).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt)).limit(1);
-    if (selected) return selected;
-    const [fallback] = await db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(portraits.createdAt)).limit(1);
-    return fallback;
-  }
-  async createPortrait(portrait) {
-    const [created] = await db.insert(portraits).values(portrait).returning();
-    return created;
-  }
-  async updatePortrait(id, portrait) {
-    const [updated] = await db.update(portraits).set(portrait).where((0, import_drizzle_orm4.eq)(portraits.id, id)).returning();
-    return updated;
-  }
-  async selectPortraitForGallery(dogId, portraitId) {
-    await db.transaction(async (tx) => {
-      await tx.update(portraits).set({ isSelected: false }).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId));
-      await tx.update(portraits).set({ isSelected: true }).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.id, portraitId), (0, import_drizzle_orm4.eq)(portraits.dogId, dogId)));
-    });
-  }
-  async incrementPortraitEditCount(portraitId) {
-    await db.update(portraits).set({ editCount: import_drizzle_orm4.sql`COALESCE(${portraits.editCount}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(portraits.id, portraitId));
-  }
-  async incrementOrgPortraitsUsed(orgId) {
-    await db.update(organizations).set({ portraitsUsedThisMonth: import_drizzle_orm4.sql`COALESCE(${organizations.portraitsUsedThisMonth}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
-  }
-  async getAccurateCreditsUsed(orgId) {
-    const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
-    if (!org) return { creditsUsed: 0, billingCycleStart: null };
-    const now = /* @__PURE__ */ new Date();
-    let effectiveCycleStart = org.billingCycleStart;
-    if (effectiveCycleStart && org.createdAt && effectiveCycleStart > org.createdAt) {
-      effectiveCycleStart = org.createdAt;
-    }
-    if (effectiveCycleStart) {
-      const cycleMonth = effectiveCycleStart.getMonth();
-      const cycleYear = effectiveCycleStart.getFullYear();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      if (cycleMonth !== currentMonth || cycleYear !== currentYear) {
-        effectiveCycleStart = new Date(currentYear, currentMonth, effectiveCycleStart.getDate());
-        if (effectiveCycleStart > now) {
-          effectiveCycleStart = new Date(currentYear, currentMonth, 1);
-        }
-      }
-    } else {
-      effectiveCycleStart = org.createdAt || now;
-    }
-    const rows = await db.select({ count: import_drizzle_orm4.sql`count(*)` }).from(portraits).innerJoin(dogs, (0, import_drizzle_orm4.eq)(portraits.dogId, dogs.id)).where(
-      (0, import_drizzle_orm4.and)(
-        (0, import_drizzle_orm4.eq)(dogs.organizationId, orgId),
-        (0, import_drizzle_orm4.gte)(portraits.createdAt, effectiveCycleStart)
-      )
-    );
-    const creditsUsed = Number(rows[0]?.count ?? 0);
-    return { creditsUsed, billingCycleStart: effectiveCycleStart };
-  }
-  async syncOrgCredits(orgId) {
-    const { creditsUsed, billingCycleStart } = await this.getAccurateCreditsUsed(orgId);
-    const [org] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, orgId));
-    if (!org) return void 0;
-    const updates = {};
-    if (org.portraitsUsedThisMonth !== creditsUsed) {
-      updates.portraitsUsedThisMonth = creditsUsed;
-    }
-    if (billingCycleStart && (!org.billingCycleStart || org.billingCycleStart.getTime() !== billingCycleStart.getTime())) {
-      updates.billingCycleStart = billingCycleStart;
-    }
-    if (Object.keys(updates).length > 0) {
-      const [updated] = await db.update(organizations).set(updates).where((0, import_drizzle_orm4.eq)(organizations.id, orgId)).returning();
-      return updated;
-    }
-    return org;
-  }
-  async recalculateAllOrgCredits() {
-    const allOrgs = await db.select().from(organizations);
-    const results = [];
-    for (const org of allOrgs) {
-      const { creditsUsed, billingCycleStart } = await this.getAccurateCreditsUsed(org.id);
-      const updates = {};
-      if (creditsUsed !== org.portraitsUsedThisMonth) {
-        updates.portraitsUsedThisMonth = creditsUsed;
-      }
-      if (billingCycleStart && (!org.billingCycleStart || org.billingCycleStart.getTime() !== billingCycleStart.getTime())) {
-        updates.billingCycleStart = billingCycleStart;
-      }
-      if (Object.keys(updates).length > 0) {
-        await db.update(organizations).set(updates).where((0, import_drizzle_orm4.eq)(organizations.id, org.id));
-        if (creditsUsed !== org.portraitsUsedThisMonth) {
-          results.push({ orgId: org.id, name: org.name, old: org.portraitsUsedThisMonth, new: creditsUsed });
-        }
-      }
-    }
-    return results;
-  }
-  // Visit Photos
-  async getVisitPhotos(dogId, visitDate) {
-    if (visitDate) {
-      return db.select().from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate))).orderBy(visitPhotos.sortOrder);
-    }
-    return db.select().from(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId)).orderBy((0, import_drizzle_orm4.desc)(visitPhotos.createdAt));
-  }
-  async createVisitPhoto(photo) {
-    const [created] = await db.insert(visitPhotos).values(photo).returning();
-    return created;
-  }
-  async deleteVisitPhoto(id) {
-    await db.delete(visitPhotos).where((0, import_drizzle_orm4.eq)(visitPhotos.id, id));
-  }
-  async countVisitPhotosForDate(dogId, visitDate) {
-    const rows = await db.select({ count: import_drizzle_orm4.sql`count(*)` }).from(visitPhotos).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(visitPhotos.dogId, dogId), (0, import_drizzle_orm4.eq)(visitPhotos.visitDate, visitDate)));
-    return Number(rows[0]?.count ?? 0);
-  }
-  async repairSequences() {
-    const fixes = [];
-    const tables = [
-      { table: "organizations", seq: "organizations_id_seq" },
-      { table: "dogs", seq: "dogs_id_seq" },
-      { table: "portraits", seq: "portraits_id_seq" },
-      { table: "portrait_styles", seq: "portrait_styles_id_seq" },
-      { table: "subscription_plans", seq: "subscription_plans_id_seq" }
-    ];
-    for (const { table, seq } of tables) {
-      await db.execute(import_drizzle_orm4.sql.raw(
-        `SELECT setval('${seq}', GREATEST((SELECT COALESCE(MAX(id), 0) FROM ${table}), 1))`
-      ));
-      const maxResult = await db.execute(import_drizzle_orm4.sql.raw(`SELECT MAX(id) as max_id FROM ${table}`));
-      const seqResult = await db.execute(import_drizzle_orm4.sql.raw(`SELECT last_value FROM ${seq}`));
-      const maxId = Number(maxResult.rows?.[0]?.max_id ?? 0);
-      const seqVal = Number(seqResult.rows?.[0]?.last_value ?? 0);
-      if (seqVal > 0 && maxId > 0 && seqVal === maxId) {
-        fixes.push(`${table}: sequence synced to ${maxId}`);
-      }
-    }
-    return fixes;
-  }
-};
-var storage = new DatabaseStorage();
-
-// server/stripeClient.ts
-var import_stripe = __toESM(require("stripe"), 1);
-var testStripe = new import_stripe.default(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-11-17.clover"
-});
-var liveStripe = new import_stripe.default(process.env.STRIPE_LIVE_SECRET_KEY, {
-  apiVersion: "2025-11-17.clover"
-});
-function getStripeClient(testMode) {
-  return testMode === false ? liveStripe : testStripe;
-}
-function getStripePublishableKey(testMode) {
-  return testMode === false ? process.env.STRIPE_LIVE_PUBLISHABLE_KEY : process.env.STRIPE_PUBLISHABLE_KEY;
-}
-function getWebhookSecret(testMode) {
-  return testMode === false ? process.env.STRIPE_LIVE_WEBHOOK_SECRET : process.env.STRIPE_WEBHOOK_SECRET;
-}
-var TEST_TO_LIVE_PRICE = {
-  "price_1T1NpB2LfX3IuyBIb44I2uwq": "price_1SxgIU2LfX3IuyBI3iXCfRn5",
-  // Starter $39
-  "price_1T1NpC2LfX3IuyBIBj9Mdx3f": "price_1SxgIU2LfX3IuyBIbG1jtLcC",
-  // Professional $79
-  "price_1T1NpC2LfX3IuyBIPtezJkZ0": "price_1SxgIU2LfX3IuyBIUy4rwplJ"
-  // Executive $349
-};
-function getPriceId(priceId, testMode) {
-  if (testMode === false) return TEST_TO_LIVE_PRICE[priceId] || priceId;
-  return priceId;
-}
-var STRIPE_PLAN_PRICE_MAP = {
-  // Test price IDs
-  "price_1T1NpB2LfX3IuyBIb44I2uwq": { id: 6, name: "Starter" },
-  "price_1T1NpC2LfX3IuyBIBj9Mdx3f": { id: 7, name: "Professional" },
-  "price_1T1NpC2LfX3IuyBIPtezJkZ0": { id: 8, name: "Executive" },
-  // Live price IDs
-  "price_1SxgIU2LfX3IuyBI3iXCfRn5": { id: 6, name: "Starter" },
-  "price_1SxgIU2LfX3IuyBIbG1jtLcC": { id: 7, name: "Professional" },
-  "price_1SxgIU2LfX3IuyBIUy4rwplJ": { id: 8, name: "Executive" }
-};
-function mapStripeStatusToInternal(stripeStatus, currentStatus) {
-  switch (stripeStatus) {
-    case "active":
-      return "active";
-    case "trialing":
-      return "trial";
-    case "past_due":
-      return "past_due";
-    case "canceled":
-    case "unpaid":
-    case "incomplete":
-    case "incomplete_expired":
-    case "paused":
-      return "canceled";
-    default:
-      return currentStatus || "inactive";
-  }
-}
-
-// server/subscription.ts
-var TRIAL_DURATION_MS = 30 * 24 * 60 * 60 * 1e3;
-function getTrialEndDate(org) {
-  if (org.trialEndsAt) return new Date(org.trialEndsAt);
-  if (org.createdAt) return new Date(new Date(org.createdAt).getTime() + TRIAL_DURATION_MS);
-  return null;
-}
-function isTrialExpired(org) {
-  if (org.subscriptionStatus !== "trial") return false;
-  const trialEnd = getTrialEndDate(org);
-  return trialEnd ? trialEnd < /* @__PURE__ */ new Date() : false;
-}
-function isWithinTrialWindow(org) {
-  const trialEnd = getTrialEndDate(org);
-  return trialEnd ? trialEnd > /* @__PURE__ */ new Date() : false;
-}
-async function getFreeTrial() {
-  const plans = await storage.getAllSubscriptionPlans();
-  return plans.find((p) => p.name === "Free Trial");
-}
-async function revertToFreeTrial(orgId) {
-  const freeTrial = await getFreeTrial();
-  if (!freeTrial) return false;
-  await storage.updateOrganizationStripeInfo(orgId, {
-    subscriptionStatus: "trial",
-    stripeCustomerId: null,
-    stripeSubscriptionId: null
-  });
-  await storage.updateOrganization(orgId, {
-    planId: freeTrial.id,
-    additionalPetSlots: 0
-  });
-  return true;
-}
-async function handleCancellation(orgId, org) {
-  if (isWithinTrialWindow(org)) {
-    const reverted = await revertToFreeTrial(orgId);
-    if (reverted) return "reverted_to_trial";
-  }
-  await storage.updateOrganizationStripeInfo(orgId, {
-    subscriptionStatus: "canceled",
-    stripeCustomerId: null,
-    stripeSubscriptionId: null
-  });
-  await storage.updateOrganization(orgId, {
-    additionalPetSlots: 0,
-    planId: null
-  });
-  return "canceled";
-}
-function canStartFreeTrial(org) {
-  if (org.hasUsedFreeTrial) return false;
-  if (org.trialEndsAt) return false;
-  return true;
-}
-async function markFreeTrialUsed(orgId) {
-  await storage.updateOrganization(orgId, { hasUsedFreeTrial: true });
-}
-
-// server/supabase-storage.ts
-var SUPABASE_URL = process.env.SUPABASE_URL;
-var SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-async function uploadToStorage(base64DataUri, bucket, filename) {
-  const match = base64DataUri.match(/^data:([^;]+);base64,(.+)$/s);
-  if (!match) throw new Error("Invalid base64 data URI");
-  const contentType = match[1];
-  const buffer = Buffer.from(match[2], "base64");
-  const res = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/${bucket}/${filename}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-        "Content-Type": contentType,
-        "x-upsert": "true"
-      },
-      body: buffer
-    }
-  );
-  if (!res.ok) {
-    const text2 = await res.text();
-    throw new Error(`Storage upload failed (${res.status}): ${text2}`);
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${filename}`;
-}
-async function fetchImageAsBuffer(urlOrDataUri) {
-  if (urlOrDataUri.startsWith("data:")) {
-    const base64Data = urlOrDataUri.replace(/^data:image\/\w+;base64,/, "");
-    return Buffer.from(base64Data, "base64");
-  }
-  const res = await fetch(urlOrDataUri);
-  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
-}
-function isDataUri(value) {
-  return value.startsWith("data:");
-}
-
-// server/routes/helpers.ts
-var ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-function sanitizeForPrompt(input) {
-  return input.replace(/[^\w\s\-'.,:;!?()]/g, "").trim();
-}
-var aiRateLimiter = (0, import_express_rate_limit2.default)({
-  windowMs: 60 * 1e3,
-  max: 10,
-  message: { error: "Too many requests. Please wait a minute before generating more portraits." },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.user?.claims?.sub || "anonymous",
-  validate: { xForwardedForHeader: false }
-});
-var apiRateLimiter = (0, import_express_rate_limit2.default)({
-  windowMs: 60 * 1e3,
-  max: 100,
-  message: { error: "Too many requests. Please try again shortly." },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-var MAX_ADDITIONAL_SLOTS = 5;
-var MAX_EDITS_PER_IMAGE = 4;
-async function generateUniqueSlug(name, excludeOrgId) {
-  let baseSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  let slug = baseSlug;
-  let attempts = 0;
-  while (attempts < 10) {
-    const existing = await storage.getOrganizationBySlug(slug);
-    if (!existing || excludeOrgId && existing.id === excludeOrgId) break;
-    slug = `${baseSlug}-${Math.random().toString(36).substring(2, 6)}`;
-    attempts++;
-  }
-  return slug;
-}
-async function validateAndCleanStripeData(orgId) {
-  const org = await storage.getOrganization(orgId);
-  if (!org) return { customerId: null, subscriptionId: null, subscriptionStatus: null, cleaned: false };
-  const testMode = org.stripeTestMode;
-  let cleaned = false;
-  let validCustomerId = org.stripeCustomerId || null;
-  let validSubscriptionId = org.stripeSubscriptionId || null;
-  let currentStatus = org.subscriptionStatus || null;
-  if (validCustomerId) {
-    try {
-      const stripe = getStripeClient(testMode);
-      const customer = await stripe.customers.retrieve(validCustomerId);
-      if (customer.deleted) {
-        console.warn(`[stripe-cleanup] Customer ${validCustomerId} is deleted in Stripe for org ${orgId}, clearing`);
-        validCustomerId = null;
-        validSubscriptionId = null;
-        cleaned = true;
-      }
-    } catch (err) {
-      if (err?.type === "StripeInvalidRequestError" || err?.statusCode === 404 || err?.code === "resource_missing") {
-        console.warn(`[stripe-cleanup] Stale customer ${validCustomerId} for org ${orgId}, clearing`);
-        validCustomerId = null;
-        validSubscriptionId = null;
-        cleaned = true;
-      }
-    }
-  }
-  if (validSubscriptionId) {
-    try {
-      const stripe = getStripeClient(testMode);
-      const sub = await stripe.subscriptions.retrieve(validSubscriptionId);
-      if (sub.status === "canceled" || sub.status === "incomplete_expired") {
-        console.warn(`[stripe-cleanup] Subscription ${validSubscriptionId} is ${sub.status} in Stripe for org ${orgId}, clearing`);
-        validSubscriptionId = null;
-        cleaned = true;
-      }
-    } catch (err) {
-      if (err?.type === "StripeInvalidRequestError" || err?.statusCode === 404 || err?.code === "resource_missing") {
-        console.warn(`[stripe-cleanup] Stale subscription ${validSubscriptionId} for org ${orgId}, clearing`);
-        validSubscriptionId = null;
-        cleaned = true;
-      }
-    }
-  }
-  if (cleaned) {
-    const stripeUpdate = {
-      stripeCustomerId: validCustomerId,
-      stripeSubscriptionId: validSubscriptionId
-    };
-    if (!validSubscriptionId && currentStatus === "active") {
-      stripeUpdate.subscriptionStatus = "canceled";
-      currentStatus = "canceled";
-    }
-    await storage.updateOrganizationStripeInfo(orgId, stripeUpdate);
-    const orgUpdates = {};
-    if (!validSubscriptionId && (org.additionalPetSlots || 0) > 0) {
-      orgUpdates.additionalPetSlots = 0;
-    }
-    if (Object.keys(orgUpdates).length > 0) {
-      await storage.updateOrganization(orgId, orgUpdates);
-    }
-  }
-  return { customerId: validCustomerId, subscriptionId: validSubscriptionId, subscriptionStatus: currentStatus, cleaned };
-}
-function computePetLimitInfo(org, plan, petCount) {
-  const basePetLimit = plan?.dogsLimit ?? null;
-  const effectivePetLimit = basePetLimit != null ? basePetLimit + (org.additionalPetSlots || 0) : null;
-  return {
-    petCount,
-    petLimit: effectivePetLimit,
-    basePetLimit,
-    additionalPetSlots: org.additionalPetSlots || 0,
-    maxAdditionalSlots: MAX_ADDITIONAL_SLOTS,
-    isPaidPlan: plan ? plan.priceMonthly > 0 : false
-  };
-}
-async function checkDogLimit(orgId) {
-  const org = await storage.getOrganization(orgId);
-  if (!org) return "Organization not found.";
-  if (org.subscriptionStatus === "canceled") return "Your subscription has been canceled. Please choose a new plan.";
-  if (isTrialExpired(org)) return "Your 30-day free trial has expired. Please upgrade to a paid plan to continue.";
-  if (!org.planId) return "No plan selected. Please choose a plan before adding pets.";
-  const plan = await storage.getSubscriptionPlan(org.planId);
-  if (!plan) return "Plan not found. Please contact support.";
-  if (!plan.dogsLimit) return null;
-  const effectiveLimit = plan.dogsLimit + (org.additionalPetSlots || 0);
-  const orgDogs = await storage.getDogsByOrganization(orgId);
-  if (orgDogs.length >= effectiveLimit) {
-    return `You've reached your pet limit of ${effectiveLimit}. Add extra slots or upgrade your plan.`;
-  }
-  return null;
-}
-function generatePetCode(name) {
-  const prefix = (name || "PET").substring(0, 3).toUpperCase().replace(/[^A-Z]/g, "X");
-  const suffix = Math.floor(1e3 + Math.random() * 9e3);
-  return `${prefix}-${suffix}`;
-}
-async function createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId) {
-  if (!dogData.petCode) {
-    dogData.petCode = generatePetCode(dogData.name);
-  }
-  let photoUrl = originalPhotoUrl;
-  if (photoUrl && isDataUri(photoUrl)) {
-    try {
-      const fname = `dog-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-      photoUrl = await uploadToStorage(photoUrl, "originals", fname);
-    } catch (err) {
-      console.error("[storage-upload] Dog photo upload failed, using base64 fallback:", err);
-    }
-  }
-  let portraitUrl = generatedPortraitUrl;
-  if (portraitUrl && isDataUri(portraitUrl)) {
-    try {
-      const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-      portraitUrl = await uploadToStorage(portraitUrl, "portraits", fname);
-    } catch (err) {
-      console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
-    }
-  }
-  const dog = await storage.createDog({
-    ...dogData,
-    originalPhotoUrl: photoUrl,
-    organizationId: orgId
-  });
-  if (portraitUrl && styleId) {
-    const existingPortrait = await storage.getPortraitByDogAndStyle(dog.id, styleId);
-    if (!existingPortrait) {
-      await storage.createPortrait({
-        dogId: dog.id,
-        styleId,
-        generatedImageUrl: portraitUrl,
-        isSelected: true
-      });
-      await storage.incrementOrgPortraitsUsed(orgId);
-    } else {
-      await storage.updatePortrait(existingPortrait.id, { generatedImageUrl: portraitUrl });
-    }
-  }
-  return dog;
-}
-var isAdmin = async (req, res, next) => {
-  if (!req.user?.claims?.email || req.user.claims.email !== ADMIN_EMAIL) {
-    return res.status(403).json({ error: "Admin access required" });
-  }
-  next();
-};
-function toPublicOrg(org) {
-  return {
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    description: org.description,
-    websiteUrl: org.websiteUrl,
-    logoUrl: org.logoUrl,
-    isActive: org.isActive,
-    createdAt: org.createdAt
-  };
-}
-async function resolveOrgForUser(userId, userEmail, dogId) {
-  const userIsAdmin = userEmail === ADMIN_EMAIL;
-  if (dogId) {
-    const dog = await storage.getDog(dogId);
-    if (!dog || !dog.organizationId) {
-      return { org: null, error: "Pet not found", status: 404 };
-    }
-    const org2 = await storage.getOrganization(dog.organizationId);
-    if (!org2) {
-      return { org: null, error: "Organization not found", status: 404 };
-    }
-    if (userIsAdmin || org2.ownerId === userId) {
-      return { org: org2 };
-    }
-    return { org: null, error: "Not authorized to access this dog", status: 403 };
-  }
-  const org = await storage.getOrganizationByOwner(userId);
-  if (org) {
-    return { org };
-  }
-  if (userIsAdmin) {
-    return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific business.", status: 400 };
-  }
-  return { org: null, error: "You need to create an organization first", status: 400 };
-}
+// server/routes.ts
+init_helpers();
 
 // server/routes/startup.ts
+init_storage();
+init_stripeClient();
+init_subscription();
+init_helpers();
 async function runStartupHealthCheck() {
   if (ADMIN_EMAIL) {
     const allOrgsStartup = await storage.getAllOrganizations();
@@ -1625,6 +2623,9 @@ ${issues.join("\n")}`);
 }
 
 // server/routes/organizations.ts
+init_storage();
+init_subscription();
+init_helpers();
 function registerOrganizationRoutes(app2) {
   app2.get("/api/my-organization", isAuthenticated, async (req, res) => {
     try {
@@ -1885,184 +2886,17 @@ function registerOrganizationRoutes(app2) {
   });
 }
 
-// server/stripeService.ts
-var cachedTestAddonPriceId = null;
-var cachedLiveAddonPriceId = null;
-function isTestMode(testMode) {
-  return testMode !== false;
-}
-var StripeService = class {
-  async createCustomer(email, orgId, organizationName, testMode) {
-    const stripe = getStripeClient(testMode);
-    return await stripe.customers.create({
-      email,
-      name: organizationName,
-      metadata: { orgId: String(orgId), organizationName }
-    });
-  }
-  async retrieveCustomer(customerId, testMode) {
-    const stripe = getStripeClient(testMode);
-    return await stripe.customers.retrieve(customerId);
-  }
-  async createCheckoutSession(customerId, priceId, successUrl, cancelUrl, testMode, trialDays, metadata) {
-    const stripe = getStripeClient(testMode);
-    const effectivePriceId = getPriceId(priceId, testMode);
-    const sessionParams = {
-      customer: customerId,
-      payment_method_types: ["card"],
-      line_items: [{ price: effectivePriceId, quantity: 1 }],
-      mode: "subscription",
-      success_url: successUrl,
-      cancel_url: cancelUrl
-    };
-    if (trialDays && trialDays > 0) {
-      sessionParams.subscription_data = {
-        trial_period_days: trialDays
-      };
-    }
-    if (metadata) {
-      sessionParams.metadata = metadata;
-    }
-    return await stripe.checkout.sessions.create(sessionParams);
-  }
-  async createCustomerPortalSession(customerId, returnUrl, testMode) {
-    const stripe = getStripeClient(testMode);
-    return await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: returnUrl
-    });
-  }
-  async retrieveCheckoutSession(sessionId, testMode) {
-    const stripe = getStripeClient(testMode);
-    return await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription"]
-    });
-  }
-  async retrieveSubscription(subscriptionId, testMode) {
-    const stripe = getStripeClient(testMode);
-    return await stripe.subscriptions.retrieve(subscriptionId);
-  }
-  async getOrCreateAddonPriceId(testMode) {
-    const test = isTestMode(testMode);
-    const cached = test ? cachedTestAddonPriceId : cachedLiveAddonPriceId;
-    if (cached) return cached;
-    if (process.env.STRIPE_ADDON_PRICE_ID) {
-      const val = process.env.STRIPE_ADDON_PRICE_ID;
-      if (test) cachedTestAddonPriceId = val;
-      else cachedLiveAddonPriceId = val;
-      return val;
-    }
-    const stripe = getStripeClient(testMode);
-    const products = await stripe.products.search({
-      query: "metadata['type']:'pet_slot_addon'"
-    });
-    let product;
-    if (products.data.length > 0) {
-      product = products.data[0];
-    } else {
-      product = await stripe.products.create({
-        name: "Extra Pet Slot",
-        description: "Additional pet slot for your business ($3/month per slot)",
-        metadata: { type: "pet_slot_addon" }
-      });
-    }
-    const prices = await stripe.prices.list({
-      product: product.id,
-      active: true,
-      type: "recurring"
-    });
-    let price = prices.data.find(
-      (p) => p.unit_amount === 300 && p.recurring?.interval === "month"
-    );
-    if (!price) {
-      price = await stripe.prices.create({
-        product: product.id,
-        unit_amount: 300,
-        currency: "usd",
-        recurring: { interval: "month" },
-        metadata: { type: "pet_slot_addon" }
-      });
-    }
-    if (test) cachedTestAddonPriceId = price.id;
-    else cachedLiveAddonPriceId = price.id;
-    return price.id;
-  }
-  async updateAddonSlots(subscriptionId, quantity, testMode) {
-    const stripe = getStripeClient(testMode);
-    const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const existingItem = subscription.items.data.find((item) => {
-      const priceId = typeof item.price === "string" ? item.price : item.price?.id;
-      return priceId === addonPriceId;
-    });
-    if (quantity === 0 && existingItem) {
-      await stripe.subscriptionItems.del(existingItem.id, {
-        proration_behavior: "create_prorations"
-      });
-    } else if (quantity > 0 && existingItem) {
-      await stripe.subscriptionItems.update(existingItem.id, {
-        quantity,
-        proration_behavior: "create_prorations"
-      });
-    } else if (quantity > 0 && !existingItem) {
-      await stripe.subscriptionItems.create({
-        subscription: subscriptionId,
-        price: addonPriceId,
-        quantity,
-        proration_behavior: "create_prorations"
-      });
-    }
-  }
-  async removeAddonFromSubscription(subscriptionId, testMode) {
-    const stripe = getStripeClient(testMode);
-    const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const existingItem = subscription.items.data.find((item) => {
-      const priceId = typeof item.price === "string" ? item.price : item.price?.id;
-      return priceId === addonPriceId;
-    });
-    if (existingItem) {
-      await stripe.subscriptionItems.del(existingItem.id, {
-        proration_behavior: "create_prorations"
-      });
-    }
-  }
-  async getAddonPriceId(testMode) {
-    return this.getOrCreateAddonPriceId(testMode);
-  }
-  async scheduleDowngrade(subscriptionId, newPriceId, testMode) {
-    const stripe = getStripeClient(testMode);
-    const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const mainItem = subscription.items.data.find((item) => {
-      const priceId = typeof item.price === "string" ? item.price : item.price?.id;
-      return priceId !== addonPriceId;
-    }) || subscription.items.data[0];
-    const effectivePriceId = getPriceId(newPriceId, testMode);
-    await stripe.subscriptions.update(subscriptionId, {
-      proration_behavior: "none",
-      items: [{
-        id: mainItem.id,
-        price: effectivePriceId
-      }],
-      cancel_at_period_end: false
-    });
-    const periodEnd = new Date(subscription.current_period_end * 1e3);
-    return { currentPeriodEnd: periodEnd };
-  }
-  async getSubscriptionPeriodEnd(subscriptionId, testMode) {
-    const stripe = getStripeClient(testMode);
-    try {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      return new Date(subscription.current_period_end * 1e3);
-    } catch {
-      return null;
-    }
-  }
-};
-var stripeService = new StripeService();
-
 // server/routes/plans-billing.ts
+init_storage();
+init_stripeService();
+init_stripeClient();
+init_helpers();
+function getEffectivePlanPrice(plan, testMode) {
+  if (testMode === false) {
+    return plan.stripeLivePriceId || plan.stripePriceId || null;
+  }
+  return plan.stripePriceId || null;
+}
 function registerPlansBillingRoutes(app2) {
   app2.get("/api/plans", async (req, res) => {
     try {
@@ -2092,7 +2926,8 @@ function registerPlansBillingRoutes(app2) {
         return res.status(400).json({ error: "Plan ID is required" });
       }
       const plan = await storage.getSubscriptionPlan(planId);
-      if (!plan || !plan.stripePriceId) {
+      const effectivePrice = plan ? getEffectivePlanPrice(plan, testMode) : null;
+      if (!plan || !effectivePrice) {
         return res.status(400).json({ error: "Invalid plan selected" });
       }
       const callerEmail = req.user.claims.email;
@@ -2130,7 +2965,7 @@ function registerPlansBillingRoutes(app2) {
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const session = await stripeService.createCheckoutSession(
         customerId,
-        plan.stripePriceId,
+        effectivePrice,
         `${baseUrl}/dashboard?subscription=success&plan=${planId}&session_id={CHECKOUT_SESSION_ID}&orgId=${org.id}&testMode=${testMode}`,
         `${baseUrl}/dashboard`,
         testMode,
@@ -2185,12 +3020,12 @@ function registerPlansBillingRoutes(app2) {
       } else if (subscriptionId) {
         subscription = await stripeService.retrieveSubscription(subscriptionId, testMode);
       }
-      if (subscription && plan.stripePriceId) {
+      const confirmEffectivePrice = getEffectivePlanPrice(plan, testMode);
+      if (subscription && confirmEffectivePrice) {
         const subItems = subscription.items?.data || [];
-        const effectivePriceId = getPriceId(plan.stripePriceId, testMode);
         const matchesPlan = subItems.some((item) => {
           const priceId = typeof item.price === "string" ? item.price : item.price?.id;
-          return priceId === plan.stripePriceId || priceId === effectivePriceId;
+          return priceId === confirmEffectivePrice || priceId === plan.stripePriceId || priceId === plan.stripeLivePriceId;
         });
         if (!matchesPlan) {
           return res.status(400).json({ error: "Subscription does not match the selected plan" });
@@ -2321,12 +3156,14 @@ function registerPlansBillingRoutes(app2) {
         return res.status(400).json({ error: "Plan ID and Organization ID are required" });
       }
       const plan = await storage.getSubscriptionPlan(planId);
-      if (!plan || !plan.stripePriceId) {
-        return res.status(400).json({ error: "Invalid plan selected" });
-      }
       const org = await storage.getOrganization(orgId);
       if (!org) {
         return res.status(400).json({ error: "Organization not found" });
+      }
+      const orgTestMode = org.stripeTestMode ?? true;
+      const changePlanPrice = plan ? getEffectivePlanPrice(plan, orgTestMode) : null;
+      if (!plan || !changePlanPrice) {
+        return res.status(400).json({ error: "Invalid plan selected" });
       }
       const callerEmail = req.user.claims.email;
       const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
@@ -2347,7 +3184,7 @@ function registerPlansBillingRoutes(app2) {
       if (isUpgrade) {
         return res.json({ action: "upgrade", planId: plan.id });
       }
-      const result = await stripeService.scheduleDowngrade(org.stripeSubscriptionId, plan.stripePriceId, org.stripeTestMode);
+      const result = await stripeService.scheduleDowngrade(org.stripeSubscriptionId, changePlanPrice, orgTestMode);
       await storage.updateOrganization(org.id, {
         pendingPlanId: plan.id
       });
@@ -2382,8 +3219,10 @@ function registerPlansBillingRoutes(app2) {
       }
       if (org.stripeSubscriptionId) {
         const currentPlan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-        if (currentPlan?.stripePriceId) {
-          await stripeService.scheduleDowngrade(org.stripeSubscriptionId, currentPlan.stripePriceId, org.stripeTestMode);
+        const cancelOrgTestMode = org.stripeTestMode ?? true;
+        const currentPrice = currentPlan ? getEffectivePlanPrice(currentPlan, cancelOrgTestMode) : null;
+        if (currentPrice) {
+          await stripeService.scheduleDowngrade(org.stripeSubscriptionId, currentPrice, cancelOrgTestMode);
         }
       }
       await storage.updateOrganization(org.id, {
@@ -2485,61 +3324,9 @@ function registerPlansBillingRoutes(app2) {
 }
 
 // server/routes/packs.ts
+init_storage();
 init_db();
-
-// shared/pack-config.ts
-var DOG_PACKS = {
-  celebrate: {
-    type: "celebrate",
-    name: "Celebrate",
-    description: "Seasonal favorites, cozy vibes & celebrations",
-    styleIds: [23, 22, 10, 19, 11]
-    // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party
-  },
-  artistic: {
-    type: "artistic",
-    name: "Artistic",
-    description: "Fine art & classical \u2014 elegant framed keepsakes",
-    styleIds: [1, 5, 26, 24, 2, 6]
-    // Renaissance Noble, Art Nouveau Beauty, Impressionist Garden, Vintage Classic, Victorian Gentleman, Steampunk Explorer
-  },
-  fun: {
-    type: "fun",
-    name: "Fun",
-    description: "Costumes, adventures & bold characters",
-    styleIds: [14, 12, 17, 29, 30, 31]
-    // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party
-  }
-};
-var CAT_PACKS = {
-  celebrate: {
-    type: "celebrate",
-    name: "Celebrate",
-    description: "Seasonal favorites, cozy vibes & celebrations",
-    styleIds: [112, 113, 114, 104, 111]
-    // Halloween Black Cat, Holiday Stocking, Spring Blossoms, Sunbeam Napper, Cozy Blanket
-  },
-  artistic: {
-    type: "artistic",
-    name: "Artistic",
-    description: "Refined classical portraits & fine art",
-    styleIds: [101, 102, 103, 109]
-    // Egyptian Royalty, Renaissance Feline, Victorian Lady, Garden Explorer
-  },
-  fun: {
-    type: "fun",
-    name: "Fun",
-    description: "Playful adventures & quirky characters",
-    styleIds: [106, 115, 116, 117, 118, 119]
-    // Purrista Barista, Box Inspector, Tea Party Guest, Pool Party, Campfire, Sleepover Party
-  }
-};
-function getPacks(species) {
-  const packs = species === "dog" ? DOG_PACKS : CAT_PACKS;
-  return [packs.celebrate, packs.fun, packs.artistic];
-}
-
-// server/routes/packs.ts
+init_pack_config();
 function registerPackRoutes(app2) {
   app2.get("/api/portrait-styles", async (req, res) => {
     try {
@@ -2660,6 +3447,7 @@ function registerPackRoutes(app2) {
 
 // server/routes/dogs.ts
 var import_zod = require("zod");
+init_storage();
 init_db();
 
 // shared/content-filter.ts
@@ -3073,173 +3861,11 @@ function isValidBreed(breed, species) {
   return validDogBreeds.has(breed) || validCatBreeds.has(breed);
 }
 
-// server/gemini.ts
-var import_genai = require("@google/genai");
-
-// server/semaphore.ts
-var Semaphore = class {
-  constructor(maxConcurrent) {
-    this.maxConcurrent = maxConcurrent;
-  }
-  queue = [];
-  active = 0;
-  async acquire() {
-    if (this.active < this.maxConcurrent) {
-      this.active++;
-      return;
-    }
-    return new Promise((resolve) => {
-      this.queue.push(() => {
-        this.active++;
-        resolve();
-      });
-    });
-  }
-  release() {
-    this.active--;
-    const next = this.queue.shift();
-    if (next) next();
-  }
-  async run(fn) {
-    await this.acquire();
-    try {
-      return await fn();
-    } finally {
-      this.release();
-    }
-  }
-};
-
-// server/gemini.ts
-var ai = new import_genai.GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY
-});
-var geminiSemaphore = new Semaphore(10);
-function extractImageFromResponse(response) {
-  const part = response.candidates?.[0]?.content?.parts?.find(
-    (p) => p.inlineData
-  );
-  if (!part?.inlineData?.data) return null;
-  const mime = part.inlineData.mimeType || "image/png";
-  return `data:${mime};base64,${part.inlineData.data}`;
-}
-function parseBase64(dataUrl) {
-  const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
-  const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
-  return { mimeType, data };
-}
-function isRetryableError(err) {
-  const status = err?.status || err?.httpStatusCode || err?.code;
-  if (status === 429 || status === 503) return true;
-  const msg = String(err?.message || "").toLowerCase();
-  return msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable");
-}
-async function callWithRetry(fn, label) {
-  const MAX_RETRIES = 3;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (attempt < MAX_RETRIES && isRetryableError(err)) {
-        const delay = Math.pow(2, attempt + 1) * 1e3 + Math.random() * 1e3;
-        console.warn(`[gemini] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error(`${label}: all retries exhausted`);
-}
-async function generateImage(prompt, sourceImage) {
-  if (sourceImage) {
-    try {
-      const result = await generateWithImage(prompt, sourceImage);
-      if (result) return result;
-    } catch {
-    }
-  }
-  return generateTextOnly(prompt);
-}
-var FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 THE PHOTO IS THE GROUND TRUTH.
-Study the attached photo carefully. This is the EXACT animal you must depict.
-
-CRITICAL RULE \u2014 PHOTO OVERRIDES TEXT:
-The style description below may mention a breed name (e.g., "Beagle", "Labrador", "Persian cat"). IGNORE any breed name in the text if it does not match what you see in the photo. The PHOTO is the sole authority on what this animal looks like. If the text says "Beagle" but the photo shows a Chow Chow, you MUST depict a Chow Chow. If the text says "Tabby" but the photo shows a Siamese, you MUST depict a Siamese. NEVER generate an animal that matches the text breed instead of the photo \u2014 the photo always wins.
-
-COLOR AND PATTERN MATCHING IS THE #1 PRIORITY:
-Most animals are NOT one uniform color. Study WHERE each color appears on this specific animal's body:
-- Note which areas are lighter vs darker (chest, belly, legs, face, back, ears, tail)
-- Note any two-tone or multi-tone patterns \u2014 e.g., white chest with reddish back, dark face with lighter body, tabby stripes, tuxedo markings, brindle patterns
-- Note the EXACT boundaries where one color transitions to another
-You must reproduce the PRECISE color of EACH body area \u2014 not a uniform "average" color, not a "typical" breed color, not a slightly different shade. If the chest is white and the back is reddish, the portrait must show a white chest and a reddish back in those same proportions. If there are patches, spots, or gradients, they must appear in the same locations. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT let the artistic style, scene lighting, or background colors influence or shift the animal's actual coat colors.
-
-You MUST also faithfully reproduce THIS SPECIFIC animal's:
-- Face shape, muzzle, and facial structure
-- Ear shape, size, and positioning
-- Fur/coat texture and length
-- Eye color and shape
-- Body size and proportions
-- Any unique distinguishing features (spots, patches, scars, etc.)
-
-DO NOT substitute a generic or different-looking animal. DO NOT default to a "breed typical" appearance. The generated portrait must be unmistakably recognizable as the SAME individual animal in the reference photo.
-
-Now apply the following artistic style while preserving this exact animal's appearance, coloring, and color distribution:
-
-`;
-async function generateWithImage(prompt, sourceImage) {
-  const { mimeType, data } = parseBase64(sourceImage);
-  const enhancedPrompt = FIDELITY_PREFIX + prompt;
-  return geminiSemaphore.run(
-    () => callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
-        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
-      });
-      return extractImageFromResponse(response);
-    }, "generateWithImage")
-  );
-}
-async function generateTextOnly(prompt) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await geminiSemaphore.run(
-      () => callWithRetry(async () => {
-        const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-image",
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
-        });
-        return extractImageFromResponse(response);
-      }, "generateTextOnly")
-    );
-    if (result) return result;
-  }
-  throw new Error("Failed to generate image after retries");
-}
-async function editImage(currentImage, editPrompt) {
-  const { mimeType, data } = parseBase64(currentImage);
-  return geminiSemaphore.run(
-    () => callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: [{
-          role: "user",
-          parts: [
-            { inlineData: { mimeType, data } },
-            { text: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.` }
-          ]
-        }],
-        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
-      });
-      const result = extractImageFromResponse(response);
-      if (!result) throw new Error("Failed to edit image");
-      return result;
-    }, "editImage")
-  );
-}
-
 // server/routes/dogs.ts
+init_helpers();
+init_pack_config();
+init_gemini();
+init_supabase_storage();
 function registerDogRoutes(app2) {
   app2.get("/api/dogs/code/:petCode", async (req, res) => {
     try {
@@ -3771,8 +4397,8 @@ function registerDogRoutes(app2) {
       const { photo, caption } = req.body;
       if (!photo) return res.status(400).json({ error: "Photo data is required" });
       const industryType = org.industryType || "groomer";
-      const photoLimits = { groomer: 4, boarding: 5, daycare: 5 };
-      const limit = photoLimits[industryType] || 4;
+      const photoLimits = { groomer: 3, boarding: 5, daycare: 4 };
+      const limit = photoLimits[industryType] || 3;
       const visitDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const currentCount = await storage.countVisitPhotosForDate(dogId, visitDate);
       if (currentCount >= limit) {
@@ -3830,9 +4456,13 @@ function registerDogRoutes(app2) {
 
 // server/routes/portraits.ts
 var import_sharp2 = __toESM(require("sharp"), 1);
+init_storage();
+init_gemini();
 
 // server/generate-mockups.ts
 var import_sharp = __toESM(require("sharp"), 1);
+init_storage();
+init_supabase_storage();
 import_sharp.default.cache(false);
 var WIDTH = 1200;
 var HEIGHT = 630;
@@ -4026,6 +4656,11 @@ async function generatePawfileMockup(dogId) {
   composites.push({ input: ppLogo2.svg, top: HEIGHT - 48, left: WIDTH - 280 });
   return (0, import_sharp.default)(bg).composite(composites).png().toBuffer();
 }
+
+// server/routes/portraits.ts
+init_subscription();
+init_helpers();
+init_supabase_storage();
 
 // server/job-queue.ts
 var import_crypto = require("crypto");
@@ -4560,208 +5195,11 @@ function registerPortraitRoutes(app2) {
 }
 
 // server/routes/batch.ts
+init_storage();
 init_db();
-
-// server/routes/sms.ts
-function formatPhoneNumber(raw) {
-  const cleaned = raw.replace(/[\s\-().]/g, "");
-  return cleaned.startsWith("+") ? cleaned : cleaned.startsWith("1") ? `+${cleaned}` : `+1${cleaned}`;
-}
-function isTwilioConfigured() {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const msgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
-  const hasAuthToken = !!process.env.TWILIO_AUTH_TOKEN;
-  const hasApiKey = !!(process.env.TWILIO_API_KEY_SID && process.env.TWILIO_API_KEY_SECRET);
-  return !!(sid && msgSvc && (hasAuthToken || hasApiKey));
-}
-function isTelnyxConfigured() {
-  return !!(process.env.TELNYX_API_KEY && process.env.TELNYX_PHONE_NUMBER);
-}
-function isSmsConfigured() {
-  return isTwilioConfigured() || isTelnyxConfigured();
-}
-async function sendViaTwilio(phone, body) {
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioMsgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
-  let authHeader;
-  if (process.env.TWILIO_AUTH_TOKEN) {
-    authHeader = `Basic ${Buffer.from(`${twilioSid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`;
-  } else {
-    authHeader = `Basic ${Buffer.from(`${process.env.TWILIO_API_KEY_SID}:${process.env.TWILIO_API_KEY_SECRET}`).toString("base64")}`;
-  }
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Authorization": authHeader
-    },
-    body: new URLSearchParams({ To: phone, MessagingServiceSid: twilioMsgSvc, Body: body }).toString()
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    return { success: false, error: `Twilio: ${err.message || err.code || "Failed"}`, provider: "twilio" };
-  }
-  return { success: true, provider: "twilio" };
-}
-async function sendViaTelnyx(phone, body) {
-  const apiKey = process.env.TELNYX_API_KEY;
-  const from = process.env.TELNYX_PHONE_NUMBER;
-  const res = await fetch("https://api.telnyx.com/v2/messages", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ from, to: phone, text: body })
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    const detail = err.errors?.[0]?.detail || err.errors?.[0]?.title || "Failed";
-    return { success: false, error: `Telnyx: ${detail}`, provider: "telnyx" };
-  }
-  const data = await res.json();
-  const status = data.data?.to?.[0]?.status;
-  if (status === "delivery_failed") {
-    const errDetail = data.data?.errors?.[0]?.detail || "Delivery failed";
-    return { success: false, error: `Telnyx: ${errDetail}`, provider: "telnyx" };
-  }
-  return { success: true, provider: "telnyx" };
-}
-async function sendSms(to, body) {
-  const phone = formatPhoneNumber(to);
-  const errors = [];
-  if (isTwilioConfigured()) {
-    try {
-      const result = await sendViaTwilio(phone, body);
-      if (result.success) {
-        console.log(`[sms] Sent via Twilio to ${phone}`);
-        return result;
-      }
-      console.warn(`[sms] Twilio failed: ${result.error}`);
-      errors.push(result.error || "Twilio failed");
-    } catch (err) {
-      console.warn(`[sms] Twilio error: ${err.message}`);
-      errors.push(`Twilio: ${err.message}`);
-    }
-  }
-  if (isTelnyxConfigured()) {
-    try {
-      const result = await sendViaTelnyx(phone, body);
-      if (result.success) {
-        console.log(`[sms] Sent via Telnyx to ${phone}`);
-        return result;
-      }
-      console.warn(`[sms] Telnyx failed: ${result.error}`);
-      errors.push(result.error || "Telnyx failed");
-    } catch (err) {
-      console.warn(`[sms] Telnyx error: ${err.message}`);
-      errors.push(`Telnyx: ${err.message}`);
-    }
-  }
-  if (errors.length === 0) {
-    return { success: false, error: "No SMS provider configured" };
-  }
-  return { success: false, error: errors.join("; ") };
-}
-
-// server/routes/email.ts
-function isEmailConfigured() {
-  return !!process.env.RESEND_API_KEY;
-}
-async function sendEmail(to, subject, html, attachments, fromName) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    return { success: false, error: "Email service is not configured" };
-  }
-  try {
-    const emailAddr = process.env.RESEND_FROM_ADDRESS || "noreply@pawtraitpros.com";
-    const displayName = fromName || "Pawtrait Pros";
-    const payload = {
-      from: `${displayName} <${emailAddr}>`,
-      to: [to],
-      subject,
-      html
-    };
-    if (attachments && attachments.length > 0) {
-      payload.attachments = attachments.map((a) => ({
-        filename: a.filename,
-        content: a.content.toString("base64")
-      }));
-    }
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      const message = err?.message || err?.statusCode || "Failed to send email";
-      console.error(`[email] Send failed to ${to}:`, message);
-      return { success: false, error: String(message) };
-    }
-    return { success: true };
-  } catch (err) {
-    console.error(`[email] Error sending to ${to}:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
-function buildDepartureEmail(orgName, orgLogoUrl, dogName, pawfileUrl, portraitImageUrl, orgId) {
-  const subject = `${dogName}'s portrait from ${orgName} is ready!`;
-  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-  const logoSrc = orgLogoUrl?.startsWith("https://") ? orgLogoUrl : orgId ? `${appUrl}/api/organizations/${orgId}/logo` : null;
-  const parts = [];
-  parts.push(`<div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">`);
-  parts.push(`<div style="text-align:center;margin-bottom:20px;">`);
-  if (logoSrc) {
-    parts.push(`<img src="${logoSrc}" alt="${orgName}" style="max-height:60px;margin-bottom:12px;" /><br/>`);
-  }
-  parts.push(`<h2 style="color:#1a1a1a;margin:0;">${orgName}</h2></div>`);
-  parts.push(`<p style="font-size:16px;color:#333;line-height:1.5;">We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you!</p>`);
-  if (portraitImageUrl) {
-    parts.push(`<div style="text-align:center;margin:20px 0;"><a href="${pawfileUrl}"><img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:380px;width:100%;border-radius:12px;" /></a></div>`);
-  }
-  parts.push(`<div style="text-align:center;margin:24px 0;"><a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">View & Order a Keepsake</a></div>`);
-  parts.push(`<p style="font-size:14px;color:#666;text-align:center;line-height:1.5;">Love it? Order a framed print, mug, tote, or other keepsake featuring ${dogName}.</p>`);
-  parts.push(`<p style="font-size:12px;color:#999;text-align:center;margin-top:24px;">Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a></p>`);
-  parts.push(`</div>`);
-  return { subject, html: parts.join("") };
-}
-function buildOrderConfirmationEmail(orgName, dogName, orderId, totalCents, itemDescriptions) {
-  const subject = `Order #${orderId} confirmed \u2014 ${dogName}'s portrait keepsake`;
-  const total = (totalCents / 100).toFixed(2);
-  const itemsHtml = itemDescriptions.map((desc2) => `<li style="margin-bottom:4px;">${desc2}</li>`).join("");
-  const html = `
-    <div style="font-family:'Libre Baskerville',Georgia,serif;max-width:560px;margin:0 auto;padding:24px;background:#fff;">
-      <h2 style="color:#1a1a1a;text-align:center;">Order Confirmed!</h2>
-      <p style="font-size:16px;color:#333;line-height:1.6;">
-        Thank you for your order from <strong>${orgName}</strong>!
-        Your keepsake${itemDescriptions.length > 1 ? "s" : ""} featuring <strong>${dogName}</strong> will be on the way soon.
-      </p>
-      <div style="background:#f9fafb;border-radius:8px;padding:16px;margin:20px 0;">
-        <p style="margin:0 0 8px;font-weight:600;color:#333;">Order #${orderId}</p>
-        <ul style="margin:0;padding-left:20px;color:#555;">
-          ${itemsHtml}
-        </ul>
-        <p style="margin:12px 0 0;font-weight:600;color:#333;">Total: $${total}</p>
-      </div>
-      <p style="font-size:16px;color:#333;line-height:1.6;">
-        Your hi-res digital download with ${orgName}'s logo is attached to this email \u2014 it's yours to keep!
-      </p>
-      <p style="font-size:16px;color:#333;line-height:1.6;">
-        We'll email you tracking information once your order ships.
-      </p>
-      <p style="font-size:13px;color:#999;text-align:center;margin-top:32px;">
-        Powered by <a href="https://pawtraitpros.com" style="color:#8B5CF6;">Pawtrait Pros</a>
-      </p>
-    </div>
-  `;
-  return { subject, html };
-}
-
-// server/routes/batch.ts
+init_pack_config();
+init_delivery();
+init_helpers();
 function registerBatchRoutes(app2) {
   app2.post("/api/generate-batch", isAuthenticated, async (req, res) => {
     try {
@@ -4815,7 +5253,13 @@ function registerBatchRoutes(app2) {
             continue;
           }
         } else {
-          style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          const usedStyleIds = await storage.getUsedStyleIdsForDog(dogId);
+          const availableStyles = packStyles.filter((s) => !usedStyleIds.includes(s.id));
+          if (availableStyles.length > 0) {
+            style = availableStyles[Math.floor(Math.random() * availableStyles.length)];
+          } else {
+            style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          }
         }
         if (!style) {
           errors.push({ dogId, error: "Could not select style" });
@@ -4872,58 +5316,8 @@ function registerBatchRoutes(app2) {
             results.push({ dogId, sent: false, error: "Dog not found" });
             continue;
           }
-          if (!dog.ownerPhone && !dog.ownerEmail) {
-            results.push({ dogId, sent: false, error: "No owner contact info" });
-            continue;
-          }
-          let petCode = dog.petCode;
-          if (!petCode) {
-            petCode = generatePetCode(dog.name);
-            await storage.updateDog(dog.id, { petCode });
-          }
-          const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-          const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
-          const notifMode = org.notificationMode || "both";
-          const phone = dog.ownerPhone;
-          const email = dog.ownerEmail;
-          const methods = [];
-          let sent = false;
-          const portraits2 = await storage.getPortraitsByDog(dog.id);
-          const latestPortrait = portraits2.length > 0 ? portraits2[portraits2.length - 1] : null;
-          const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith("https://") ? latestPortrait.generatedImageUrl : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : void 0;
-          if ((notifMode === "sms" || notifMode === "both") && phone && isSmsConfigured()) {
-            try {
-              const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
-              const smsResult = await sendSms(phone, smsBody);
-              if (smsResult.success) {
-                methods.push("sms");
-                sent = true;
-              } else {
-                console.error(`[deliver-batch] SMS failed for ${dog.name}:`, smsResult.error);
-              }
-            } catch (smsErr) {
-              console.error(`[deliver-batch] SMS error:`, smsErr.message);
-            }
-          }
-          if ((notifMode === "email" || notifMode === "both") && email && isEmailConfigured()) {
-            try {
-              const { subject, html } = buildDepartureEmail(org.name, org.logoUrl, dog.name, pawfileUrl, portraitImageUrl, org.id);
-              const emailResult = await sendEmail(email, subject, html, void 0, org.name);
-              if (emailResult.success) {
-                methods.push("email");
-                sent = true;
-              } else {
-                console.error(`[deliver-batch] Email failed for ${dog.name}:`, emailResult.error);
-              }
-            } catch (emailErr) {
-              console.error(`[deliver-batch] Email error:`, emailErr.message);
-            }
-          }
-          if (sent) {
-            results.push({ dogId, sent: true, method: methods.join("+") });
-          } else {
-            results.push({ dogId, sent: false, method: "link_only", error: "No notification channel available or all failed" });
-          }
+          const result = await deliverPortraitToOwner(dog, org);
+          results.push({ dogId, ...result });
         } catch (err) {
           results.push({ dogId, sent: false, error: err.message });
         }
@@ -5114,7 +5508,9 @@ function registerBatchRoutes(app2) {
 }
 
 // server/routes/merch.ts
+init_storage();
 init_db();
+init_stripeClient();
 
 // server/printful-config.ts
 var PRINTFUL_PRODUCTS = {
@@ -5324,6 +5720,8 @@ function buildOrderItem(variantId, quantity, imageUrl) {
 }
 
 // server/routes/merch.ts
+init_email();
+init_helpers();
 function registerMerchRoutes(app2) {
   app2.get("/api/merch/products", async (req, res) => {
     try {
@@ -5874,7 +6272,10 @@ function registerMerchRoutes(app2) {
 
 // server/routes/customer-sessions.ts
 var import_crypto2 = __toESM(require("crypto"), 1);
+init_storage();
 init_db();
+init_sms();
+init_helpers();
 function registerCustomerSessionRoutes(app2) {
   app2.post("/api/customer-session", isAuthenticated, async (req, res) => {
     try {
@@ -6100,6 +6501,10 @@ function registerCustomerSessionRoutes(app2) {
 
 // server/routes/admin.ts
 var import_zod2 = require("zod");
+init_storage();
+init_stripeClient();
+init_subscription();
+init_helpers();
 function registerAdminRoutes(app2) {
   app2.post("/api/admin/organizations", isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -6556,6 +6961,7 @@ function registerAdminRoutes(app2) {
 
 // server/routes/sms-routes.ts
 var import_express_rate_limit3 = __toESM(require("express-rate-limit"), 1);
+init_sms();
 function registerSmsRoutes(app2) {
   const smsRateLimiter = (0, import_express_rate_limit3.default)({
     windowMs: 60 * 1e3,
@@ -6594,7 +7000,9 @@ function registerSmsRoutes(app2) {
 
 // server/routes/instagram.ts
 var import_crypto3 = __toESM(require("crypto"), 1);
+init_storage();
 init_db();
+init_helpers();
 var AYRSHARE_API_URL = "https://api.ayrshare.com/api";
 function getAyrshareHeaders(profileKey) {
   const headers = {
@@ -7324,7 +7732,9 @@ function registerInstagramRoutes(app2) {
 }
 
 // server/routes/gdpr.ts
+init_storage();
 init_db();
+init_helpers();
 function registerGdprRoutes(app2) {
   app2.get("/api/my-data/export", isAuthenticated, async (req, res) => {
     try {
@@ -7896,53 +8306,170 @@ var catStyles = portraitStyles2.filter((s) => s.species === "cat");
 var styleCategories = Array.from(new Set(portraitStyles2.map((s) => s.category)));
 
 // server/seed.ts
-var import_drizzle_orm5 = require("drizzle-orm");
+var import_drizzle_orm6 = require("drizzle-orm");
 var planDefinitions = [
+  // Legacy plans (kept for backward compat, marked inactive)
   {
     id: 5,
-    name: "Free Trial",
-    description: "Try Pawtrait Pros free for 30 days with up to 3 pets and 20 portrait credits.",
+    name: "Free Trial (Legacy)",
+    description: "Legacy trial plan \u2014 replaced by vertical-specific plans.",
     priceMonthly: 0,
     dogsLimit: 3,
     monthlyPortraitCredits: 20,
     overagePriceCents: 0,
-    trialDays: 30
+    trialDays: 30,
+    isActive: false
   },
   {
     id: 6,
-    name: "Starter",
-    description: "Perfect for small businesses with up to 15 pets.",
+    name: "Starter (Legacy)",
+    description: "Legacy starter plan \u2014 replaced by vertical-specific plans.",
     priceMonthly: 3900,
     dogsLimit: 15,
     monthlyPortraitCredits: 45,
     overagePriceCents: 400,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpB2LfX3IuyBIb44I2uwq",
     stripeProductId: "prod_TzMYhqaSdDwYcO"
   },
   {
     id: 7,
-    name: "Professional",
-    description: "Ideal for growing businesses with up to 45 pets.",
+    name: "Professional (Legacy)",
+    description: "Legacy professional plan \u2014 replaced by vertical-specific plans.",
     priceMonthly: 7900,
     dogsLimit: 45,
     monthlyPortraitCredits: 135,
     overagePriceCents: 400,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpC2LfX3IuyBIBj9Mdx3f",
     stripeProductId: "prod_TzMY4ahWLz2y9C"
   },
   {
     id: 8,
-    name: "Executive",
-    description: "Best value for large businesses with up to 200 pets.",
+    name: "Executive (Legacy)",
+    description: "Legacy executive plan \u2014 replaced by vertical-specific plans.",
     priceMonthly: 34900,
     dogsLimit: 200,
     monthlyPortraitCredits: 600,
     overagePriceCents: 300,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpC2LfX3IuyBIPtezJkZ0",
     stripeProductId: "prod_TzMYb3LIL5kiZ5"
+  },
+  // ── Groomer Plans ──
+  {
+    id: 10,
+    name: "Groomer Starter",
+    description: "Up to 80 grooms/month with 240 portrait credits. Perfect for small grooming shops.",
+    priceMonthly: 4900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 80,
+    monthlyPortraitCredits: 240,
+    overagePriceCents: 800,
+    // $8 per 10 credits
+    trialDays: 30
+  },
+  {
+    id: 11,
+    name: "Groomer Growth",
+    description: "Up to 160 grooms/month with 480 portrait credits. Ideal for busy grooming businesses.",
+    priceMonthly: 7900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 160,
+    monthlyPortraitCredits: 480,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  {
+    id: 12,
+    name: "Groomer Pro",
+    description: "Up to 240 grooms/month with 720 portrait credits. Built for high-volume grooming operations.",
+    priceMonthly: 14900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 240,
+    monthlyPortraitCredits: 720,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  // ── Daycare Plans ──
+  {
+    id: 13,
+    name: "Daycare Starter",
+    description: "Up to 25 dogs in program with 200 portrait credits. Great for small daycares.",
+    priceMonthly: 5900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 25,
+    monthlyPortraitCredits: 200,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  {
+    id: 14,
+    name: "Daycare Growth",
+    description: "Up to 75 dogs in program with 600 portrait credits. For mid-size daycares.",
+    priceMonthly: 11900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 75,
+    monthlyPortraitCredits: 600,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  {
+    id: 15,
+    name: "Daycare Pro",
+    description: "Up to 150 dogs in program with 1,200 portrait credits. Built for large daycares.",
+    priceMonthly: 24900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 150,
+    monthlyPortraitCredits: 1200,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  // ── Boarding Plans ──
+  {
+    id: 16,
+    name: "Boarding Starter",
+    description: "Up to 50 dogs boarded/month with 350 portrait credits. Perfect for small boarding facilities.",
+    priceMonthly: 5900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 50,
+    monthlyPortraitCredits: 350,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  {
+    id: 17,
+    name: "Boarding Growth",
+    description: "Up to 200 dogs boarded/month with 1,500 portrait credits. For mid-size boarding facilities.",
+    priceMonthly: 14900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 200,
+    monthlyPortraitCredits: 1500,
+    overagePriceCents: 800,
+    trialDays: 30
+  },
+  {
+    id: 18,
+    name: "Boarding Pro",
+    description: "Up to 500 dogs boarded/month with 3,500 portrait credits. Built for large boarding operations.",
+    priceMonthly: 27900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 500,
+    monthlyPortraitCredits: 3500,
+    overagePriceCents: 800,
+    trialDays: 30
   }
 ];
 async function seedDatabase() {
@@ -8023,6 +8550,19 @@ async function seedDatabase() {
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_email TEXT");
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_phone TEXT");
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS pet_code VARCHAR(10)");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS visit_frequency TEXT");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS update_preference TEXT");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS stay_nights INTEGER");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS next_portrait_date TEXT");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS last_portrait_style_id INTEGER");
+        console.log("[migration] Dog vertical fields ready");
+        await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS vertical TEXT");
+        await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_type TEXT");
+        await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_limit INTEGER");
+        console.log("[migration] Subscription plan vertical columns ready");
+        await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_live_price_id TEXT");
+        await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_product_live_id TEXT");
+        console.log("[migration] Stripe live-mode columns ready");
         await pool.query(`CREATE TABLE IF NOT EXISTS daily_pack_selections (
           id SERIAL PRIMARY KEY,
           organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -8073,6 +8613,18 @@ async function seedDatabase() {
     console.log("[migration] consent columns:", migErr.message);
   }
   await seedSubscriptionPlans();
+  try {
+    const { stripeService: stripeService2 } = await Promise.resolve().then(() => (init_stripeService(), stripeService_exports));
+    await stripeService2.ensureVerticalPlanProducts(true);
+  } catch (err) {
+    console.error("[stripe] Test product setup:", err.message);
+  }
+  try {
+    const { stripeService: stripeService2 } = await Promise.resolve().then(() => (init_stripeService(), stripeService_exports));
+    await stripeService2.ensureVerticalPlanProducts(false);
+  } catch (err) {
+    console.error("[stripe] Live product setup:", err.message);
+  }
   const existingStyles = await db.select().from(portraitStyles);
   const existingMap = new Map(existingStyles.map((s) => [s.id, s]));
   const missingStyles = portraitStyles2.filter((s) => !existingMap.has(s.id));
@@ -8098,7 +8650,7 @@ async function seedDatabase() {
         description: style.description,
         promptTemplate: style.promptTemplate,
         category: style.category
-      }).where((0, import_drizzle_orm5.eq)(portraitStyles.id, style.id));
+      }).where((0, import_drizzle_orm6.eq)(portraitStyles.id, style.id));
       updatedCount++;
     }
   }
@@ -8108,7 +8660,7 @@ async function seedDatabase() {
   const validIds = portraitStyles2.map((s) => s.id);
   const staleEntries = existingStyles.filter((s) => !validIds.includes(s.id));
   if (staleEntries.length > 0) {
-    await db.delete(portraitStyles).where((0, import_drizzle_orm5.notInArray)(portraitStyles.id, validIds));
+    await db.delete(portraitStyles).where((0, import_drizzle_orm6.notInArray)(portraitStyles.id, validIds));
     console.log(`Removed ${staleEntries.length} stale portrait styles: ${staleEntries.map((s) => s.name).join(", ")}`);
   }
   if (missingStyles.length === 0 && updatedCount === 0 && staleEntries.length === 0) {
@@ -8137,8 +8689,12 @@ async function seedSubscriptionPlans() {
       if (plan.stripeProductId && existing.stripeProductId !== plan.stripeProductId) updateData.stripeProductId = plan.stripeProductId;
       if (existing.description !== plan.description) updateData.description = plan.description;
       if (existing.name !== plan.name) updateData.name = plan.name;
+      if (existing.vertical !== plan.vertical) updateData.vertical = plan.vertical;
+      if (existing.unitType !== plan.unitType) updateData.unitType = plan.unitType;
+      if (existing.unitLimit !== plan.unitLimit) updateData.unitLimit = plan.unitLimit;
+      if (existing.isActive !== plan.isActive && plan.isActive !== void 0) updateData.isActive = plan.isActive;
       if (Object.keys(updateData).length > 0) {
-        await db.update(subscriptionPlans).set(updateData).where((0, import_drizzle_orm5.eq)(subscriptionPlans.id, plan.id));
+        await db.update(subscriptionPlans).set(updateData).where((0, import_drizzle_orm6.eq)(subscriptionPlans.id, plan.id));
         updated++;
       }
     }
@@ -8149,7 +8705,12 @@ async function seedSubscriptionPlans() {
 }
 
 // server/webhookHandlers.ts
+init_stripeClient();
+init_storage();
 init_db();
+init_stripeService();
+init_subscription();
+init_email();
 var WebhookHandlers = class _WebhookHandlers {
   static async processWebhook(payload, signature) {
     if (!Buffer.isBuffer(payload)) {
@@ -8354,6 +8915,7 @@ var WebhookHandlers = class _WebhookHandlers {
 var import_url = require("url");
 var import_fs2 = __toESM(require("fs"), 1);
 var import_path2 = __toESM(require("path"), 1);
+init_storage();
 var import_meta = {};
 var currentDir = typeof __dirname !== "undefined" ? __dirname : import_path2.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
 var SITE_NAME = "Pawtrait Pros";
@@ -8718,6 +9280,13 @@ httpServer.listen({ port, host: "0.0.0.0" }, () => {
       log("API routes registered");
     } catch (error) {
       console.error("Error registering routes:", error);
+    }
+    try {
+      const { startPortraitScheduler: startPortraitScheduler2 } = await Promise.resolve().then(() => (init_portrait_scheduler(), portrait_scheduler_exports));
+      startPortraitScheduler2();
+      log("Portrait scheduler started");
+    } catch (error) {
+      console.error("Error starting portrait scheduler:", error);
     }
     app.use((err, _req, res, next) => {
       const status = err.status || err.statusCode || 500;

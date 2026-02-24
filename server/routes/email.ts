@@ -65,7 +65,8 @@ export function buildDepartureEmail(
   dogName: string,
   pawfileUrl: string,
   portraitImageUrl?: string,
-  orgId?: number
+  orgId?: number,
+  sourcePhotoUrl?: string
 ): { subject: string; html: string } {
   const subject = `${dogName}'s portrait from ${orgName} is ready!`;
   const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
@@ -85,6 +86,9 @@ export function buildDepartureEmail(
   parts.push(`<p style="font-size:16px;color:#333;line-height:1.5;">We created a stunning portrait of <strong>${dogName}</strong> and it's ready for you!</p>`);
   if (portraitImageUrl) {
     parts.push(`<div style="text-align:center;margin:20px 0;"><a href="${pawfileUrl}"><img src="${portraitImageUrl}" alt="${dogName}'s Portrait" style="max-width:380px;width:100%;border-radius:12px;" /></a></div>`);
+  }
+  if (sourcePhotoUrl) {
+    parts.push(`<div style="text-align:center;margin:16px 0 8px;"><p style="font-size:13px;color:#888;font-style:italic;margin:0 0 8px;">Behind the Portrait — ${dogName} in action</p><img src="${sourcePhotoUrl}" alt="${dogName}" style="max-width:240px;width:60%;border-radius:8px;opacity:0.9;" /></div>`);
   }
   parts.push(`<div style="text-align:center;margin:24px 0;"><a href="${pawfileUrl}" style="display:inline-block;padding:14px 32px;background:#8B5CF6;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:600;">View & Order a Keepsake</a></div>`);
   parts.push(`<p style="font-size:14px;color:#666;text-align:center;line-height:1.5;">Love it? Order a framed print, mug, tote, or other keepsake featuring ${dogName}.</p>`);

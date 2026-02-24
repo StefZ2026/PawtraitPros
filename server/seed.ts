@@ -280,6 +280,11 @@ export async function seedDatabase() {
         await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_limit INTEGER');
         console.log('[migration] Subscription plan vertical columns ready');
 
+        // Stripe live-mode columns (separate from test-mode price/product IDs)
+        await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_live_price_id TEXT');
+        await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS stripe_product_live_id TEXT');
+        console.log('[migration] Stripe live-mode columns ready');
+
         // Daily pack selections table (species-separated: one pack per org per date per species)
         await pool.query(`CREATE TABLE IF NOT EXISTS daily_pack_selections (
           id SERIAL PRIMARY KEY,
@@ -339,6 +344,20 @@ export async function seedDatabase() {
   }
 
   await seedSubscriptionPlans();
+
+  // Ensure Stripe products/prices exist for all vertical plans (idempotent)
+  try {
+    const { stripeService } = await import('./stripeService');
+    await stripeService.ensureVerticalPlanProducts(true);
+  } catch (err: any) {
+    console.error('[stripe] Test product setup:', err.message);
+  }
+  try {
+    const { stripeService } = await import('./stripeService');
+    await stripeService.ensureVerticalPlanProducts(false);
+  } catch (err: any) {
+    console.error('[stripe] Live product setup:', err.message);
+  }
 
   const existingStyles = await db.select().from(portraitStyles);
   const existingMap = new Map(existingStyles.map((s) => [s.id, s]));

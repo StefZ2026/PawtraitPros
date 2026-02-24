@@ -1,4 +1,7 @@
 import { getStripeClient, getPriceId } from './stripeClient';
+import { db } from './db';
+import { subscriptionPlans } from '@shared/schema';
+import { eq } from 'drizzle-orm';
 
 let cachedTestAddonPriceId: string | null = null;
 let cachedLiveAddonPriceId: string | null = null;
@@ -214,6 +217,84 @@ export class StripeService {
       return new Date(subscription.current_period_end * 1000);
     } catch {
       return null;
+    }
+  }
+  /**
+   * Ensure Stripe products + prices exist for all vertical-specific plans.
+   * Idempotent — safe to run on every startup. Only creates what's missing.
+   * testMode=true stores in stripePriceId/stripeProductId,
+   * testMode=false stores in stripeLivePriceId/stripeProductLiveId.
+   */
+  async ensureVerticalPlanProducts(testMode?: boolean): Promise<void> {
+    const test = isTestMode(testMode);
+    const stripe = getStripeClient(testMode);
+
+    const allPlans = await db.select().from(subscriptionPlans);
+
+    for (const plan of allPlans) {
+      if (!plan.vertical) continue; // skip legacy plans
+      if (plan.priceMonthly === 0) continue; // skip free/trial plans
+
+      const existingPrice = test ? plan.stripePriceId : plan.stripeLivePriceId;
+      if (existingPrice) continue; // already set up for this mode
+
+      try {
+        // Search for existing product by metadata
+        const products = await stripe.products.search({
+          query: `metadata['prosplanid']:'${plan.id}'`,
+        });
+
+        let product;
+        if (products.data.length > 0) {
+          product = products.data[0];
+        } else {
+          product = await stripe.products.create({
+            name: plan.name,
+            description: plan.description || `${plan.name} plan`,
+            metadata: {
+              prosplanid: String(plan.id),
+              vertical: plan.vertical || '',
+              unitType: plan.unitType || '',
+            },
+          });
+        }
+
+        // Look for matching price on the product
+        const prices = await stripe.prices.list({
+          product: product.id,
+          active: true,
+          type: 'recurring',
+        });
+
+        let price = prices.data.find(
+          p => p.unit_amount === plan.priceMonthly && p.recurring?.interval === 'month'
+        );
+
+        if (!price) {
+          price = await stripe.prices.create({
+            product: product.id,
+            unit_amount: plan.priceMonthly,
+            currency: 'usd',
+            recurring: { interval: 'month' },
+            metadata: { prosplanid: String(plan.id) },
+          });
+        }
+
+        // Store IDs on the plan row
+        const updateData: Record<string, any> = {};
+        if (test) {
+          updateData.stripePriceId = price.id;
+          updateData.stripeProductId = product.id;
+        } else {
+          updateData.stripeLivePriceId = price.id;
+          updateData.stripeProductLiveId = product.id;
+        }
+
+        await db.update(subscriptionPlans).set(updateData).where(eq(subscriptionPlans.id, plan.id));
+        console.log(`[stripe] Ensured ${test ? 'test' : 'live'} product/price for plan ${plan.id} (${plan.name})`);
+      } catch (err: any) {
+        console.error(`[stripe] Error ensuring product for plan ${plan.id}:`, err.message);
+      }
     }
   }
 }

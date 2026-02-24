@@ -73,6 +73,11 @@ export interface IStorage {
   createVisitPhoto(photo: InsertVisitPhoto): Promise<VisitPhoto>;
   deleteVisitPhoto(id: number): Promise<void>;
   countVisitPhotosForDate(dogId: number, visitDate: string): Promise<number>;
+
+  // Scheduling & Auto-Rotation
+  getDogsDueForPortrait(today: string): Promise<Dog[]>;
+  getUsedStyleIdsForDog(dogId: number): Promise<number[]>;
+  advanceNextPortraitDate(dogId: number, newDate: string | null): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -380,6 +385,23 @@ export class DatabaseStorage implements IStorage {
       .from(visitPhotos)
       .where(and(eq(visitPhotos.dogId, dogId), eq(visitPhotos.visitDate, visitDate)));
     return Number(rows[0]?.count ?? 0);
+  }
+
+  // Scheduling & Auto-Rotation
+  async getDogsDueForPortrait(today: string): Promise<Dog[]> {
+    return db.select().from(dogs)
+      .where(sql`${dogs.nextPortraitDate} IS NOT NULL AND ${dogs.nextPortraitDate} <= ${today}`);
+  }
+
+  async getUsedStyleIdsForDog(dogId: number): Promise<number[]> {
+    const rows = await db.select({ styleId: portraits.styleId })
+      .from(portraits)
+      .where(eq(portraits.dogId, dogId));
+    return [...new Set(rows.map(r => r.styleId))];
+  }
+
+  async advanceNextPortraitDate(dogId: number, newDate: string | null): Promise<void> {
+    await db.update(dogs).set({ nextPortraitDate: newDate }).where(eq(dogs.id, dogId));
   }
 
   async repairSequences(): Promise<string[]> {

@@ -302,6 +302,14 @@ httpServer.listen({ port, host: "0.0.0.0" }, () => {
       console.error("Error registering routes:", error);
     }
 
+    try {
+      const { startPortraitScheduler } = await import('./portrait-scheduler');
+      startPortraitScheduler();
+      log("Portrait scheduler started");
+    } catch (error) {
+      console.error("Error starting portrait scheduler:", error);
+    }
+
     app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

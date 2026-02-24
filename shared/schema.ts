@@ -21,6 +21,8 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   trialDays: integer("trial_days").default(0), // trial period in days
   stripeProductId: text("stripe_product_id"),
   stripePriceId: text("stripe_price_id"),
+  stripeLivePriceId: text("stripe_live_price_id"),
+  stripeProductLiveId: text("stripe_product_live_id"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
