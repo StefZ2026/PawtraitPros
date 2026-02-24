@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#E8751E"/>
-  <!-- Paw print in white — bold, visible at small sizes -->
-  <ellipse cx="32" cy="40" rx="12" ry="10" fill="white"/>
-  <ellipse cx="19" cy="26" rx="5" ry="6" transform="rotate(-15 19 26)" fill="white"/>
-  <ellipse cx="30" cy="21" rx="4.5" ry="6" transform="rotate(-5 30 21)" fill="white"/>
-  <ellipse cx="38" cy="21" rx="4.5" ry="6" transform="rotate(5 38 21)" fill="white"/>
-  <ellipse cx="47" cy="26" rx="5" ry="6" transform="rotate(15 47 26)" fill="white"/>
+  <rect width="64" height="64" rx="12" fill="#FFFFFF"/>
+  <!-- Paw print in orange — inverse of Pals -->
+  <ellipse cx="32" cy="40" rx="12" ry="10" fill="#E8751E"/>
+  <ellipse cx="19" cy="26" rx="5" ry="6" transform="rotate(-15 19 26)" fill="#E8751E"/>
+  <ellipse cx="30" cy="21" rx="4.5" ry="6" transform="rotate(-5 30 21)" fill="#E8751E"/>
+  <ellipse cx="38" cy="21" rx="4.5" ry="6" transform="rotate(5 38 21)" fill="#E8751E"/>
+  <ellipse cx="47" cy="26" rx="5" ry="6" transform="rotate(15 47 26)" fill="#E8751E"/>
 </svg>
