@@ -626,7 +626,10 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const [styleAssignments, setStyleAssignments] = useState<Map<number, number>>(new Map());
   const [contactEdits, setContactEdits] = useState<Map<number, { phone: string; email: string }>>(new Map());
   const [deliverySelections, setDeliverySelections] = useState<Set<number>>(new Set());
+  const [deliveryChannels, setDeliveryChannels] = useState<Map<number, { sms: boolean; email: boolean }>>(new Map());
+  const [deliveryResults, setDeliveryResults] = useState<Array<{ dogId: number; sent: boolean; method: string; error?: string }> | null>(null);
   const [savingContacts, setSavingContacts] = useState(false);
+  const [sendingDelivery, setSendingDelivery] = useState(false);
 
   // Check in a pet for today (All Pets section)
   const checkInMutation = useMutation({
@@ -650,7 +653,10 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     setStyleAssignments(new Map());
     setContactEdits(new Map());
     setDeliverySelections(new Set());
+    setDeliveryChannels(new Map());
+    setDeliveryResults(null);
     setSavingContacts(false);
+    setSendingDelivery(false);
     setWizardStep(1);
   };
 
@@ -658,6 +664,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     setWizardStep(null);
     setGenerating(false);
     setGenerationProgress(null);
+    setDeliveryResults(null);
+    setDeliveryChannels(new Map());
+    setSendingDelivery(false);
   };
 
   // Set daily pack (per species)
@@ -818,28 +827,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   };
 
   // Batch deliver
-  const handleBatchDeliver = async () => {
-    const dogIds = generatedToday.map(d => d.id);
-    if (dogIds.length === 0) return;
-
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch("/api/deliver-batch", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dogIds,
-          organizationId: isAdmin ? organization.id : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast({ title: "Links sent!", description: `Sent to ${data.totalSent} client(s).` });
-      }
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    }
-  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -1207,7 +1194,12 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">Generated earlier — ready to deliver!</p>
                   </div>
-                  <Button variant="outline" className="gap-2" onClick={handleBatchDeliver}>
+                  <Button variant="outline" className="gap-2" onClick={() => {
+                    setSelectedPetIds(new Set(generatedToday.map(d => d.id)));
+                    setDeliverySelections(new Set(generatedToday.map(d => d.id)));
+                    setDeliveryResults(null);
+                    setWizardStep(6);
+                  }}>
                     <Send className="h-4 w-4" />
                     Send to Clients
                   </Button>
@@ -1575,74 +1567,164 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             {/* Step 6: Send */}
             {wizardStep === 6 && (
               <div>
-                <h3 className="font-semibold text-lg mb-1">Send to Clients</h3>
-                <p className="text-sm text-muted-foreground mb-4">Confirm which clients to notify. Deselect any you'd like to skip.</p>
+                {deliveryResults ? (
+                  /* Post-send summary */
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1 flex items-center gap-2">
+                      <Check className="h-5 w-5 text-green-500" />
+                      Delivery Complete
+                    </h3>
+                    <div className="space-y-2 mt-4 mb-6">
+                      {deliveryResults.map(result => {
+                        const dog = todaysDogs.find(d => d.id === result.dogId);
+                        if (!dog) return null;
+                        const ownerLabel = (dog as any).ownerName || dog.name + "'s owner";
+                        return (
+                          <div key={result.dogId} className={`flex items-center gap-3 p-3 rounded-lg border ${result.sent ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
+                            <div className="w-10 h-10 rounded bg-muted overflow-hidden shrink-0">
+                              {dog.portrait?.generatedImageUrl && <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              {result.sent ? (
+                                <p className="text-sm">
+                                  {result.method.includes("email") && result.method.includes("sms") ? (
+                                    <><strong>Email + SMS</strong> sent to {ownerLabel}</>
+                                  ) : result.method.includes("email") ? (
+                                    <><strong>Email</strong> sent to {ownerLabel}</>
+                                  ) : result.method.includes("sms") ? (
+                                    <><strong>SMS</strong> sent to {ownerLabel}</>
+                                  ) : (
+                                    <>Link created for {ownerLabel}</>
+                                  )}
+                                </p>
+                              ) : (
+                                <p className="text-sm text-red-600">Failed to deliver to {ownerLabel}</p>
+                              )}
+                            </div>
+                            {result.sent ? <Check className="h-4 w-4 text-green-500 shrink-0" /> : <X className="h-4 w-4 text-red-500 shrink-0" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-end">
+                      <Button onClick={handleExitWizard}>Done</Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Pre-send: show delivery methods per pet */
+                  <div>
+                    <h3 className="font-semibold text-lg mb-1">Send to Clients</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Review delivery methods and deselect any you'd like to skip.</p>
 
-                <div className="space-y-2 mb-6">
-                  {todaysDogs.filter(d => d.portrait?.generatedImageUrl && selectedPetIds.has(d.id)).map(dog => {
-                    const isDeliverySelected = deliverySelections.has(dog.id);
-                    const phone = (dog as any).ownerPhone;
-                    const email = (dog as any).ownerEmail;
-                    return (
-                      <div
-                        key={dog.id}
-                        className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${isDeliverySelected ? "border-primary bg-primary/5" : "border-border"}`}
-                        onClick={() => setDeliverySelections(prev => {
-                          const next = new Set(prev);
-                          if (next.has(dog.id)) next.delete(dog.id); else next.add(dog.id);
-                          return next;
-                        })}
-                      >
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${isDeliverySelected ? "bg-primary border-primary" : "border-gray-300"}`}>
-                          {isDeliverySelected && <Check className="h-3 w-3 text-white" />}
-                        </div>
-                        <div className="w-10 h-10 rounded bg-muted overflow-hidden shrink-0">
-                          <img src={dog.portrait!.generatedImageUrl!} alt={dog.name} className="w-full h-full object-cover" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-medium text-sm">{dog.name}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {phone && <Phone className="h-3.5 w-3.5 text-muted-foreground" title={`SMS: ${phone}`} />}
-                          {email && <Mail className="h-3.5 w-3.5 text-muted-foreground" title={`Email: ${email}`} />}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <Button variant="ghost" onClick={() => setWizardStep(5)}>Back</Button>
-                  <Button
-                    onClick={async () => {
-                      const dogIds = Array.from(deliverySelections);
-                      if (dogIds.length === 0) return;
-                      try {
-                        const headers = await getAuthHeaders();
-                        const res = await fetch("/api/deliver-batch", {
-                          method: "POST",
-                          headers: { ...headers, "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            dogIds,
-                            organizationId: isAdmin ? organization.id : undefined,
-                          }),
-                        });
-                        const data = await res.json();
-                        if (res.ok) {
-                          toast({ title: "Sent!", description: `Delivered to ${data.totalSent} client${data.totalSent !== 1 ? "s" : ""}.` });
-                          handleExitWizard();
+                    <div className="space-y-3 mb-6">
+                      {todaysDogs.filter(d => d.portrait?.generatedImageUrl && selectedPetIds.has(d.id)).map(dog => {
+                        const isDeliverySelected = deliverySelections.has(dog.id);
+                        const phone = (dog as any).ownerPhone;
+                        const email = (dog as any).ownerEmail;
+                        // Initialize channels if not set
+                        if (!deliveryChannels.has(dog.id) && isDeliverySelected) {
+                          const init = { sms: !!phone, email: !!email };
+                          deliveryChannels.set(dog.id, init);
                         }
-                      } catch (err: any) {
-                        toast({ title: "Error", description: err.message, variant: "destructive" });
-                      }
-                    }}
-                    disabled={deliverySelections.size === 0}
-                    className="gap-2"
-                  >
-                    <Send className="h-4 w-4" />
-                    Send to {deliverySelections.size} Client{deliverySelections.size !== 1 ? "s" : ""}
-                  </Button>
-                </div>
+                        const channels = deliveryChannels.get(dog.id) || { sms: !!phone, email: !!email };
+                        return (
+                          <div
+                            key={dog.id}
+                            className={`p-3 rounded-lg border-2 transition-colors ${isDeliverySelected ? "border-primary bg-primary/5" : "border-border opacity-50"}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer ${isDeliverySelected ? "bg-primary border-primary" : "border-gray-300"}`}
+                                onClick={() => setDeliverySelections(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(dog.id)) next.delete(dog.id); else next.add(dog.id);
+                                  return next;
+                                })}
+                              >
+                                {isDeliverySelected && <Check className="h-3 w-3 text-white" />}
+                              </div>
+                              <div className="w-10 h-10 rounded bg-muted overflow-hidden shrink-0">
+                                <img src={dog.portrait!.generatedImageUrl!} alt={dog.name} className="w-full h-full object-cover" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-sm">{dog.name}</p>
+                                {(dog as any).ownerName && <p className="text-xs text-muted-foreground">{(dog as any).ownerName}</p>}
+                              </div>
+                            </div>
+                            {isDeliverySelected && (
+                              <div className="ml-8 mt-2 flex flex-wrap gap-2">
+                                {phone && (
+                                  <button
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${channels.sms ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}
+                                    onClick={() => {
+                                      const updated = { ...channels, sms: !channels.sms };
+                                      if (!updated.sms && !updated.email) return; // keep at least one
+                                      setDeliveryChannels(prev => { const next = new Map(prev); next.set(dog.id, updated); return next; });
+                                    }}
+                                  >
+                                    <Phone className="h-3 w-3" />
+                                    SMS: {phone}
+                                  </button>
+                                )}
+                                {email && (
+                                  <button
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${channels.email ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}
+                                    onClick={() => {
+                                      const updated = { ...channels, email: !channels.email };
+                                      if (!updated.sms && !updated.email) return; // keep at least one
+                                      setDeliveryChannels(prev => { const next = new Map(prev); next.set(dog.id, updated); return next; });
+                                    }}
+                                  >
+                                    <Mail className="h-3 w-3" />
+                                    Email: {email}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <Button variant="ghost" onClick={() => setWizardStep(5)}>Back</Button>
+                      <Button
+                        disabled={deliverySelections.size === 0 || sendingDelivery}
+                        className="gap-2"
+                        onClick={async () => {
+                          const dogIds = Array.from(deliverySelections);
+                          if (dogIds.length === 0) return;
+                          setSendingDelivery(true);
+                          try {
+                            const headers = await getAuthHeaders();
+                            const res = await fetch("/api/deliver-batch", {
+                              method: "POST",
+                              headers: { ...headers, "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                dogIds,
+                                organizationId: isAdmin ? organization.id : undefined,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (res.ok) {
+                              setDeliveryResults(data.results || []);
+                            } else {
+                              toast({ title: "Error", description: data.error || "Delivery failed", variant: "destructive" });
+                            }
+                          } catch (err: any) {
+                            toast({ title: "Error", description: err.message, variant: "destructive" });
+                          } finally {
+                            setSendingDelivery(false);
+                          }
+                        }}
+                      >
+                        {sendingDelivery && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                        <Send className="h-4 w-4" />
+                        Send to {deliverySelections.size} Client{deliverySelections.size !== 1 ? "s" : ""}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
