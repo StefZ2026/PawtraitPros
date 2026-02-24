@@ -12,7 +12,10 @@ export const subscriptionPlans = pgTable("subscription_plans", {
   name: text("name").notNull(),
   description: text("description"),
   priceMonthly: integer("price_monthly").notNull(), // in cents
-  dogsLimit: integer("dogs_limit"), // max active pets allowed
+  vertical: text("vertical"), // "groomer" | "boarding" | "daycare" | null (null = legacy/generic)
+  unitType: text("unit_type"), // "grooms" | "dogs_in_program" | "dogs_boarded" — what the limit measures
+  unitLimit: integer("unit_limit"), // max units per month (80 grooms, 25 dogs, 50 boardings, etc.)
+  dogsLimit: integer("dogs_limit"), // max active pets allowed (legacy, kept for backward compat)
   monthlyPortraitCredits: integer("monthly_portrait_credits").default(45), // portrait generations per month (edits are free)
   overagePriceCents: integer("overage_price_cents").default(400), // cost per additional portrait beyond credits
   trialDays: integer("trial_days").default(0), // trial period in days
@@ -86,6 +89,11 @@ export const dogs = pgTable("dogs", {
   ownerPhone: text("owner_phone"), // pet owner's phone (Pros only)
   petCode: varchar("pet_code", { length: 10 }), // short lookup code e.g. "BEL-2847"
   checkedInAt: text("checked_in_at"), // YYYY-MM-DD — date the pet was checked in for today's workflow
+  visitFrequency: text("visit_frequency"), // "daily" | "several_weekly" | "weekly" | "occasional" (daycare)
+  updatePreference: text("update_preference"), // "weekly" | "biweekly" | null (daycare — how often owner gets portrait updates)
+  stayNights: integer("stay_nights"), // number of nights for boarding stay
+  nextPortraitDate: text("next_portrait_date"), // YYYY-MM-DD — when this dog is next due for auto-rotation
+  lastPortraitStyleId: integer("last_portrait_style_id"), // track last style used for never-repeat logic
   isAvailable: boolean("is_available").default(true).notNull(),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

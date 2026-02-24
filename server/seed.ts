@@ -4,51 +4,170 @@ import { portraitStyles as styleOptions } from "../client/src/lib/portrait-style
 import { eq, notInArray } from "drizzle-orm";
 
 const planDefinitions = [
+  // Legacy plans (kept for backward compat, marked inactive)
   {
     id: 5,
-    name: "Free Trial",
-    description: "Try Pawtrait Pros free for 30 days with up to 3 pets and 20 portrait credits.",
+    name: "Free Trial (Legacy)",
+    description: "Legacy trial plan — replaced by vertical-specific plans.",
     priceMonthly: 0,
     dogsLimit: 3,
     monthlyPortraitCredits: 20,
     overagePriceCents: 0,
     trialDays: 30,
+    isActive: false,
   },
   {
     id: 6,
-    name: "Starter",
-    description: "Perfect for small businesses with up to 15 pets.",
+    name: "Starter (Legacy)",
+    description: "Legacy starter plan — replaced by vertical-specific plans.",
     priceMonthly: 3900,
     dogsLimit: 15,
     monthlyPortraitCredits: 45,
     overagePriceCents: 400,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpB2LfX3IuyBIb44I2uwq",
     stripeProductId: "prod_TzMYhqaSdDwYcO",
   },
   {
     id: 7,
-    name: "Professional",
-    description: "Ideal for growing businesses with up to 45 pets.",
+    name: "Professional (Legacy)",
+    description: "Legacy professional plan — replaced by vertical-specific plans.",
     priceMonthly: 7900,
     dogsLimit: 45,
     monthlyPortraitCredits: 135,
     overagePriceCents: 400,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpC2LfX3IuyBIBj9Mdx3f",
     stripeProductId: "prod_TzMY4ahWLz2y9C",
   },
   {
     id: 8,
-    name: "Executive",
-    description: "Best value for large businesses with up to 200 pets.",
+    name: "Executive (Legacy)",
+    description: "Legacy executive plan — replaced by vertical-specific plans.",
     priceMonthly: 34900,
     dogsLimit: 200,
     monthlyPortraitCredits: 600,
     overagePriceCents: 300,
     trialDays: 0,
+    isActive: false,
     stripePriceId: "price_1T1NpC2LfX3IuyBIPtezJkZ0",
     stripeProductId: "prod_TzMYb3LIL5kiZ5",
+  },
+
+  // ── Groomer Plans ──
+  {
+    id: 10,
+    name: "Groomer Starter",
+    description: "Up to 80 grooms/month with 240 portrait credits. Perfect for small grooming shops.",
+    priceMonthly: 4900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 80,
+    monthlyPortraitCredits: 240,
+    overagePriceCents: 800, // $8 per 10 credits
+    trialDays: 30,
+  },
+  {
+    id: 11,
+    name: "Groomer Growth",
+    description: "Up to 160 grooms/month with 480 portrait credits. Ideal for busy grooming businesses.",
+    priceMonthly: 7900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 160,
+    monthlyPortraitCredits: 480,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+  {
+    id: 12,
+    name: "Groomer Pro",
+    description: "Up to 240 grooms/month with 720 portrait credits. Built for high-volume grooming operations.",
+    priceMonthly: 14900,
+    vertical: "groomer",
+    unitType: "grooms",
+    unitLimit: 240,
+    monthlyPortraitCredits: 720,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+
+  // ── Daycare Plans ──
+  {
+    id: 13,
+    name: "Daycare Starter",
+    description: "Up to 25 dogs in program with 200 portrait credits. Great for small daycares.",
+    priceMonthly: 5900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 25,
+    monthlyPortraitCredits: 200,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+  {
+    id: 14,
+    name: "Daycare Growth",
+    description: "Up to 75 dogs in program with 600 portrait credits. For mid-size daycares.",
+    priceMonthly: 11900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 75,
+    monthlyPortraitCredits: 600,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+  {
+    id: 15,
+    name: "Daycare Pro",
+    description: "Up to 150 dogs in program with 1,200 portrait credits. Built for large daycares.",
+    priceMonthly: 24900,
+    vertical: "daycare",
+    unitType: "dogs_in_program",
+    unitLimit: 150,
+    monthlyPortraitCredits: 1200,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+
+  // ── Boarding Plans ──
+  {
+    id: 16,
+    name: "Boarding Starter",
+    description: "Up to 50 dogs boarded/month with 350 portrait credits. Perfect for small boarding facilities.",
+    priceMonthly: 5900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 50,
+    monthlyPortraitCredits: 350,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+  {
+    id: 17,
+    name: "Boarding Growth",
+    description: "Up to 200 dogs boarded/month with 1,500 portrait credits. For mid-size boarding facilities.",
+    priceMonthly: 14900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 200,
+    monthlyPortraitCredits: 1500,
+    overagePriceCents: 800,
+    trialDays: 30,
+  },
+  {
+    id: 18,
+    name: "Boarding Pro",
+    description: "Up to 500 dogs boarded/month with 3,500 portrait credits. Built for large boarding operations.",
+    priceMonthly: 27900,
+    vertical: "boarding",
+    unitType: "dogs_boarded",
+    unitLimit: 500,
+    monthlyPortraitCredits: 3500,
+    overagePriceCents: 800,
+    trialDays: 30,
   },
 ];
 
@@ -146,6 +265,20 @@ export async function seedDatabase() {
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_email TEXT');
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS owner_phone TEXT');
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS pet_code VARCHAR(10)');
+
+        // Dogs table — daycare/boarding vertical fields
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS visit_frequency TEXT'); // daily, several_weekly, weekly, occasional
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS update_preference TEXT'); // weekly, biweekly
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS stay_nights INTEGER'); // boarding stay length
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS next_portrait_date TEXT'); // YYYY-MM-DD auto-rotation
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS last_portrait_style_id INTEGER'); // never-repeat tracking
+        console.log('[migration] Dog vertical fields ready');
+
+        // Subscription plans — vertical-specific columns
+        await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS vertical TEXT');
+        await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_type TEXT');
+        await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_limit INTEGER');
+        console.log('[migration] Subscription plan vertical columns ready');
 
         // Daily pack selections table (species-separated: one pack per org per date per species)
         await pool.query(`CREATE TABLE IF NOT EXISTS daily_pack_selections (
@@ -273,19 +406,23 @@ async function seedSubscriptionPlans() {
   for (const plan of planDefinitions) {
     const existing = existingMap.get(plan.id);
     if (!existing) {
-      await db.insert(subscriptionPlans).values(plan).onConflictDoNothing();
+      await db.insert(subscriptionPlans).values(plan as any).onConflictDoNothing();
       inserted++;
     } else {
       const updateData: Record<string, any> = {};
       if (existing.priceMonthly !== plan.priceMonthly) updateData.priceMonthly = plan.priceMonthly;
-      if (existing.dogsLimit !== plan.dogsLimit) updateData.dogsLimit = plan.dogsLimit;
+      if ((existing as any).dogsLimit !== (plan as any).dogsLimit) updateData.dogsLimit = (plan as any).dogsLimit;
       if (existing.monthlyPortraitCredits !== plan.monthlyPortraitCredits) updateData.monthlyPortraitCredits = plan.monthlyPortraitCredits;
       if (existing.overagePriceCents !== plan.overagePriceCents) updateData.overagePriceCents = plan.overagePriceCents;
       if (existing.trialDays !== plan.trialDays) updateData.trialDays = plan.trialDays;
-      if (plan.stripePriceId && existing.stripePriceId !== plan.stripePriceId) updateData.stripePriceId = plan.stripePriceId;
-      if (plan.stripeProductId && existing.stripeProductId !== plan.stripeProductId) updateData.stripeProductId = plan.stripeProductId;
+      if ((plan as any).stripePriceId && existing.stripePriceId !== (plan as any).stripePriceId) updateData.stripePriceId = (plan as any).stripePriceId;
+      if ((plan as any).stripeProductId && existing.stripeProductId !== (plan as any).stripeProductId) updateData.stripeProductId = (plan as any).stripeProductId;
       if (existing.description !== plan.description) updateData.description = plan.description;
       if (existing.name !== plan.name) updateData.name = plan.name;
+      if ((existing as any).vertical !== (plan as any).vertical) updateData.vertical = (plan as any).vertical;
+      if ((existing as any).unitType !== (plan as any).unitType) updateData.unitType = (plan as any).unitType;
+      if ((existing as any).unitLimit !== (plan as any).unitLimit) updateData.unitLimit = (plan as any).unitLimit;
+      if ((existing as any).isActive !== (plan as any).isActive && (plan as any).isActive !== undefined) updateData.isActive = (plan as any).isActive;
       if (Object.keys(updateData).length > 0) {
         await db.update(subscriptionPlans).set(updateData).where(eq(subscriptionPlans.id, plan.id));
         updated++;

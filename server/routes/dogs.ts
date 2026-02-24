@@ -671,8 +671,8 @@ export function registerDogRoutes(app: Express): void {
 
       // Photo limit by industry type
       const industryType = (org as any).industryType || "groomer";
-      const photoLimits: Record<string, number> = { groomer: 4, boarding: 5, daycare: 5 };
-      const limit = photoLimits[industryType] || 4;
+      const photoLimits: Record<string, number> = { groomer: 3, boarding: 5, daycare: 4 };
+      const limit = photoLimits[industryType] || 3;
 
       const visitDate = new Date().toISOString().split("T")[0];
       const currentCount = await storage.countVisitPhotosForDate(dogId, visitDate);

@@ -550,6 +550,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const [newPetOwnerPhone, setNewPetOwnerPhone] = useState("");
   const [newPetOwnerEmail, setNewPetOwnerEmail] = useState("");
   const [newPetPhoto, setNewPetPhoto] = useState<string | null>(null);
+  const [newPetVisitFrequency, setNewPetVisitFrequency] = useState<string>("daily");
+  const [newPetUpdatePreference, setNewPetUpdatePreference] = useState<string>("weekly");
+  const [newPetStayNights, setNewPetStayNights] = useState<string>("");
 
   const { data: plans } = useQuery<Plan[]>({ queryKey: ["/api/plans"] });
   const currentPlan = plans?.find(p => p.id === organization.planId);
@@ -569,7 +572,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const hasPlan = !!organization.planId && organization.subscriptionStatus !== "inactive" && !isCanceled && !isTrialExpired;
 
   const industryType = (organization as any).industryType || "groomer";
-  const visitPhotoLimit = industryType === "groomer" ? 4 : 5;
+  const visitPhotoLimit = industryType === "groomer" ? 3 : industryType === "daycare" ? 4 : 5;
 
   // Species-aware pack selection
   const speciesHandled = organization.speciesHandled || "dogs";
@@ -760,6 +763,15 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         ownerEmail: newPetOwnerEmail || undefined,
         originalPhotoUrl: newPetPhoto || undefined,
       };
+      // Daycare-specific fields
+      if (industryType === "daycare") {
+        body.visitFrequency = newPetVisitFrequency;
+        body.updatePreference = newPetVisitFrequency === "occasional" ? null : newPetUpdatePreference;
+      }
+      // Boarding-specific fields
+      if (industryType === "boarding" && newPetStayNights) {
+        body.stayNights = parseInt(newPetStayNights, 10);
+      }
       if (isAdmin) body.organizationId = organization.id;
       return apiRequest("POST", "/api/dogs", body);
     },
@@ -771,6 +783,9 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       setNewPetOwnerPhone("");
       setNewPetOwnerEmail("");
       setNewPetPhoto(null);
+      setNewPetVisitFrequency("daily");
+      setNewPetUpdatePreference("weekly");
+      setNewPetStayNights("");
       toast({ title: "Client added!", description: `${newPetName} has been added to today's list.` });
     },
     onError: (error: Error) => {
@@ -1131,6 +1146,80 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     <Input placeholder="owner@email.com" value={newPetOwnerEmail} onChange={(e) => setNewPetOwnerEmail(e.target.value)} />
                     <p className="text-xs text-muted-foreground mt-1">Optional — needed for delivery later.</p>
                   </div>
+                  {/* Daycare-specific: visit frequency + update preference */}
+                  {industryType === "daycare" && (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">How often do they visit?</label>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {[
+                            { value: "daily", label: "Daily" },
+                            { value: "several_weekly", label: "Several/wk" },
+                            { value: "weekly", label: "Weekly" },
+                            { value: "occasional", label: "Occasional" },
+                          ].map((opt) => (
+                            <Button
+                              key={opt.value}
+                              variant={newPetVisitFrequency === opt.value ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setNewPetVisitFrequency(opt.value)}
+                            >
+                              {opt.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                      {newPetVisitFrequency !== "occasional" && (
+                        <div>
+                          <label className="text-sm font-medium mb-1 block">Portrait update frequency</label>
+                          <div className="flex gap-2">
+                            <Button
+                              variant={newPetUpdatePreference === "weekly" ? "default" : "outline"}
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setNewPetUpdatePreference("weekly")}
+                            >
+                              Weekly
+                            </Button>
+                            <Button
+                              variant={newPetUpdatePreference === "biweekly" ? "default" : "outline"}
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => setNewPetUpdatePreference("biweekly")}
+                            >
+                              Biweekly
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">How often the owner receives a new portrait.</p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {/* Boarding-specific: number of nights */}
+                  {industryType === "boarding" && (
+                    <div>
+                      <label className="text-sm font-medium mb-1 flex items-center gap-1"><Calendar className="h-3 w-3" /> Number of Nights</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="90"
+                        placeholder="e.g. 5"
+                        value={newPetStayNights}
+                        onChange={(e) => setNewPetStayNights(e.target.value)}
+                      />
+                      {newPetStayNights && parseInt(newPetStayNights) > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {parseInt(newPetStayNights) <= 3
+                            ? "1 portrait on checkout day"
+                            : parseInt(newPetStayNights) <= 7
+                            ? "2 portraits spaced across the stay"
+                            : parseInt(newPetStayNights) <= 14
+                            ? "3 portraits spaced across the stay"
+                            : `${Math.ceil(parseInt(newPetStayNights) / 14) * 3} portraits across the stay`}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-3">
                   <label className="text-sm font-medium mb-1 block">Photo *</label>
@@ -1140,7 +1229,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               <div className="flex gap-2 mt-4">
                 <Button
                   onClick={() => addClientMutation.mutate()}
-                  disabled={!newPetName || !newPetPhoto || addClientMutation.isPending}
+                  disabled={!newPetName || !newPetPhoto || addClientMutation.isPending || (industryType === "boarding" && !newPetStayNights)}
                   className="gap-2"
                 >
                   {addClientMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}

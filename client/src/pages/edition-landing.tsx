@@ -3,7 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
 import {
   Scissors, Building2, Sun, Sparkles, Heart, Dog, Cat,
-  Palette, Camera, Send, ShoppingBag, LayoutDashboard, LogOut
+  Palette, Camera, Send, ShoppingBag, LayoutDashboard, LogOut,
+  CalendarCheck, Repeat, Clock, Wand2
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,54 +29,54 @@ const EDITIONS: Record<Edition, EditionConfig> = {
     icon: Scissors,
     accentClass: "from-pink-500/10 via-background to-rose-500/10",
     workflow: [
-      { icon: Camera, title: "Snap a Photo", description: "Take a quick photo of each pet after grooming — fresh and fabulous." },
-      { icon: Palette, title: "Pick a Pack", description: "Choose from Seasonal, Fun, or Artistic portrait packs curated for groomers." },
-      { icon: Sparkles, title: "Auto-Generate", description: "End of day, generate all portraits in one click. AI does the rest." },
-      { icon: Send, title: "Text the Owner", description: "Clients get a text with their pet's portrait + a link to order keepsakes." },
+      { icon: Camera, title: "Check In & Snap", description: "Search your client list, check in today's dogs, and capture a welcome photo." },
+      { icon: Palette, title: "Pick Today's Pack", description: "Choose from Celebrate, Fun, or Artistic portrait packs. Auto-assign styles or hand-pick per pet." },
+      { icon: Wand2, title: "Generate", description: "One tap generates a portrait for each dog. Not loving it? Try a different style — you've got 3 tries per groom." },
+      { icon: Send, title: "Send & Sell", description: "Pet parent gets their portrait + \"Behind the Portrait\" source photo + a link to order keepsakes." },
     ],
     benefits: [
-      "Wow clients at pickup with a beautiful portrait of their freshly groomed pet",
-      "New revenue stream — clients order framed prints, mugs, and totes",
+      "Wow clients at pickup with a portrait of their freshly groomed pet",
+      "New revenue — clients order keepsakes on the spot",
       "Stand out from every other groomer in town",
-      "Takes 30 seconds per pet — snap, tap, done",
+      "30 seconds per pet — snap, pick, send",
     ],
   },
   boarding: {
     title: "For Boarding",
     subtitle: "Pawtrait Pros — Boarding Edition",
-    hero: "Send pet parents a \"while you were away\" portrait they'll treasure",
+    hero: "Send pet parents portraits they'll treasure — automatically, throughout every stay",
     icon: Building2,
     accentClass: "from-blue-500/10 via-background to-sky-500/10",
     workflow: [
-      { icon: Camera, title: "Batch Photos", description: "Snap candid photos of boarding guests throughout their stay." },
-      { icon: Palette, title: "Choose a Theme", description: "Pick from adventure, seasonal, or artistic portrait packs." },
-      { icon: Sparkles, title: "Generate Portraits", description: "Batch-generate beautiful portraits for all of today's departures." },
-      { icon: Send, title: "Deliver to Owners", description: "Pet parents get a text with their pet's portrait when they pick up." },
+      { icon: Camera, title: "Check In", description: "Add the pet, snap a welcome photo, and enter the number of nights. That's it — you're done." },
+      { icon: CalendarCheck, title: "We Do the Math", description: "Our system spaces portraits evenly across the stay, with the last one landing on checkout day." },
+      { icon: Repeat, title: "Hands-Off Generation", description: "On scheduled days, your guest is added to the portrait queue automatically. Every style is unique." },
+      { icon: Send, title: "Owner Gets the Magic", description: "A beautiful portrait + \"Behind the Portrait\" source photo delivered straight to the pet parent's inbox." },
     ],
     benefits: [
       "\"While you were away\" portraits that make pickup day magical",
-      "Owners share portraits on social media — free marketing for your facility",
+      "Fully automated — set it at check-in, forget it",
+      "Owners share portraits on social media — free marketing",
       "Keepsake purchases add pure-profit revenue",
-      "Works for any size facility — 5 dogs or 500",
     ],
   },
   daycare: {
     title: "For Daycares",
     subtitle: "Pawtrait Pros — Daycare Edition",
-    hero: "Keep pet parents engaged with daily portrait drops",
+    hero: "Keep pet parents delighted with portraits that rotate automatically",
     icon: Sun,
     accentClass: "from-amber-500/10 via-background to-yellow-500/10",
     workflow: [
-      { icon: Camera, title: "Daily Photos", description: "Snap photos of each pet during playtime or rest." },
-      { icon: Palette, title: "Today's Pack", description: "Pick a fun or seasonal pack — change it up every day." },
-      { icon: Sparkles, title: "One-Tap Generate", description: "Generate all portraits at end of day with a single tap." },
-      { icon: Send, title: "Instant Delivery", description: "Owners get a text with a link to their pet's portrait gallery." },
+      { icon: Camera, title: "Enroll Once", description: "Add each dog with a check-in photo and set how often they visit — daily, weekly, or occasional." },
+      { icon: Clock, title: "Set Update Frequency", description: "Weekly or biweekly portrait updates for regulars. Occasional visitors get portraits when they come in." },
+      { icon: Repeat, title: "Auto-Rotation", description: "Each day, our system picks which dogs are due for a new portrait. Every style is unique — no repeats." },
+      { icon: Send, title: "Delivered to Owners", description: "Pet parents get a stunning portrait + \"Behind the Portrait\" source photo. No generic updates — just art." },
     ],
     benefits: [
-      "Daily portrait drops keep pet parents engaged and coming back",
-      "Parents love sharing their pet's daily portraits on social media",
-      "Keepsake orders create recurring revenue per client",
-      "The fun factor that sets your daycare apart",
+      "Automated portrait rotation — zero daily effort from staff",
+      "Every regular's owner gets consistent, delightful touchpoints",
+      "Parents share portraits on social media — free word-of-mouth",
+      "Keepsake orders create recurring add-on revenue",
     ],
   },
 };
@@ -135,8 +136,11 @@ export default function EditionLanding({ edition }: { edition: Edition }) {
               {config.hero}
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Beautiful AI-generated portraits that wow your clients and create new revenue.
-              No design skills needed — just snap, tap, and send.
+              {edition === "groomer"
+                ? "Snap a photo, pick a style, and send a one-of-a-kind portrait to pet parents before they walk out the door. Keepsakes they can order on the spot."
+                : edition === "boarding"
+                ? "Set the stay length at check-in and we handle the rest. Portraits are scheduled, generated, and delivered to owners while they're away."
+                : "Enroll each dog once, set their update frequency, and our system handles the rest — rotating pets into the daily portrait queue so every regular gets fresh, unique art."}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {isAuthenticated ? (
@@ -172,7 +176,11 @@ export default function EditionLanding({ edition }: { edition: Edition }) {
           <div className="text-center mb-12">
             <h2 className="text-3xl font-serif font-bold mb-4">How It Works</h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              Four steps. Under a minute per pet. Repeat daily.
+              {edition === "groomer"
+                ? "Four steps. Under a minute per pet. Every groom."
+                : edition === "boarding"
+                ? "One check-in. Automated portraits throughout every stay."
+                : "Enroll once. Automated portraits on your schedule."}
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl mx-auto">
