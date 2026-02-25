@@ -3,10 +3,14 @@
 Defense-in-depth: backend uses service_role (bypasses RLS), but these policies
 protect against accidental client SDK exposure."""
 
+import os
 import psycopg2
 import sys
 
-DB_URL = "***REDACTED***"
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    print("ERROR: DATABASE_URL environment variable is not set.")
+    sys.exit(1)
 
 SQL_STATEMENTS = [
     # --- Helper function: get the org_id for the current authenticated user ---
