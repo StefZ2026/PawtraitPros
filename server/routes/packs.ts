@@ -58,7 +58,7 @@ export function registerPackRoutes(app: Express): void {
 
       let orgId: number | null = null;
 
-      if (orgIdParam) {
+      if (isAdmin && orgIdParam) {
         orgId = parseInt(orgIdParam);
       } else {
         const org = await storage.getOrganizationByOwner(userId);

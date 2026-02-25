@@ -6,7 +6,7 @@ import { getStripeClient } from "../stripeClient";
 import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, getFrameColors } from "../printful-config";
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "../printful";
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from "./email";
-import { ADMIN_EMAIL } from "./helpers";
+import { ADMIN_EMAIL, publicExpensiveRateLimiter } from "./helpers";
 
 export function registerMerchRoutes(app: Express): void {
   // --- MERCH PRODUCTS ---
@@ -59,13 +59,13 @@ export function registerMerchRoutes(app: Express): void {
       res.json({ rates });
     } catch (error: any) {
       console.error("Error estimating shipping:", error);
-      res.status(500).json({ error: error.message || "Failed to estimate shipping" });
+      res.status(500).json({ error: "Failed to estimate shipping" });
     }
   });
 
   // Step 1: Create merch order + Stripe Checkout Session
   // Returns a Stripe checkout URL — customer pays there, then gets redirected back
-  app.post("/api/merch/checkout", async (req: Request, res: Response) => {
+  app.post("/api/merch/checkout", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { items, customer, address, imageUrl, portraitId, dogId, orgId, sessionToken } = req.body;
 
@@ -223,13 +223,13 @@ export function registerMerchRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("Error creating merch checkout:", error);
-      res.status(500).json({ error: error.message || "Failed to create checkout" });
+      res.status(500).json({ error: "Failed to create checkout" });
     }
   });
 
   // Step 2: Confirm payment and fulfill order
   // Called after Stripe redirects back with session_id
-  app.post("/api/merch/confirm-checkout", async (req: Request, res: Response) => {
+  app.post("/api/merch/confirm-checkout", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.body;
       if (!sessionId) {
@@ -374,12 +374,12 @@ export function registerMerchRoutes(app: Express): void {
       }
     } catch (error: any) {
       console.error("Error confirming merch checkout:", error);
-      res.status(500).json({ error: error.message || "Failed to confirm checkout" });
+      res.status(500).json({ error: "Failed to confirm checkout" });
     }
   });
 
   // Get a specific merch order
-  app.get("/api/merch/order/:id", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/merch/order/:id", isAuthenticated, async (req: any, res: Response) => {
     try {
       const orderId = parseInt(req.params.id);
       if (isNaN(orderId)) {
@@ -392,6 +392,16 @@ export function registerMerchRoutes(app: Express): void {
       );
       if (orderResult.rows.length === 0) {
         return res.status(404).json({ error: "Order not found" });
+      }
+
+      // Verify user owns this order's organization
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      if (userEmail !== ADMIN_EMAIL) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || orderResult.rows[0].organization_id !== org.id) {
+          return res.status(403).json({ error: "Not authorized to view this order" });
+        }
       }
 
       const itemsResult = await pool.query(
@@ -486,7 +496,7 @@ export function registerMerchRoutes(app: Express): void {
       res.json({ orderId, printfulStatus: printfulOrder.status, printfulOrder });
     } catch (error: any) {
       console.error("Error syncing merch order:", error);
-      res.status(500).json({ error: error.message || "Failed to sync order" });
+      res.status(500).json({ error: "Failed to sync order" });
     }
   });
 
@@ -510,8 +520,8 @@ export function registerMerchRoutes(app: Express): void {
     res.json({ available, season: available ? "holiday" : null });
   });
 
-  // Create a holiday card order via Gelato
-  app.post("/api/gelato/order", async (req: Request, res: Response) => {
+  // Create a holiday card order via Gelato (rate-limited to prevent abuse)
+  app.post("/api/gelato/order", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { items, customer, address, artworkUrls } = req.body;
 
@@ -626,7 +636,7 @@ export function registerMerchRoutes(app: Express): void {
       }
     } catch (error: any) {
       console.error("Error creating Gelato order:", error);
-      res.status(500).json({ error: error.message || "Failed to create card order" });
+      res.status(500).json({ error: "Failed to create card order" });
     }
   });
 
@@ -644,7 +654,7 @@ export function registerMerchRoutes(app: Express): void {
       res.json({ catalogs, cards });
     } catch (error: any) {
       console.error("Error discovering Gelato products:", error);
-      res.status(500).json({ error: error.message || "Failed to discover products" });
+      res.status(500).json({ error: "Failed to discover products" });
     }
   });
 }

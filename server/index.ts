@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -10,7 +11,17 @@ import { setupOgMetaRoutes } from "./og-meta";
 const app = express();
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://api.qrserver.com"],
+      connectSrc: ["'self'", "https://*.supabase.co", "https://api.stripe.com"],
+      frameSrc: ["https://js.stripe.com"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 app.disable("x-powered-by");
@@ -22,6 +33,21 @@ app.post(
   express.raw({ type: 'application/json' }),
   async (req, res) => {
     try {
+      // Verify Gelato webhook signature if secret is configured
+      const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
+      if (gelatoSecret) {
+        const signature = req.headers['x-gelato-hmac-sha256'] as string;
+        if (!signature) {
+          console.warn('[gelato-webhook] Missing signature header — rejecting');
+          return res.status(401).json({ error: 'Missing webhook signature' });
+        }
+        const expected = crypto.createHmac('sha256', gelatoSecret).update(req.body).digest('hex');
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          console.warn('[gelato-webhook] Invalid signature — rejecting');
+          return res.status(401).json({ error: 'Invalid webhook signature' });
+        }
+      }
+
       const body = JSON.parse(req.body.toString());
       const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
       console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
@@ -111,6 +137,21 @@ app.post(
   express.raw({ type: 'application/json' }),
   async (req, res) => {
     try {
+      // Verify Printful webhook signature if secret is configured
+      const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
+      if (printfulSecret) {
+        const signature = req.headers['x-printful-signature'] as string;
+        if (!signature) {
+          console.warn('[printful-webhook] Missing signature header — rejecting');
+          return res.status(401).json({ error: 'Missing webhook signature' });
+        }
+        const expected = crypto.createHmac('sha256', printfulSecret).update(req.body).digest('hex');
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          console.warn('[printful-webhook] Invalid signature — rejecting');
+          return res.status(401).json({ error: 'Invalid webhook signature' });
+        }
+      }
+
       const body = JSON.parse(req.body.toString());
       const { type, data } = body;
       console.log(`[printful-webhook] Received event: ${type}`);

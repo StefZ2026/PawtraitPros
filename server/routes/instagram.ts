@@ -352,7 +352,7 @@ export function registerInstagramRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[instagram] Post error:", error);
-      res.status(500).json({ error: error.message || "Failed to post to Instagram" });
+      res.status(500).json({ error: "Failed to post to Instagram" });
     }
   });
 
@@ -774,7 +774,7 @@ export function registerInstagramRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("[instagram-native] Post error:", error);
-      res.status(500).json({ error: error.message || "Failed to post to Instagram" });
+      res.status(500).json({ error: "Failed to post to Instagram" });
     }
   });
 

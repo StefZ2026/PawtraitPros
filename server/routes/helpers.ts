@@ -31,6 +31,16 @@ export const apiRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiter for public endpoints that trigger expensive operations (AI, orders)
+export const publicExpensiveRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: "Too many requests. Please wait before trying again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+});
+
 export const MAX_ADDITIONAL_SLOTS = 5;
 export const MAX_EDITS_PER_IMAGE = 4;
 

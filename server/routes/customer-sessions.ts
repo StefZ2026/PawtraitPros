@@ -4,7 +4,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
-import { ADMIN_EMAIL } from "./helpers";
+import { ADMIN_EMAIL, publicExpensiveRateLimiter } from "./helpers";
 
 export function registerCustomerSessionRoutes(app: Express): void {
 
@@ -67,12 +67,12 @@ export function registerCustomerSessionRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("Error creating customer session:", error);
-      res.status(500).json({ error: error.message || "Failed to create customer session" });
+      res.status(500).json({ error: "Failed to create customer session" });
     }
   });
 
-  // Create customer session from pet code (public — for customer portal "Order a Keepsake")
-  app.post("/api/customer-session/from-code", async (req: Request, res: Response) => {
+  // Create customer session from pet code (public — rate-limited)
+  app.post("/api/customer-session/from-code", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { petCode } = req.body;
       if (!petCode) {
@@ -123,7 +123,7 @@ export function registerCustomerSessionRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("Error creating customer session from code:", error);
-      res.status(500).json({ error: error.message || "Failed to create session" });
+      res.status(500).json({ error: "Failed to create session" });
     }
   });
 
@@ -277,7 +277,7 @@ export function registerCustomerSessionRoutes(app: Express): void {
       res.json({ success: true, message: "SMS sent" });
     } catch (error: any) {
       console.error("Error sending customer session SMS:", error);
-      res.status(500).json({ error: error.message || "Failed to send SMS" });
+      res.status(500).json({ error: "Failed to send SMS" });
     }
   });
 

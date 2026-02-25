@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
-import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt } from "./helpers";
+import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter } from "./helpers";
 import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
@@ -64,8 +64,6 @@ export function registerDogRoutes(app: Express): void {
         age: dog.age,
         description: dog.description,
         originalPhotoUrl: dog.original_photo_url,
-        ownerEmail: dog.owner_email,
-        ownerPhone: dog.owner_phone,
         petCode: dog.pet_code,
         isAvailable: dog.is_available,
         createdAt: dog.created_at,
@@ -166,8 +164,8 @@ export function registerDogRoutes(app: Express): void {
     }
   });
 
-  // Generate a portrait with a specific style (public — validated by pet code)
-  app.post("/api/dogs/code/:petCode/generate", async (req: Request, res: Response) => {
+  // Generate a portrait with a specific style (public — validated by pet code, rate-limited)
+  app.post("/api/dogs/code/:petCode/generate", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { petCode } = req.params;
       const { styleId } = req.body;
@@ -287,7 +285,7 @@ export function registerDogRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("Error generating portrait via pet code:", error);
-      res.status(500).json({ error: error.message || "Failed to generate portrait" });
+      res.status(500).json({ error: "Failed to generate portrait" });
     }
   });
 
@@ -440,7 +438,14 @@ export function registerDogRoutes(app: Express): void {
         return res.status(403).json({ error: limitError });
       }
 
-      const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...dogData } = req.body;
+      const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...rawData } = req.body;
+
+      // Whitelist allowed fields to prevent injection of arbitrary data
+      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "externalId", "externalSource", "tags"];
+      const dogData: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (rawData[key] !== undefined) dogData[key] = rawData[key];
+      }
 
       if (dogData.species && !["dog", "cat"].includes(dogData.species)) {
         return res.status(400).json({ error: "species must be 'dog' or 'cat'" });
@@ -474,7 +479,7 @@ export function registerDogRoutes(app: Express): void {
       }
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error creating pet:", errMsg, error);
-      res.status(500).json({ error: `Failed to save pet: ${errMsg}` });
+      res.status(500).json({ error: "Failed to save pet" });
     }
   });
 
@@ -497,7 +502,14 @@ export function registerDogRoutes(app: Express): void {
         }
       }
 
-      const { selectedPortraitId, ...dogData } = req.body;
+      const { selectedPortraitId, ...rawData } = req.body;
+
+      // Whitelist allowed fields to prevent injection of arbitrary data
+      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "originalPhotoUrl", "tags"];
+      const dogData: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (rawData[key] !== undefined) dogData[key] = rawData[key];
+      }
 
       if (dogData.name && containsInappropriateLanguage(dogData.name)) {
         return res.status(400).json({ error: "Please choose a family-friendly name" });
@@ -524,7 +536,7 @@ export function registerDogRoutes(app: Express): void {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error updating pet:", errMsg, error);
-      res.status(500).json({ error: `Failed to update pet: ${errMsg}` });
+      res.status(500).json({ error: "Failed to update pet" });
     }
   });
 

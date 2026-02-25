@@ -232,6 +232,15 @@ export function registerBatchRoutes(app: Express): void {
       }
 
       const batch = batchResult.rows[0];
+
+      // Verify user owns this batch's organization
+      if (batch.owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
+
       if (batch.status !== 'uploading' && batch.status !== 'assigning') {
         return res.status(400).json({ error: "Batch is no longer accepting photos" });
       }
@@ -275,13 +284,23 @@ export function registerBatchRoutes(app: Express): void {
         return res.status(400).json({ error: "dogId is required" });
       }
 
-      // Verify batch exists
+      // Verify batch exists and user owns the org
       const batchResult = await pool.query(
-        `SELECT organization_id FROM batch_sessions WHERE id = $1`,
+        `SELECT bs.organization_id, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
         [batchId]
       );
       if (batchResult.rows.length === 0) {
         return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
       }
 
       // Verify dog belongs to same org
@@ -319,9 +338,9 @@ export function registerBatchRoutes(app: Express): void {
         return res.status(400).json({ error: "Invalid batch ID" });
       }
 
-      // Get batch + assigned photos
+      // Get batch + assigned photos (with ownership check)
       const batchResult = await pool.query(
-        `SELECT bs.*, o.industry_type, o.id as org_id FROM batch_sessions bs
+        `SELECT bs.*, o.industry_type, o.id as org_id, o.owner_id FROM batch_sessions bs
          JOIN organizations o ON o.id = bs.organization_id
          WHERE bs.id = $1`,
         [batchId]
@@ -331,6 +350,13 @@ export function registerBatchRoutes(app: Express): void {
       }
 
       const batch = batchResult.rows[0];
+      const userId = req.user.claims.sub;
+      if (batch.owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
 
       const photosResult = await pool.query(
         `SELECT * FROM batch_photos WHERE batch_session_id = $1 AND dog_id IS NOT NULL ORDER BY id`,
@@ -370,11 +396,22 @@ export function registerBatchRoutes(app: Express): void {
       }
 
       const batchResult = await pool.query(
-        `SELECT * FROM batch_sessions WHERE id = $1`,
+        `SELECT bs.*, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
         [batchId]
       );
       if (batchResult.rows.length === 0) {
         return res.status(404).json({ error: "Batch session not found" });
+      }
+
+      // Verify user owns this batch's organization
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
       }
 
       const photosResult = await pool.query(

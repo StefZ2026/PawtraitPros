@@ -108,7 +108,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       res.json({ url: session.url });
     } catch (error: any) {
       console.error("Error creating checkout session:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to create checkout session" });
+      res.status(500).json({ error: "Failed to create checkout session" });
     }
   });
 
@@ -373,7 +373,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       });
     } catch (error: any) {
       console.error("Error changing plan:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to change plan" });
+      res.status(500).json({ error: "Failed to change plan" });
     }
   });
 
@@ -417,7 +417,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error canceling plan change:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to cancel plan change" });
+      res.status(500).json({ error: "Failed to cancel plan change" });
     }
   });
 
