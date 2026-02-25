@@ -238,7 +238,7 @@ export function registerInstagramRoutes(app: Express): void {
       }
     } catch (error: any) {
       console.error("[instagram] Connect error:", error);
-      res.redirect('/settings?instagram=error&detail=' + encodeURIComponent(error.message || 'unknown'));
+      res.redirect('/settings?instagram=error&detail=connect_failed');
     }
   });
 
@@ -543,7 +543,7 @@ export function registerInstagramRoutes(app: Express): void {
       res.redirect(authUrl);
     } catch (error: any) {
       console.error("[instagram-native] Connect error:", error);
-      res.redirect('/settings?instagram=error&detail=' + encodeURIComponent(error.message || 'unknown'));
+      res.redirect('/settings?instagram=error&detail=connect_failed');
     }
   });
 
@@ -633,7 +633,7 @@ export function registerInstagramRoutes(app: Express): void {
       res.redirect('/settings?instagram=connected');
     } catch (error: any) {
       console.error("[instagram-native] Callback error:", error);
-      res.redirect('/settings?instagram=error&detail=' + encodeURIComponent(error.message || 'callback_failed'));
+      res.redirect('/settings?instagram=error&detail=callback_failed');
     }
   });
 

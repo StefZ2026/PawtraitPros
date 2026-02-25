@@ -81,7 +81,9 @@ export default function Dashboard() {
           .then(onSubscriptionConfirmed)
           .catch((err) => {
             console.error("[stripe] Checkout confirmation failed:", err);
-            onSubscriptionConfirmed();
+            toast({ title: "Subscription confirmation failed", description: "Please contact support if your plan isn't active.", variant: "destructive" });
+            queryClient.invalidateQueries({ queryKey: ["/api/my-organization"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
           });
       } else {
         onSubscriptionConfirmed();

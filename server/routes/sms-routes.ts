@@ -41,8 +41,7 @@ export function registerSmsRoutes(app: Express): void {
       res.json({ success: true });
     } catch (error: any) {
       console.error("SMS send error:", error);
-      const errMsg = error?.message || "Failed to send text message";
-      res.status(500).json({ error: errMsg });
+      res.status(500).json({ error: "Failed to send text message" });
     }
   });
 }

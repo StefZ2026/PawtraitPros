@@ -191,9 +191,8 @@ export function registerAdminRoutes(app: Express): void {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error("Error creating pet for org:", errMsg, error);
-      res.status(500).json({ error: `Failed to save pet: ${errMsg}` });
+      console.error("Error creating pet for org:", error);
+      res.status(500).json({ error: "Failed to save pet" });
     }
   });
 
