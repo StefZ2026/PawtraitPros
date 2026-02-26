@@ -271,7 +271,7 @@ export function registerMerchRoutes(app: Express): void {
         [order.id]
       );
 
-      // Get order items for Printful
+      // Get order items
       const itemsResult = await pool.query(
         `SELECT * FROM merch_order_items WHERE order_id = $1`,
         [order.id]
@@ -284,7 +284,10 @@ export function registerMerchRoutes(app: Express): void {
         return res.json({ orderId: order.id, status: "paid", warning: "Fulfillment pending — missing image URL" });
       }
 
-      // Submit to Printful
+      // Split items: Printful (frames, mugs, totes) vs Gelato (cards)
+      const printfulRows = itemsResult.rows.filter((item: any) => !item.product_key.startsWith("card_"));
+      const gelatoRows = itemsResult.rows.filter((item: any) => item.product_key.startsWith("card_"));
+
       const recipient: PrintfulRecipient = {
         name: order.customer_name,
         address1: order.shipping_street,
@@ -296,82 +299,140 @@ export function registerMerchRoutes(app: Express): void {
         phone: order.customer_phone,
       };
 
-      try {
-        const printfulItems = itemsResult.rows.map((item: any) =>
-          buildOrderItem(item.variant_id, item.quantity, imageUrl)
-        );
-        const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(order.id));
+      let printfulOrderId: number | null = null;
+      let gelatoOrderId: string | null = null;
 
-        await pool.query(
-          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
-          [String(printfulOrder.id), printfulOrder.status, order.id]
-        );
-
-        // Auto-confirm the Printful order
+      // Submit Printful items (if any)
+      if (printfulRows.length > 0) {
         try {
-          await confirmPrintfulOrder(printfulOrder.id);
+          const printfulItems = printfulRows.map((item: any) =>
+            buildOrderItem(item.variant_id, item.quantity, imageUrl)
+          );
+          const printfulOrder = await createPrintfulOrder(recipient, printfulItems, String(order.id));
+          printfulOrderId = printfulOrder.id;
+
           await pool.query(
-            `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+            `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+            [String(printfulOrder.id), printfulOrder.status, order.id]
+          );
+
+          try {
+            await confirmPrintfulOrder(printfulOrder.id);
+            await pool.query(
+              `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+              [order.id]
+            );
+          } catch (confirmErr: any) {
+            console.warn(`[merch] Printful auto-confirm failed for order ${order.id}:`, confirmErr.message);
+          }
+        } catch (printfulErr: any) {
+          console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
+          await pool.query(
+            `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
             [order.id]
           );
-        } catch (confirmErr: any) {
-          console.warn(`[merch] Auto-confirm failed for order ${order.id}:`, confirmErr.message);
         }
+      }
 
-        // Send order confirmation email with watermarked portrait download
-        if (order.customer_email && isEmailConfigured()) {
-          try {
-            const itemDescriptions = itemsResult.rows.map((item: any) => {
-              const product = getProduct(item.product_key);
-              return `${product?.name || item.product_key} x${item.quantity}`;
-            });
-            const orgName = org?.name || "Pawtrait Pros";
-            const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
-            const dogName = dogResult?.name || "your pet";
+      // Submit Gelato card items (if any)
+      if (gelatoRows.length > 0) {
+        try {
+          const { getGelatoProduct: getGelatoProductConfig } = await import("../gelato-config");
+          const { createGelatoOrder, buildCardOrderItem } = await import("../gelato");
 
-            const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+          const gelatoItems = gelatoRows.map((item: any, i: number) => {
+            const product = getGelatoProductConfig(item.product_key);
+            return buildCardOrderItem(
+              product?.productUid || item.product_key,
+              item.quantity,
+              [{ type: "default", url: imageUrl }],
+              `item-${order.id}-${i}`
+            );
+          });
 
-            // Fetch the watermarked portrait as an attachment
-            let attachments: Array<{ filename: string; content: Buffer }> | undefined;
-            if (order.portrait_id) {
-              try {
-                const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
-                const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
-                if (downloadRes.ok) {
-                  const buffer = Buffer.from(await downloadRes.arrayBuffer());
-                  attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
-                }
-              } catch (dlErr: any) {
-                console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
-              }
-            }
+          const nameParts = (order.customer_name || "Customer").split(" ");
+          const gelatoAddress = {
+            firstName: nameParts[0] || "Customer",
+            lastName: nameParts.slice(1).join(" ") || "",
+            addressLine1: order.shipping_street,
+            city: order.shipping_city,
+            state: order.shipping_state,
+            postCode: order.shipping_zip,
+            country: order.shipping_country || "US",
+            email: order.customer_email,
+            phone: order.customer_phone,
+          };
 
-            await sendEmail(order.customer_email, subject, html, attachments, orgName);
-            console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
-          } catch (emailErr: any) {
-            console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+          const gelatoOrder = await createGelatoOrder(
+            gelatoItems,
+            gelatoAddress,
+            `pp-${order.id}`,
+            `org-${order.organization_id}`
+          );
+          gelatoOrderId = gelatoOrder.id;
+
+          // Store Gelato order ID (use printful_order_id column if no Printful items, otherwise store in notes)
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET printful_order_id = $1, status = 'submitted' WHERE id = $2`,
+              [`gelato:${gelatoOrder.id}`, order.id]
+            );
+          }
+
+          console.log(`[merch] Gelato order ${gelatoOrder.id} created for merch order ${order.id}`);
+        } catch (gelatoErr: any) {
+          console.error(`[merch] Gelato order failed for paid order ${order.id}:`, gelatoErr.message);
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
+              [order.id]
+            );
           }
         }
-
-        res.json({
-          orderId: order.id,
-          printfulOrderId: printfulOrder.id,
-          totalCents: order.total_cents,
-          status: "confirmed",
-        });
-      } catch (printfulErr: any) {
-        console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
-        await pool.query(
-          `UPDATE merch_orders SET status = 'paid_fulfillment_pending', printful_status = $1 WHERE id = $2`,
-          [printfulErr.message, order.id]
-        );
-        res.json({
-          orderId: order.id,
-          totalCents: order.total_cents,
-          status: "paid",
-          warning: "Payment received but fulfillment pending — we'll process it shortly",
-        });
       }
+
+      // Send order confirmation email
+      if (order.customer_email && isEmailConfigured()) {
+        try {
+          const itemDescriptions = itemsResult.rows.map((item: any) => {
+            const product = getProduct(item.product_key);
+            return `${product?.name || item.product_key} x${item.quantity}`;
+          });
+          const orgName = org?.name || "Pawtrait Pros";
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const dogName = dogResult?.name || "your pet";
+
+          const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+
+          let attachments: Array<{ filename: string; content: Buffer }> | undefined;
+          if (order.portrait_id) {
+            try {
+              const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
+              const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
+              if (downloadRes.ok) {
+                const buffer = Buffer.from(await downloadRes.arrayBuffer());
+                attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
+              }
+            } catch (dlErr: any) {
+              console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
+            }
+          }
+
+          await sendEmail(order.customer_email, subject, html, attachments, orgName);
+          console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
+        } catch (emailErr: any) {
+          console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+        }
+      }
+
+      const finalStatus = printfulOrderId || gelatoOrderId ? "confirmed" : "paid_fulfillment_pending";
+      res.json({
+        orderId: order.id,
+        printfulOrderId,
+        gelatoOrderId,
+        totalCents: order.total_cents,
+        status: finalStatus,
+      });
     } catch (error: any) {
       console.error("Error confirming merch checkout:", error);
       res.status(500).json({ error: "Failed to confirm checkout" });
@@ -500,9 +561,9 @@ export function registerMerchRoutes(app: Express): void {
     }
   });
 
-  // --- Gelato Holiday Card Endpoints ---
+  // --- Gelato Greeting Card Endpoints ---
 
-  // Get available holiday card products
+  // Get available greeting card products
   app.get("/api/gelato/products", async (_req: Request, res: Response) => {
     try {
       const { getAllGelatoProducts } = await import("../gelato-config");
@@ -513,14 +574,15 @@ export function registerMerchRoutes(app: Express): void {
     }
   });
 
-  // Check if holiday cards are currently available (Nov-Dec only in v1)
+  // Check if greeting cards are available (always available — Gelato API key must be set)
   app.get("/api/gelato/availability", async (_req: Request, res: Response) => {
-    const month = new Date().getMonth(); // 0-indexed
-    const available = month === 10 || month === 11; // November or December
-    res.json({ available, season: available ? "holiday" : null });
+    const available = !!process.env.GELATO_API_KEY;
+    const month = new Date().getMonth();
+    const season = (month === 10 || month === 11) ? "holiday" : null;
+    res.json({ available, season });
   });
 
-  // Create a holiday card order via Gelato (rate-limited to prevent abuse)
+  // Create a greeting card order via Gelato (rate-limited to prevent abuse)
   app.post("/api/gelato/order", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
     try {
       const { items, customer, address, artworkUrls } = req.body;

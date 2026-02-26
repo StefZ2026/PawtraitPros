@@ -1,7 +1,7 @@
 /**
- * Pawtrait Pros — Gelato Holiday Card Configuration
+ * Pawtrait Pros — Gelato Greeting Card Configuration
  *
- * Two products only: Flat 5×7 and Folded 5×7 greeting cards.
+ * Two products: Flat 5×7 and Folded 5×7 greeting cards.
  * Gelato uses productUid strings (not numeric variant IDs like Printful).
  *
  * IMPORTANT: The productUids below are placeholders. Once Stefanie creates
@@ -10,7 +10,7 @@
  * for A5 greeting cards and update these constants.
  *
  * Gelato's closest size to 5×7" is A5 (~5.9×8.3").
- * Cards ship in packs with matching envelopes.
+ * Cards ship with matching envelopes.
  */
 
 export interface GelatoCardProduct {

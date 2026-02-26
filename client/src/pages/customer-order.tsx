@@ -99,17 +99,17 @@ export default function CustomerOrder() {
     queryKey: ["/api/merch/products"],
   });
 
-  // Check holiday card availability
-  const { data: holidayAvail } = useQuery<{ available: boolean; season: string | null }>({
+  // Check greeting card availability
+  const { data: cardAvail } = useQuery<{ available: boolean; season: string | null }>({
     queryKey: ["/api/gelato/availability"],
   });
 
-  // Fetch holiday card products
+  // Fetch greeting card products
   const { data: cardProducts } = useQuery<{
     cards: Array<{ productUid: string; name: string; format: string; size: string; priceCents: number }>;
   }>({
     queryKey: ["/api/gelato/products"],
-    enabled: !!holidayAvail?.available,
+    enabled: !!cardAvail?.available,
   });
 
   // Checkout mutation — creates Stripe Checkout Session and redirects to Stripe
@@ -654,12 +654,12 @@ export default function CustomerOrder() {
                   </Button>
                 </CardFooter>
               </Card>
-              {/* Holiday Cards — visible Nov-Dec only */}
-              {holidayAvail?.available && cardProducts?.cards && (
-                <Card className="border-red-200 dark:border-red-800">
+              {/* Greeting Cards */}
+              {cardAvail?.available && cardProducts?.cards && (
+                <Card className={cardAvail.season === "holiday" ? "border-red-200 dark:border-red-800" : ""}>
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <Gift className="h-5 w-5 text-red-500" /> Holiday Greeting Cards
+                      <Gift className={`h-5 w-5 ${cardAvail.season === "holiday" ? "text-red-500" : "text-primary"}`} /> {cardAvail.season === "holiday" ? "Holiday " : ""}Greeting Cards
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       5×7 cards with matching envelopes — printed & shipped directly to you
