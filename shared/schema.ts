@@ -153,6 +153,8 @@ export const merchOrderItems = pgTable("merch_order_items", {
   variantId: integer("variant_id").notNull(), // Printful variant ID
   quantity: integer("quantity").default(1).notNull(),
   priceCents: integer("price_cents").notNull(),
+  occasion: text("occasion"), // card occasion ID: "birthday", "valentines", etc.
+  artworkUrl: text("artwork_url"), // public URL of generated card artwork
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

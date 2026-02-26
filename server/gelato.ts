@@ -155,15 +155,22 @@ export async function listCatalogs(): Promise<any> {
 }
 
 /**
- * Search for card products in the cards catalog.
- * Use this to discover the exact productUids for greeting cards.
+ * Search for flat card products in the cards catalog.
  */
 export async function searchCardProducts(): Promise<any> {
   return gelatoFetch(GELATO_PRODUCT_BASE, "/catalogs/cards/products:search", {
     method: "POST",
-    body: JSON.stringify({
-      attributeFilters: {},
-    }),
+    body: JSON.stringify({ attributeFilters: {} }),
+  });
+}
+
+/**
+ * Search for folded card products in the folded-cards catalog.
+ */
+export async function searchFoldedCardProducts(): Promise<any> {
+  return gelatoFetch(GELATO_PRODUCT_BASE, "/catalogs/folded-cards/products:search", {
+    method: "POST",
+    body: JSON.stringify({ attributeFilters: {} }),
   });
 }
 

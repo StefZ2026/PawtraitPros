@@ -7,8 +7,35 @@ import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, ge
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "../printful";
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from "./email";
 import { ADMIN_EMAIL, publicExpensiveRateLimiter } from "./helpers";
+import { getGelatoProduct as getGelatoProductConfig, getAllGelatoProducts, sortOccasionsForDisplay, getOccasion } from "../gelato-config";
+import { generateFlatCardArtwork, generateFlatCardBack, generateFoldedOutsideArtwork, generateFoldedInsideArtwork, bufferToDataUri } from "../card-artwork";
+import { uploadToStorage, fetchImageAsBuffer } from "../supabase-storage";
 
 export function registerMerchRoutes(app: Express): void {
+  // In-memory cache for card previews (portraitId-occasion-format -> PNG buffer)
+  const previewCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+  const PREVIEW_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+  const PREVIEW_CACHE_MAX = 50;
+
+  function getCachedPreview(key: string): Buffer | null {
+    const entry = previewCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > PREVIEW_CACHE_TTL) {
+      previewCache.delete(key);
+      return null;
+    }
+    return entry.buffer;
+  }
+
+  function setCachedPreview(key: string, buffer: Buffer): void {
+    // Evict oldest if at capacity
+    if (previewCache.size >= PREVIEW_CACHE_MAX) {
+      const oldest = [...previewCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+      if (oldest) previewCache.delete(oldest[0]);
+    }
+    previewCache.set(key, { buffer, timestamp: Date.now() });
+  }
+
   // --- MERCH PRODUCTS ---
   // Returns available merch products and pricing
   app.get("/api/merch/products", async (req: Request, res: Response) => {
@@ -82,25 +109,29 @@ export function registerMerchRoutes(app: Express): void {
         return res.status(400).json({ error: "Organization ID is required" });
       }
 
-      // Validate all items and calculate total
+      // Validate all items and calculate total (supports both Printful + Gelato products)
       let subtotalCents = 0;
-      const validatedItems: Array<{ productKey: string; variantId: number; quantity: number; priceCents: number }> = [];
+      const validatedItems: Array<{ productKey: string; variantId: number; quantity: number; priceCents: number; occasion?: string }> = [];
       for (const item of items) {
-        const product = getProduct(item.productKey);
-        if (!product) {
+        const isCard = item.productKey.startsWith("card_");
+        const printfulProduct = isCard ? null : getProduct(item.productKey);
+        const gelatoProduct = isCard ? getGelatoProductConfig(item.productKey) : null;
+        if (!printfulProduct && !gelatoProduct) {
           return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
         }
+        const priceCents = printfulProduct?.priceCents || gelatoProduct?.priceCents || 0;
         const qty = item.quantity || 1;
-        subtotalCents += product.priceCents * qty;
+        subtotalCents += priceCents * qty;
         validatedItems.push({
           productKey: item.productKey,
-          variantId: product.variantId,
+          variantId: printfulProduct?.variantId || 0,
           quantity: qty,
-          priceCents: product.priceCents,
+          priceCents,
+          occasion: isCard ? (item.occasion || undefined) : undefined,
         });
       }
 
-      // Estimate shipping
+      // Estimate shipping (only for Printful items — Gelato handles its own shipping)
       const recipient: PrintfulRecipient = {
         name: customer.name,
         address1: address.address1,
@@ -114,8 +145,11 @@ export function registerMerchRoutes(app: Express): void {
 
       let shippingCents = 0;
       try {
-        const shippingItems = validatedItems.map(i => ({ variant_id: i.variantId, quantity: i.quantity }));
-        const rates = await estimateShipping(recipient, shippingItems);
+        const printfulShippingItems = validatedItems
+          .filter(i => !i.productKey.startsWith("card_"))
+          .map(i => ({ variant_id: i.variantId, quantity: i.quantity }));
+        if (printfulShippingItems.length === 0) throw new Error("No Printful items for shipping estimate");
+        const rates = await estimateShipping(recipient, printfulShippingItems);
         if (rates.length > 0) {
           shippingCents = Math.round(parseFloat(rates[0].rate) * 100);
         }
@@ -143,12 +177,12 @@ export function registerMerchRoutes(app: Express): void {
       );
       const merchOrderId = orderResult.rows[0].id;
 
-      // Insert order items
+      // Insert order items (include occasion for card items)
       for (const item of validatedItems) {
         await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents]
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, occasion)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.occasion || null]
         );
       }
 
@@ -159,11 +193,15 @@ export function registerMerchRoutes(app: Express): void {
 
       // Build line items for Stripe Checkout
       const lineItems = validatedItems.map(item => {
-        const product = getProduct(item.productKey);
+        const printfulProduct = getProduct(item.productKey);
+        const gelatoProduct = getGelatoProductConfig(item.productKey);
+        const occasion = item.occasion ? getOccasion(item.occasion) : null;
+        let displayName = printfulProduct?.name || gelatoProduct?.name || item.productKey;
+        if (occasion) displayName = `${occasion.name} ${displayName}`;
         return {
           price_data: {
             currency: "usd",
-            product_data: { name: product?.name || item.productKey },
+            product_data: { name: displayName },
             unit_amount: item.priceCents,
           },
           quantity: item.quantity,
@@ -334,21 +372,56 @@ export function registerMerchRoutes(app: Express): void {
         }
       }
 
-      // Submit Gelato card items (if any)
+      // Submit Gelato card items (if any) — generate occasion artwork first
       if (gelatoRows.length > 0) {
         try {
-          const { getGelatoProduct: getGelatoProductConfig } = await import("../gelato-config");
           const { createGelatoOrder, buildCardOrderItem } = await import("../gelato");
 
-          const gelatoItems = gelatoRows.map((item: any, i: number) => {
+          // Look up dog name and org name for card artwork
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const petName = dogResult?.name || "Your Pet";
+          const orgName = org?.name || "Pawtrait Pros";
+
+          const gelatoItems: any[] = [];
+          for (let i = 0; i < gelatoRows.length; i++) {
+            const item = gelatoRows[i];
             const product = getGelatoProductConfig(item.product_key);
-            return buildCardOrderItem(
+            const occasion = item.occasion ? getOccasion(item.occasion) : null;
+
+            let files: Array<{ type: string; url: string }>;
+
+            if (occasion) {
+              // Generate occasion-specific card artwork and upload to Supabase Storage
+              const format = product?.format || "flat";
+              console.log(`[merch] Generating ${occasion.id} ${format} card artwork for order ${order.id}`);
+
+              if (format === "flat") {
+                const frontBuf = await generateFlatCardArtwork(imageUrl, occasion, petName, orgName);
+                const backBuf = await generateFlatCardBack(orgName);
+                const frontUrl = await uploadToStorage(bufferToDataUri(frontBuf), "portraits", `card-${order.id}-${i}-front.png`);
+                const backUrl = await uploadToStorage(bufferToDataUri(backBuf), "portraits", `card-${order.id}-${i}-back.png`);
+                files = [{ type: "default", url: frontUrl }, { type: "back", url: backUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [frontUrl, item.id]);
+              } else {
+                const outsideBuf = await generateFoldedOutsideArtwork(imageUrl, occasion, petName, orgName);
+                const insideBuf = await generateFoldedInsideArtwork(occasion, petName);
+                const outsideUrl = await uploadToStorage(bufferToDataUri(outsideBuf), "portraits", `card-${order.id}-${i}-outside.png`);
+                const insideUrl = await uploadToStorage(bufferToDataUri(insideBuf), "portraits", `card-${order.id}-${i}-inside.png`);
+                files = [{ type: "default", url: outsideUrl }, { type: "inside", url: insideUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [outsideUrl, item.id]);
+              }
+            } else {
+              // No occasion — use raw portrait as fallback
+              files = [{ type: "default", url: imageUrl }];
+            }
+
+            gelatoItems.push(buildCardOrderItem(
               product?.productUid || item.product_key,
               item.quantity,
-              [{ type: "default", url: imageUrl }],
-              `item-${order.id}-${i}`
-            );
-          });
+              files,
+              `item-${order.id}-${i}`,
+            ));
+          }
 
           const nameParts = (order.customer_name || "Customer").split(" ");
           const gelatoAddress = {
@@ -566,7 +639,6 @@ export function registerMerchRoutes(app: Express): void {
   // Get available greeting card products
   app.get("/api/gelato/products", async (_req: Request, res: Response) => {
     try {
-      const { getAllGelatoProducts } = await import("../gelato-config");
       res.json({ cards: getAllGelatoProducts() });
     } catch (error) {
       console.error("Error fetching Gelato products:", error);
@@ -574,12 +646,72 @@ export function registerMerchRoutes(app: Express): void {
     }
   });
 
-  // Check if greeting cards are available (always available — Gelato API key must be set)
+  // Check if greeting cards are available + return sorted occasions
   app.get("/api/gelato/availability", async (_req: Request, res: Response) => {
     const available = !!process.env.GELATO_API_KEY;
     const month = new Date().getMonth();
-    const season = (month === 10 || month === 11) ? "holiday" : null;
-    res.json({ available, season });
+    const occasions = sortOccasionsForDisplay(month);
+    res.json({ available, occasions });
+  });
+
+  // Get all card occasions sorted for current month
+  app.get("/api/cards/occasions", async (_req: Request, res: Response) => {
+    const month = new Date().getMonth();
+    res.json({ occasions: sortOccasionsForDisplay(month) });
+  });
+
+  // Generate card preview (returns PNG image, cached)
+  app.post("/api/cards/preview", publicExpensiveRateLimiter, async (req: Request, res: Response) => {
+    try {
+      const { portraitId, occasion: occasionId, format, petName } = req.body;
+      if (!portraitId || !occasionId) {
+        return res.status(400).json({ error: "portraitId and occasion are required" });
+      }
+
+      const occasion = getOccasion(occasionId);
+      if (!occasion) {
+        return res.status(400).json({ error: `Unknown occasion: ${occasionId}` });
+      }
+
+      const cardFormat = format || "flat";
+      const cacheKey = `${portraitId}-${occasionId}-${cardFormat}`;
+
+      // Check cache first
+      const cached = getCachedPreview(cacheKey);
+      if (cached) {
+        res.set("Content-Type", "image/png");
+        res.set("Cache-Control", "public, max-age=900");
+        return res.send(cached);
+      }
+
+      // Fetch portrait image
+      const portrait = await storage.getPortrait(portraitId);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).json({ error: "Portrait not found" });
+      }
+
+      const name = petName || "Your Pet";
+      let previewBuf: Buffer;
+
+      if (cardFormat === "folded") {
+        // Show the front cover (outside artwork, top half)
+        previewBuf = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, "Your Business");
+      } else {
+        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, "Your Business");
+      }
+
+      // Resize to a smaller preview (600px wide)
+      const { default: sharpLib } = await import("sharp");
+      const preview = await sharpLib(previewBuf).resize(600, null, { fit: "inside" }).png().toBuffer();
+
+      setCachedPreview(cacheKey, preview);
+      res.set("Content-Type", "image/png");
+      res.set("Cache-Control", "public, max-age=900");
+      res.send(preview);
+    } catch (error: any) {
+      console.error("Error generating card preview:", error);
+      res.status(500).json({ error: "Failed to generate preview" });
+    }
   });
 
   // Create a greeting card order via Gelato (rate-limited to prevent abuse)
@@ -710,10 +842,11 @@ export function registerMerchRoutes(app: Express): void {
     }
 
     try {
-      const { searchCardProducts, listCatalogs } = await import("../gelato");
+      const { searchCardProducts, searchFoldedCardProducts, listCatalogs } = await import("../gelato");
       const catalogs = await listCatalogs();
-      const cards = await searchCardProducts();
-      res.json({ catalogs, cards });
+      const flatCards = await searchCardProducts();
+      const foldedCards = await searchFoldedCardProducts();
+      res.json({ catalogs, flatCards, foldedCards });
     } catch (error: any) {
       console.error("Error discovering Gelato products:", error);
       res.status(500).json({ error: "Failed to discover products" });

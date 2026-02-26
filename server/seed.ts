@@ -228,6 +228,11 @@ export async function seedDatabase() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )`);
 
+        // Card occasion + artwork columns on merch_order_items
+        await pool.query('ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS occasion TEXT');
+        await pool.query('ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS artwork_url TEXT');
+        console.log('[migration] Merch order items card columns ready');
+
         // Customer sessions table (QR/short link for ordering)
         await pool.query(`CREATE TABLE IF NOT EXISTS customer_sessions (
           id SERIAL PRIMARY KEY,

@@ -42,6 +42,16 @@ interface CartItem {
   productKey: string;
   product: MerchProduct;
   quantity: number;
+  occasion?: string;
+  occasionName?: string;
+}
+
+interface CardOccasionData {
+  id: string;
+  name: string;
+  greetingText: string;
+  featured: boolean;
+  templateColors: { primary: string; secondary: string; textColor: string };
 }
 
 type OrderStep = "browse" | "cart" | "shipping" | "paying" | "confirm";
@@ -61,6 +71,9 @@ export default function CustomerOrder() {
   const [mugSize, setMugSize] = useState("11oz");
   const [cardFormat, setCardFormat] = useState<"flat" | "folded">("flat");
   const [cardQty, setCardQty] = useState(10);
+  const [selectedOccasion, setSelectedOccasion] = useState<string | null>(null);
+  const [cardPreviewUrl, setCardPreviewUrl] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [showAlternates, setShowAlternates] = useState(false);
   const [confirmingPayment, setConfirmingPayment] = useState(false);
   const [shipping, setShipping] = useState({
@@ -99,8 +112,8 @@ export default function CustomerOrder() {
     queryKey: ["/api/merch/products"],
   });
 
-  // Check greeting card availability
-  const { data: cardAvail } = useQuery<{ available: boolean; season: string | null }>({
+  // Check greeting card availability + occasions
+  const { data: cardAvail } = useQuery<{ available: boolean; occasions: CardOccasionData[] }>({
     queryKey: ["/api/gelato/availability"],
   });
 
@@ -111,6 +124,33 @@ export default function CustomerOrder() {
     queryKey: ["/api/gelato/products"],
     enabled: !!cardAvail?.available,
   });
+
+  // Fetch card preview when occasion changes
+  const fetchCardPreview = async (occasionId: string) => {
+    const portraitId = selectedPortraitId || session?.portraitId;
+    if (!portraitId) return;
+    setLoadingPreview(true);
+    setCardPreviewUrl(null);
+    try {
+      const res = await fetch("/api/cards/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          portraitId,
+          occasion: occasionId,
+          format: cardFormat,
+          petName: session?.dogName || "Your Pet",
+        }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        setCardPreviewUrl(URL.createObjectURL(blob));
+      }
+    } catch (e) {
+      console.error("Failed to load card preview:", e);
+    }
+    setLoadingPreview(false);
+  };
 
   // Checkout mutation — creates Stripe Checkout Session and redirects to Stripe
   const checkoutMutation = useMutation({
@@ -123,6 +163,7 @@ export default function CustomerOrder() {
           items: cart.map((item) => ({
             productKey: item.productKey,
             quantity: item.quantity,
+            occasion: item.occasion,
           })),
           customer: {
             name: shipping.name,
@@ -248,8 +289,10 @@ export default function CustomerOrder() {
     toast({ title: "Added to cart", description: product.name });
   };
 
-  const removeFromCart = (productKey: string) => {
-    setCart((prev) => prev.filter((item) => item.productKey !== productKey));
+  const removeFromCart = (productKey: string, occasion?: string) => {
+    setCart((prev) => prev.filter((item) =>
+      !(item.productKey === productKey && item.occasion === occasion)
+    ));
   };
 
   const getFrameProductKey = () => `frame_${frameSize.replace("×", "x")}_${frameColor}`;
@@ -417,15 +460,18 @@ export default function CustomerOrder() {
             ) : (
               <>
                 {cart.map((item) => (
-                  <Card key={item.productKey}>
+                  <Card key={item.productKey + (item.occasion || "")}>
                     <CardContent className="py-4 flex items-center justify-between">
                       <div>
                         <p className="font-medium">{item.product.name}</p>
+                        {item.occasionName && (
+                          <p className="text-xs text-primary">{item.occasionName}</p>
+                        )}
                         <p className="text-sm text-muted-foreground">
                           Qty: {item.quantity} — ${((item.product.priceCents * item.quantity) / 100).toFixed(2)}
                         </p>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={() => removeFromCart(item.productKey)}>
+                      <Button variant="ghost" size="sm" onClick={() => removeFromCart(item.productKey, item.occasion)}>
                         Remove
                       </Button>
                     </CardContent>
@@ -654,80 +700,167 @@ export default function CustomerOrder() {
                   </Button>
                 </CardFooter>
               </Card>
-              {/* Greeting Cards */}
-              {cardAvail?.available && cardProducts?.cards && (
-                <Card className={cardAvail.season === "holiday" ? "border-red-200 dark:border-red-800" : ""}>
+              {/* Greeting Cards with Occasion Picker */}
+              {cardAvail?.available && cardProducts?.cards && cardAvail.occasions && (
+                <Card className="col-span-full">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-base">
-                      <Gift className={`h-5 w-5 ${cardAvail.season === "holiday" ? "text-red-500" : "text-primary"}`} /> {cardAvail.season === "holiday" ? "Holiday " : ""}Greeting Cards
+                      <Gift className="h-5 w-5 text-primary" /> Greeting Cards
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      5×7 cards with matching envelopes — printed & shipped directly to you
+                      5×7 cards with matching envelopes — pick an occasion, preview your card, and order!
+                      <br />
+                      <span className="text-xs">Includes a free hi-res digital download of the portrait.</span>
                     </p>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-4">
+                    {/* Occasion Picker */}
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">Format</label>
-                      <div className="flex gap-2">
-                        <button
-                          className={`px-3 py-1.5 rounded-md border text-sm ${
-                            cardFormat === "flat" ? "border-primary bg-primary/5 font-medium" : "border-border"
-                          }`}
-                          onClick={() => setCardFormat("flat")}
-                        >
-                          Flat Card
-                        </button>
-                        <button
-                          className={`px-3 py-1.5 rounded-md border text-sm ${
-                            cardFormat === "folded" ? "border-primary bg-primary/5 font-medium" : "border-border"
-                          }`}
-                          onClick={() => setCardFormat("folded")}
-                        >
-                          Folded Card
-                        </button>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">Quantity</label>
-                      <div className="flex gap-2">
-                        {[10, 25, 50].map((qty) => (
+                      <label className="text-sm font-medium mb-2 block">Choose an Occasion</label>
+                      <div className="flex flex-wrap gap-2">
+                        {cardAvail.occasions.map((occ) => (
                           <button
-                            key={qty}
-                            className={`px-3 py-1.5 rounded-md border text-sm ${
-                              cardQty === qty ? "border-primary bg-primary/5 font-medium" : "border-border"
+                            key={occ.id}
+                            className={`relative px-3 py-2 rounded-lg border text-sm transition-all ${
+                              selectedOccasion === occ.id
+                                ? "ring-2 ring-offset-1 font-medium"
+                                : "border-border hover:border-primary/40"
                             }`}
-                            onClick={() => setCardQty(qty)}
+                            style={
+                              selectedOccasion === occ.id
+                                ? { borderColor: occ.templateColors.primary, backgroundColor: occ.templateColors.secondary, color: occ.templateColors.textColor, ringColor: occ.templateColors.primary }
+                                : undefined
+                            }
+                            onClick={() => {
+                              setSelectedOccasion(occ.id);
+                              fetchCardPreview(occ.id);
+                            }}
                           >
-                            {qty} cards
+                            {occ.name}
+                            {occ.featured && (
+                              <span className="absolute -top-1.5 -right-1.5 bg-primary text-white text-[9px] px-1 rounded-full leading-tight">
+                                NEW
+                              </span>
+                            )}
                           </button>
                         ))}
                       </div>
                     </div>
+
+                    {/* Card Preview */}
+                    {selectedOccasion && (
+                      <div className="flex flex-col items-center gap-3">
+                        {loadingPreview ? (
+                          <div className="w-full max-w-[300px] aspect-[5/7] bg-muted rounded-lg flex items-center justify-center">
+                            <span className="text-sm text-muted-foreground animate-pulse">Generating preview...</span>
+                          </div>
+                        ) : cardPreviewUrl ? (
+                          <img
+                            src={cardPreviewUrl}
+                            alt="Card preview"
+                            className="w-full max-w-[300px] rounded-lg shadow-md border"
+                          />
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Format + Quantity (only show after occasion is selected) */}
+                    {selectedOccasion && (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium mb-1.5 block">Format</label>
+                          <div className="flex gap-2">
+                            <button
+                              className={`px-3 py-1.5 rounded-md border text-sm ${
+                                cardFormat === "flat" ? "border-primary bg-primary/5 font-medium" : "border-border"
+                              }`}
+                              onClick={() => {
+                                setCardFormat("flat");
+                                if (selectedOccasion) fetchCardPreview(selectedOccasion);
+                              }}
+                            >
+                              Flat Card
+                            </button>
+                            <button
+                              className={`px-3 py-1.5 rounded-md border text-sm ${
+                                cardFormat === "folded" ? "border-primary bg-primary/5 font-medium" : "border-border"
+                              }`}
+                              onClick={() => {
+                                setCardFormat("folded");
+                                if (selectedOccasion) fetchCardPreview(selectedOccasion);
+                              }}
+                            >
+                              Folded Card
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-1.5 block">Quantity</label>
+                          <div className="flex gap-2">
+                            {[10, 25, 50].map((qty) => (
+                              <button
+                                key={qty}
+                                className={`px-3 py-1.5 rounded-md border text-sm ${
+                                  cardQty === qty ? "border-primary bg-primary/5 font-medium" : "border-border"
+                                }`}
+                                onClick={() => setCardQty(qty)}
+                              >
+                                {qty} cards
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
-                  <CardFooter className="flex items-center justify-between">
-                    <span className="font-bold">
-                      ${((
-                        (cardProducts.cards.find((c) => c.format === cardFormat)?.priceCents || 499) * cardQty
-                      ) / 100).toFixed(2)}
-                    </span>
-                    <Button
-                      className="gap-1"
-                      onClick={() => {
-                        const card = cardProducts.cards.find((c) => c.format === cardFormat);
-                        if (card) {
-                          const key = cardFormat === "flat" ? "card_flat_5x7" : "card_folded_5x7";
-                          addToCart(key, {
-                            variantId: 0,
-                            name: card.name,
-                            category: "tote" as any, // reuse type for cart compatibility
-                            priceCents: card.priceCents,
-                          });
-                        }
-                      }}
-                    >
-                      <ShoppingCart className="h-4 w-4" /> Add to Cart
-                    </Button>
-                  </CardFooter>
+                  {selectedOccasion && (
+                    <CardFooter className="flex items-center justify-between">
+                      <span className="font-bold">
+                        ${((
+                          (cardProducts.cards.find((c) => c.format === cardFormat)?.priceCents || 499) * cardQty
+                        ) / 100).toFixed(2)}
+                      </span>
+                      <Button
+                        className="gap-1"
+                        onClick={() => {
+                          const card = cardProducts.cards.find((c) => c.format === cardFormat);
+                          const occasion = cardAvail.occasions.find((o) => o.id === selectedOccasion);
+                          if (card && occasion) {
+                            const key = cardFormat === "flat" ? "card_flat_5x7" : "card_folded_5x7";
+                            const existing = cart.find((c) => c.productKey === key && c.occasion === selectedOccasion);
+                            if (existing) {
+                              setCart((prev) =>
+                                prev.map((c) =>
+                                  c.productKey === key && c.occasion === selectedOccasion
+                                    ? { ...c, quantity: c.quantity + cardQty }
+                                    : c,
+                                ),
+                              );
+                            } else {
+                              setCart((prev) => [
+                                ...prev,
+                                {
+                                  productKey: key,
+                                  product: {
+                                    variantId: 0,
+                                    name: `${occasion.name} ${card.name}`,
+                                    category: "tote" as any,
+                                    priceCents: card.priceCents,
+                                  },
+                                  quantity: cardQty,
+                                  occasion: selectedOccasion,
+                                  occasionName: occasion.name,
+                                },
+                              ]);
+                            }
+                            toast({ title: `Added ${occasion.name} cards to cart` });
+                          }
+                        }}
+                      >
+                        <ShoppingCart className="h-4 w-4" /> Add to Cart
+                      </Button>
+                    </CardFooter>
+                  )}
                 </Card>
               )}
             </div>
