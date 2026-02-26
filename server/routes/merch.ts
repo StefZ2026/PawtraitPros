@@ -691,13 +691,27 @@ export function registerMerchRoutes(app: Express): void {
       }
 
       const name = petName || "Your Pet";
+
+      // Look up org name from portrait → dog → organization
+      let orgName = "Your Business";
+      try {
+        if (portrait.dogId) {
+          const dog = await storage.getDog(portrait.dogId);
+          if (dog?.organizationId) {
+            const org = await storage.getOrganization(dog.organizationId);
+            if (org?.name) orgName = org.name;
+          }
+        }
+      } catch (e) {
+        // Fall back to default
+      }
+
       let previewBuf: Buffer;
 
       if (cardFormat === "folded") {
-        // Show the front cover (outside artwork, top half)
-        previewBuf = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, "Your Business");
+        previewBuf = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
       } else {
-        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, "Your Business");
+        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, orgName);
       }
 
       // Resize to a smaller preview (600px wide)

@@ -68,7 +68,7 @@ function decorativeBorderSvg(w: number, h: number, color: string, thickness: num
 
 async function resizeToFit(imageBuffer: Buffer, maxW: number, maxH: number): Promise<Buffer> {
   return sharp(imageBuffer)
-    .resize(maxW, maxH, { fit: "cover", position: "center" })
+    .resize(maxW, maxH, { fit: "cover", position: "top" })
     .png()
     .toBuffer();
 }
@@ -193,19 +193,19 @@ export async function generateFoldedOutsideArtwork(
   // Border on front cover
   composites.push({ input: decorativeBorderSvg(W - 40, halfH - 40, primary, 4, 12), top: 20, left: 20 });
 
-  // Greeting text
-  const greetingText = textSvg(occasion.greetingText, 56, textColor, W - 120, "bold", "middle");
-  composites.push({ input: greetingText, top: 50, left: 60 });
+  // Greeting text (compact to give portrait more room)
+  const greetingText = textSvg(occasion.greetingText, 44, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 40, left: 60 });
 
-  // Portrait
-  const portraitW = W - 200;
-  const portraitH = halfH - 320;
+  // Portrait (taller area, less extreme aspect ratio to avoid severe face cropping)
+  const portraitW = W - 300;
+  const portraitH = halfH - 200;
   const roundedPortrait = await makeRoundedImage(portraitBuf, portraitW, portraitH, 16);
-  composites.push({ input: roundedPortrait, top: 150, left: Math.round((W - portraitW) / 2) });
+  composites.push({ input: roundedPortrait, top: 110, left: Math.round((W - portraitW) / 2) });
 
   // Pet name
-  const nameText = textSvg(petName, 40, textColor, W - 120, "bold", "middle");
-  composites.push({ input: nameText, top: 150 + portraitH + 20, left: 60 });
+  const nameText = textSvg(petName, 36, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 110 + portraitH + 12, left: 60 });
 
   // === BOTTOM HALF: Back Cover ===
   const backTop = halfH;

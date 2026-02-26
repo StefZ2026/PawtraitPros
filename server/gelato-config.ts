@@ -97,7 +97,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Wishing you a day full of treats and belly rubs!",
     seasonalMonths: null,
     sortOrder: 1,
-    templateColors: { primary: "#E74C3C", secondary: "#FDEDEC", textColor: "#922B21" },
+    templateColors: { primary: "#FF6B35", secondary: "#FFF0E6", textColor: "#CC4400" }, // warm orange
   },
   {
     id: "thank_you",
@@ -106,7 +106,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Your kindness means the world to us.",
     seasonalMonths: null,
     sortOrder: 2,
-    templateColors: { primary: "#27AE60", secondary: "#EAFAF1", textColor: "#1E8449" },
+    templateColors: { primary: "#2E8B57", secondary: "#E0F2E9", textColor: "#1B5E3A" }, // sea green
   },
   {
     id: "congratulations",
@@ -115,7 +115,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Here's to celebrating this special moment!",
     seasonalMonths: null,
     sortOrder: 3,
-    templateColors: { primary: "#F39C12", secondary: "#FEF9E7", textColor: "#B7950B" },
+    templateColors: { primary: "#DAA520", secondary: "#FDF5DC", textColor: "#8B6914" }, // goldenrod
   },
   {
     id: "get_well",
@@ -124,7 +124,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Sending warm thoughts and healing vibes your way.",
     seasonalMonths: null,
     sortOrder: 4,
-    templateColors: { primary: "#3498DB", secondary: "#EBF5FB", textColor: "#2471A3" },
+    templateColors: { primary: "#4A90D9", secondary: "#E1EFFA", textColor: "#2A5FAA" }, // cornflower blue
   },
   {
     id: "thinking_of_you",
@@ -133,7 +133,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Just a little reminder that someone cares.",
     seasonalMonths: null,
     sortOrder: 5,
-    templateColors: { primary: "#8E44AD", secondary: "#F4ECF7", textColor: "#6C3483" },
+    templateColors: { primary: "#9B59B6", secondary: "#F0E4F7", textColor: "#6C3483" }, // soft purple
   },
   {
     id: "valentines",
@@ -142,7 +142,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "You make my heart do zoomies!",
     seasonalMonths: [0, 1], // Jan–Feb
     sortOrder: 10,
-    templateColors: { primary: "#E91E63", secondary: "#FCE4EC", textColor: "#AD1457" },
+    templateColors: { primary: "#E91E63", secondary: "#FDDDE6", textColor: "#AD1457" }, // hot pink
   },
   {
     id: "easter",
@@ -151,7 +151,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Hoppy Easter from your favorite fur baby!",
     seasonalMonths: [2, 3], // Mar–Apr
     sortOrder: 11,
-    templateColors: { primary: "#66BB6A", secondary: "#E8F5E9", textColor: "#2E7D32" },
+    templateColors: { primary: "#7CB342", secondary: "#EDF5E0", textColor: "#4E7A1E" }, // spring green
   },
   {
     id: "mothers_day",
@@ -160,7 +160,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "To the best pet mom — with love and slobbery kisses.",
     seasonalMonths: [3, 4], // Apr–May
     sortOrder: 12,
-    templateColors: { primary: "#EC407A", secondary: "#FCE4EC", textColor: "#C2185B" },
+    templateColors: { primary: "#E84393", secondary: "#FDE0ED", textColor: "#B5176D" }, // rose pink
   },
   {
     id: "fathers_day",
@@ -169,7 +169,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "To the best pet dad — thanks for all the walks and treats.",
     seasonalMonths: [4, 5], // May–Jun
     sortOrder: 13,
-    templateColors: { primary: "#1565C0", secondary: "#E3F2FD", textColor: "#0D47A1" },
+    templateColors: { primary: "#2C3E7B", secondary: "#DEE3F2", textColor: "#1A2550" }, // navy blue
   },
   {
     id: "halloween",
@@ -178,7 +178,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Have a spooktacular day!",
     seasonalMonths: [8, 9], // Sep–Oct
     sortOrder: 14,
-    templateColors: { primary: "#FF6F00", secondary: "#FFF3E0", textColor: "#E65100" },
+    templateColors: { primary: "#FF6F00", secondary: "#FFE8CC", textColor: "#CC5800" }, // pumpkin orange
   },
   {
     id: "holiday",
@@ -187,7 +187,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Wishing you a season full of joy, love, and treats!",
     seasonalMonths: [10, 11], // Nov–Dec
     sortOrder: 15,
-    templateColors: { primary: "#C62828", secondary: "#FFEBEE", textColor: "#B71C1C" },
+    templateColors: { primary: "#1B7A3D", secondary: "#DFF0E5", textColor: "#145C2E" }, // christmas green
   },
   {
     id: "new_year",
@@ -196,7 +196,7 @@ export const CARD_OCCASIONS: CardOccasion[] = [
     subText: "Here's to a pawsome new year together!",
     seasonalMonths: [11, 0], // Dec–Jan
     sortOrder: 16,
-    templateColors: { primary: "#FFD700", secondary: "#FFFDE7", textColor: "#F9A825" },
+    templateColors: { primary: "#C0A000", secondary: "#FAF6DC", textColor: "#8B7500" }, // champagne gold
   },
 ];
 
