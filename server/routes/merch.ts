@@ -707,15 +707,21 @@ export function registerMerchRoutes(app: Express): void {
       }
 
       let previewBuf: Buffer;
+      const { default: sharpLib } = await import("sharp");
 
       if (cardFormat === "folded") {
-        previewBuf = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+        // Generate full outside spread, then crop to just the front cover (top half)
+        const fullSpread = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+        const meta = await sharpLib(fullSpread).metadata();
+        const halfH = Math.round((meta.height || 2100) / 2);
+        previewBuf = await sharpLib(fullSpread)
+          .extract({ left: 0, top: 0, width: meta.width || 1500, height: halfH })
+          .png().toBuffer();
       } else {
         previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, orgName);
       }
 
       // Resize to a smaller preview (600px wide)
-      const { default: sharpLib } = await import("sharp");
       const preview = await sharpLib(previewBuf).resize(600, null, { fit: "inside" }).png().toBuffer();
 
       setCachedPreview(cacheKey, preview);
