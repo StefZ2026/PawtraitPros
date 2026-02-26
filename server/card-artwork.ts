@@ -194,18 +194,17 @@ export async function generateFoldedOutsideArtwork(
   composites.push({ input: decorativeBorderSvg(W - 40, halfH - 40, primary, 4, 12), top: 20, left: 20 });
 
   // Greeting text (compact to give portrait more room)
-  const greetingText = textSvg(occasion.greetingText, 44, textColor, W - 120, "bold", "middle");
-  composites.push({ input: greetingText, top: 40, left: 60 });
+  const greetingText = textSvg(occasion.greetingText, 42, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 30, left: 60 });
 
-  // Portrait (taller area, less extreme aspect ratio to avoid severe face cropping)
-  const portraitW = W - 300;
-  const portraitH = halfH - 200;
-  const roundedPortrait = await makeRoundedImage(portraitBuf, portraitW, portraitH, 16);
-  composites.push({ input: roundedPortrait, top: 110, left: Math.round((W - portraitW) / 2) });
+  // Portrait (square area so portrait-oriented pet photos don't get severely cropped)
+  const portraitSize = halfH - 200;  // ~850px square
+  const roundedPortrait = await makeRoundedImage(portraitBuf, portraitSize, portraitSize, 16);
+  composites.push({ input: roundedPortrait, top: 95, left: Math.round((W - portraitSize) / 2) });
 
   // Pet name
-  const nameText = textSvg(petName, 36, textColor, W - 120, "bold", "middle");
-  composites.push({ input: nameText, top: 110 + portraitH + 12, left: 60 });
+  const nameText = textSvg(petName, 34, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 95 + portraitSize + 10, left: 60 });
 
   // === BOTTOM HALF: Back Cover ===
   const backTop = halfH;
