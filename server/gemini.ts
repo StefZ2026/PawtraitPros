@@ -92,7 +92,7 @@ async function generateWithImage(prompt: string, sourceImage: string): Promise<s
   return geminiSemaphore.run(() =>
     callWithRetry(async () => {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+        model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
         config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
       });
@@ -106,7 +106,7 @@ async function generateTextOnly(prompt: string): Promise<string> {
     const result = await geminiSemaphore.run(() =>
       callWithRetry(async () => {
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-image",
+          model: "gemini-3-pro-image-preview",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
         });
@@ -123,7 +123,7 @@ export async function editImage(currentImage: string, editPrompt: string): Promi
   return geminiSemaphore.run(() =>
     callWithRetry(async () => {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+        model: "gemini-3-pro-image-preview",
         contents: [{
           role: "user",
           parts: [
