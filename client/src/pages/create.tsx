@@ -783,7 +783,7 @@ export default function Create() {
                     <div>
                       <p className="text-xs text-muted-foreground mb-1.5 text-center">Original Photo</p>
                       <div className="aspect-square rounded-md border overflow-hidden protected-image-wrapper">
-                        <img src={uploadedImage} alt={`${petName} original`} className="w-full h-full object-cover protected-image" draggable={false} data-testid="img-original-photo" />
+                        <img src={uploadedImage} alt={`${petName} original`} className="w-full h-full object-contain protected-image" draggable={false} data-testid="img-original-photo" />
                       </div>
                     </div>
                     <div>

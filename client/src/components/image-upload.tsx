@@ -90,7 +90,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               <img
                 src={currentImage}
                 alt="Uploaded dog photo"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
                 data-testid="img-uploaded-dog"
               />
             </div>

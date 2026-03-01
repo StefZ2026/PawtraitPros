@@ -28,7 +28,7 @@ export function PortraitPreview({
   onDownload,
   onEdit,
   editsUsed = 0,
-  maxEdits = 3,
+  maxEdits = 4,
 }: PortraitPreviewProps) {
   const [editPrompt, setEditPrompt] = useState("");
   const editsRemaining = maxEdits - editsUsed;
