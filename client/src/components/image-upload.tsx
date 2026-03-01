@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const ACCEPT_STRING = ACCEPTED_TYPES.join(",");
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
 const MAX_DIM = 1024;
 
@@ -20,8 +18,8 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const { toast } = useToast();
 
   const handleFile = useCallback((file: File) => {
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast({ title: "Unsupported format", description: "Please use JPG, PNG, or WebP.", variant: "destructive" });
+    if (file.type && !file.type.startsWith("image/")) {
+      toast({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
@@ -100,7 +98,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           <label>
             <input
               type="file"
-              accept={ACCEPT_STRING}
+              accept="image/*"
               className="hidden"
               onChange={handleInputChange}
               data-testid="input-file-replace"
@@ -153,7 +151,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         <label>
           <input
             type="file"
-            accept={ACCEPT_STRING}
+            accept="image/*"
             className="hidden"
             onChange={handleInputChange}
             data-testid="input-file-upload"
