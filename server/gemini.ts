@@ -49,40 +49,26 @@ async function callWithRetry<T>(fn: () => Promise<T>, label: string): Promise<T>
 
 export async function generateImage(prompt: string, sourceImage?: string): Promise<string> {
   if (sourceImage) {
-    try {
-      const result = await generateWithImage(prompt, sourceImage);
-      if (result) return result;
-    } catch {
-      // fall through to text-only
-    }
+    // When we have a reference photo, NEVER fall back to text-only —
+    // a portrait of a random dog is worse than an error the user can retry
+    const result = await generateWithImage(prompt, sourceImage);
+    if (result) return result;
+    throw new Error("Image generation with reference photo returned no result. Please try again.");
   }
   return generateTextOnly(prompt);
 }
 
-const FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED — THE PHOTO IS THE GROUND TRUTH.
-Study the attached photo carefully. This is the EXACT animal you must depict.
+const FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED — YOU MUST DEPICT THIS EXACT ANIMAL.
 
-CRITICAL RULE — PHOTO OVERRIDES TEXT:
-The style description below may mention a breed name (e.g., "Beagle", "Labrador", "Persian cat"). IGNORE any breed name in the text if it does not match what you see in the photo. The PHOTO is the sole authority on what this animal looks like. If the text says "Beagle" but the photo shows a Chow Chow, you MUST depict a Chow Chow. If the text says "Tabby" but the photo shows a Siamese, you MUST depict a Siamese. NEVER generate an animal that matches the text breed instead of the photo — the photo always wins.
+MANDATORY RULES (violating any rule = total failure):
+1. SINGLE ANIMAL ONLY — depict ONLY the one animal from the reference photo. Never add extra animals, companions, or duplicates to the scene.
+2. PHOTO OVERRIDES TEXT — if the text mentions a breed that doesn't match the photo, depict what you SEE in the photo. The photo is always the sole authority.
+3. EXACT COLORS AND PATTERNS — reproduce each color exactly where it appears on the body. White chest stays white, dark back stays dark, patches stay in the same locations and proportions. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT shift colors to match "typical breed" palettes or scene lighting.
+4. PRESERVE UNIQUE FEATURES — floppy ears stay floppy, perked ears stay perked. If ears are asymmetric (one up, one down; one folded, one straight), keep them asymmetric. Underbites, crooked tails, scars, heterochromia, unusual markings — reproduce them ALL exactly. Do NOT "fix" or normalize any feature to match breed standard.
+5. PRESERVE FACE AND BODY — match this animal's exact muzzle shape, eye color, ear shape and position, fur texture and length, and body proportions from the photo.
+6. PHOTOREALISTIC ANIMAL — the animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costume, and background — but the animal itself must always look like a genuine photograph of a real animal.
 
-COLOR AND PATTERN MATCHING IS THE #1 PRIORITY:
-Most animals are NOT one uniform color. Study WHERE each color appears on this specific animal's body:
-- Note which areas are lighter vs darker (chest, belly, legs, face, back, ears, tail)
-- Note any two-tone or multi-tone patterns — e.g., white chest with reddish back, dark face with lighter body, tabby stripes, tuxedo markings, brindle patterns
-- Note the EXACT boundaries where one color transitions to another
-You must reproduce the PRECISE color of EACH body area — not a uniform "average" color, not a "typical" breed color, not a slightly different shade. If the chest is white and the back is reddish, the portrait must show a white chest and a reddish back in those same proportions. If there are patches, spots, or gradients, they must appear in the same locations. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT let the artistic style, scene lighting, or background colors influence or shift the animal's actual coat colors.
-
-You MUST also faithfully reproduce THIS SPECIFIC animal's:
-- Face shape, muzzle, and facial structure
-- Ear shape, size, and positioning
-- Fur/coat texture and length
-- Eye color and shape
-- Body size and proportions
-- Any unique distinguishing features (spots, patches, scars, etc.)
-
-DO NOT substitute a generic or different-looking animal. DO NOT default to a "breed typical" appearance. The generated portrait must be unmistakably recognizable as the SAME individual animal in the reference photo.
-
-Now apply the following artistic style while preserving this exact animal's appearance, coloring, and color distribution:
+Now apply the following artistic style to this exact animal:
 
 `;
 
@@ -93,8 +79,8 @@ async function generateWithImage(prompt: string, sourceImage: string): Promise<s
     callWithRetry(async () => {
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
-        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+        contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE], imageConfig: { imageSize: "2K" } },
       });
       return extractImageFromResponse(response);
     }, "generateWithImage")
