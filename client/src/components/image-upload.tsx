@@ -86,11 +86,11 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       <div className="relative">
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-            <div className="relative aspect-square max-w-md mx-auto">
+            <div className="relative max-w-md mx-auto flex items-center justify-center" style={{ maxHeight: "500px" }}>
               <img
                 src={currentImage}
                 alt="Uploaded pet photo"
-                className="w-full h-full object-contain"
+                className="max-w-full max-h-[500px] object-contain"
                 data-testid="img-uploaded-dog"
               />
             </div>
