@@ -34,7 +34,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
     reader.readAsDataURL(file);
   }, [onImageUpload, toast]);
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) processFile(file);
     e.target.value = "";
@@ -83,19 +83,21 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               Replace Photo
             </Button>
           ) : (
-            <div className="relative">
-              <Button variant="outline" size="sm" className="gap-1">
-                <Upload className="h-3.5 w-3.5" />
-                Replace Photo
-              </Button>
+            <label>
               <input
                 type="file"
                 accept="image/*"
-                onChange={handleFileChange}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                className="hidden"
+                onChange={handleInputChange}
                 data-testid="input-file-replace"
               />
-            </div>
+              <Button asChild variant="outline" size="sm" className="gap-1 cursor-pointer">
+                <span>
+                  <Upload className="h-3.5 w-3.5" />
+                  Replace Photo
+                </span>
+              </Button>
+            </label>
           )}
           <Button
             variant="ghost"
@@ -133,7 +135,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           {isDragging ? "Drop it right here!" : "Drag & drop a photo here"}
         </h3>
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
-          or tap the button below to browse your photos
+          or click the button below to browse your files
         </p>
         {isIOS ? (
           <Button className="gap-2" onClick={handleiOSUpload}>
@@ -141,19 +143,21 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
             Choose Photo
           </Button>
         ) : (
-          <div className="relative inline-flex">
-            <Button className="gap-2">
-              <ImageIcon className="h-4 w-4" />
-              Choose Photo
-            </Button>
+          <label>
             <input
               type="file"
               accept="image/*"
-              onChange={handleFileChange}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              className="hidden"
+              onChange={handleInputChange}
               data-testid="input-file-upload"
             />
-          </div>
+            <Button asChild className="gap-2 cursor-pointer">
+              <span>
+                <ImageIcon className="h-4 w-4" />
+                Choose Photo
+              </span>
+            </Button>
+          </label>
         )}
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
