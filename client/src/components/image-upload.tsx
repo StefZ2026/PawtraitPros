@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
@@ -16,6 +16,8 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
@@ -27,13 +29,10 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       return;
     }
 
-    // Use createObjectURL to avoid loading the entire file as base64 into memory
-    // This prevents iOS Safari from silently killing the page on large photos
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
-      // Always resize through canvas to produce a manageable data URL
       if (width > MAX_DIM || height > MAX_DIM) {
         if (width > height) {
           height = Math.round(height * (MAX_DIM / width));
@@ -82,6 +81,8 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    // Reset so the same file can be re-selected
+    e.target.value = "";
   }, [handleFile]);
 
   if (currentImage) {
@@ -100,21 +101,23 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           </CardContent>
         </Card>
         <div className="flex items-center justify-center gap-3 mt-3">
-          <label>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleInputChange}
-              data-testid="input-file-replace"
-            />
-            <Button asChild variant="outline" size="sm" className="gap-1 cursor-pointer">
-              <span>
-                <Upload className="h-3.5 w-3.5" />
-                Replace Photo
-              </span>
-            </Button>
-          </label>
+          <input
+            ref={replaceInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleInputChange}
+            data-testid="input-file-replace"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => replaceInputRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Replace Photo
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -153,21 +156,21 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
           or click the button below to browse your files
         </p>
-        <label>
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleInputChange}
-            data-testid="input-file-upload"
-          />
-          <Button asChild className="gap-2 cursor-pointer">
-            <span>
-              <ImageIcon className="h-4 w-4" />
-              Choose Photo
-            </span>
-          </Button>
-        </label>
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleInputChange}
+          data-testid="input-file-upload"
+        />
+        <Button
+          className="gap-2"
+          onClick={() => uploadInputRef.current?.click()}
+        >
+          <ImageIcon className="h-4 w-4" />
+          Choose Photo
+        </Button>
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
         </p>
