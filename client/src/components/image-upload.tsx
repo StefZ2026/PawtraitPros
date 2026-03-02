@@ -54,7 +54,9 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       }
       ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(objectUrl);
-      onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      toast({ title: "Photo ready", description: `${width}x${height} — setting image now` });
+      onImageUpload(dataUrl);
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
@@ -81,8 +83,13 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+    if (file) {
+      toast({ title: "Photo selected", description: `Processing ${file.name}...` });
+      handleFile(file);
+    } else {
+      toast({ title: "No file selected", variant: "destructive" });
+    }
+  }, [handleFile, toast]);
 
   if (currentImage) {
     return (
