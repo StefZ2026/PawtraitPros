@@ -356,8 +356,20 @@ export function registerPortraitRoutes(app: Express): void {
       if (dogName && (typeof dogName !== "string" || dogName.length > 100)) {
         return res.status(400).json({ error: "Invalid dog name." });
       }
-      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/")) {
+      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/") && !originalImage.startsWith("https://")) {
         return res.status(400).json({ error: "Invalid image format." });
+      }
+
+      // Convert Storage URLs to data URIs so Gemini can process them
+      let resolvedImage = originalImage || null;
+      if (resolvedImage && !isDataUri(resolvedImage)) {
+        try {
+          const buf = await fetchImageAsBuffer(resolvedImage);
+          resolvedImage = `data:image/png;base64,${buf.toString('base64')}`;
+        } catch (err) {
+          console.error("[generate-portrait] Failed to fetch source image:", err);
+          return res.status(400).json({ error: "Could not load the source image. Please re-upload the photo." });
+        }
       }
 
       const sanitizedPrompt = sanitizeForPrompt(prompt);
@@ -442,7 +454,7 @@ export function registerPortraitRoutes(app: Express): void {
       // Enqueue the generation job — returns instantly
       const jobId = enqueue("generate", {
         prompt: sanitizedPrompt,
-        originalImage: originalImage || null,
+        originalImage: resolvedImage,
         dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
         dogId: dogId ? parseInt(dogId) : null,
         styleId: styleId ? parseInt(styleId) : null,
