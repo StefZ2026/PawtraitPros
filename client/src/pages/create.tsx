@@ -615,18 +615,16 @@ export default function Create() {
               </div>
             )}
 
-            {speciesConfirmed && (
-              <div>
-                <h2 className="text-lg font-semibold mb-4" data-testid="text-section-photo">Upload Photo</h2>
-                <ImageUpload
-                  onImageUpload={(img) => { setUploadedImage(img); setViews([]); setActiveViewId(null); setNextViewId(1); }}
-                  currentImage={uploadedImage}
-                  onClear={() => { setUploadedImage(null); setViews([]); setActiveViewId(null); setNextViewId(1); }}
-                />
-              </div>
-            )}
+            <div>
+              <h2 className="text-lg font-semibold mb-4" data-testid="text-section-photo">Upload Photo</h2>
+              <ImageUpload
+                onImageUpload={(img) => { setUploadedImage(img); setViews([]); setActiveViewId(null); setNextViewId(1); }}
+                currentImage={uploadedImage}
+                onClear={() => { setUploadedImage(null); setViews([]); setActiveViewId(null); setNextViewId(1); }}
+              />
+            </div>
 
-            {speciesConfirmed && uploadedImage && (
+            {uploadedImage && (
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold" data-testid="text-section-info">
                   About This {effectiveSpecies === "cat" ? "Kitty" : "Pup"}
@@ -652,7 +650,7 @@ export default function Create() {
               </div>
             )}
 
-            {speciesConfirmed && uploadedImage && noPackSelected && (
+            {uploadedImage && noPackSelected && (
               <div>
                 <h2 className="text-lg font-semibold mb-4" data-testid="text-section-pack">
                   Choose Today's Pack
@@ -715,7 +713,7 @@ export default function Create() {
               </div>
             )}
 
-            {speciesConfirmed && uploadedImage && !noPackSelected && packStyleIds && (
+            {uploadedImage && !noPackSelected && packStyleIds && (
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold" data-testid="text-section-style">
