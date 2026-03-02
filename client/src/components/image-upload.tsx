@@ -53,7 +53,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         canvas.height = height;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0, width, height);
-        onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
+        onImageUpload(canvas.toDataURL("image/jpeg", 0.92));
       };
       img.src = result;
     };
