@@ -1,11 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
-const MAX_DIM = 1024;
 
 interface ImageUploadProps {
   onImageUpload: (imageData: string) => void;
@@ -16,8 +15,12 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const onImageUploadRef = useRef(onImageUpload);
+  onImageUploadRef.current = onImageUpload;
 
-  const handleFile = useCallback((file: File) => {
+  const processFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
       toast({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
       return;
@@ -26,28 +29,43 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       toast({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
       return;
     }
-
-    toast({ title: "DEBUG 2: Reading file", description: `type: ${file.type || "none"}, size: ${(file.size / 1024).toFixed(0)}KB` });
+    toast({ title: "DEBUG 2: Processing", description: `${file.type || "unknown"} ${(file.size/1024).toFixed(0)}KB` });
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      toast({ title: "DEBUG 3: Read complete", description: `got ${result ? (result.length / 1024).toFixed(0) + "KB data" : "EMPTY"}` });
       if (result) {
-        onImageUpload(result);
+        toast({ title: "DEBUG 3: Photo ready" });
+        onImageUploadRef.current(result);
       }
     };
-    reader.onerror = () => {
-      toast({ title: "DEBUG 3: Read FAILED", description: `${reader.error}`, variant: "destructive" });
-    };
     reader.readAsDataURL(file);
-  }, [onImageUpload, toast]);
+  }, [toast]);
+
+  // Native event listener — bypasses React's synthetic event system entirely
+  useEffect(() => {
+    const handleChange = (e: Event) => {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      toast({ title: "DEBUG 1: File received (native)", description: `files: ${input.files?.length ?? 0}` });
+      if (file) processFile(file);
+      input.value = "";
+    };
+    const upload = uploadRef.current;
+    const replace = replaceRef.current;
+    if (upload) upload.addEventListener("change", handleChange);
+    if (replace) replace.addEventListener("change", handleChange);
+    return () => {
+      if (upload) upload.removeEventListener("change", handleChange);
+      if (replace) replace.removeEventListener("change", handleChange);
+    };
+  }, [processFile, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+    if (file) processFile(file);
+  }, [processFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -57,13 +75,6 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const handleDragLeave = useCallback(() => {
     setIsDragging(false);
   }, []);
-
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    toast({ title: "DEBUG 1: File received", description: `files: ${e.target.files?.length ?? 0}` });
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-    e.target.value = "";
-  }, [handleFile, toast]);
 
   if (currentImage) {
     return (
@@ -87,10 +98,10 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               Replace Photo
             </Button>
             <input
+              ref={replaceRef}
               type="file"
               accept="image/*"
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              onChange={handleInputChange}
               data-testid="input-file-replace"
             />
           </div>
@@ -130,18 +141,18 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           {isDragging ? "Drop it right here!" : "Drag & drop a photo here"}
         </h3>
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
-          or click the button below to browse your files
+          or tap the button below to browse your photos
         </p>
         <div className="relative inline-flex">
           <Button className="gap-2">
             <ImageIcon className="h-4 w-4" />
-            Choose Photo
+            Upload Photo
           </Button>
           <input
+            ref={uploadRef}
             type="file"
             accept="image/*"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            onChange={handleInputChange}
             data-testid="input-file-upload"
           />
         </div>
