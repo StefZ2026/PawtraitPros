@@ -76,8 +76,8 @@ export default function Create() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [petDescription, setPetDescription] = useState("");
-  const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || "dog");
-  const [speciesConfirmed, setSpeciesConfirmed] = useState(true);
+  const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || null);
+  const [speciesConfirmed, setSpeciesConfirmed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const [views, setViews] = useState<PortraitView[]>([]);
