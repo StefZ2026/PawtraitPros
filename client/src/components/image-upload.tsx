@@ -16,49 +16,97 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
   const uploadRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
+
+  // Stable refs so event listeners never go stale
   const onImageUploadRef = useRef(onImageUpload);
   onImageUploadRef.current = onImageUpload;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   const processFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
-      toast({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
+      toastRef.current({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      toast({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
+      toastRef.current({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
       return;
     }
-    toast({ title: "DEBUG 2: Processing", description: `${file.type || "unknown"} ${(file.size/1024).toFixed(0)}KB` });
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
       if (result) {
-        toast({ title: "DEBUG 3: Photo ready" });
         onImageUploadRef.current(result);
       }
     };
     reader.readAsDataURL(file);
-  }, [toast]);
+  }, []); // No deps — uses refs for everything
 
-  // Native event listener — bypasses React's synthetic event system entirely
+  const processFileRef = useRef(processFile);
+  processFileRef.current = processFile;
+
+  // Check all file inputs for files (handles BFCache restoration on iOS)
+  const checkAllInputs = useCallback(() => {
+    [uploadRef, cameraRef, replaceRef].forEach(ref => {
+      const input = ref.current;
+      if (input?.files?.length) {
+        processFileRef.current(input.files[0]);
+        input.value = "";
+      }
+    });
+  }, []);
+
+  // Native change event listeners — stable, never re-attached
   useEffect(() => {
     const handleChange = (e: Event) => {
       const input = e.target as HTMLInputElement;
       const file = input.files?.[0];
-      toast({ title: "DEBUG 1: File received (native)", description: `files: ${input.files?.length ?? 0}` });
-      if (file) processFile(file);
+      if (file) processFileRef.current(file);
       input.value = "";
     };
     const upload = uploadRef.current;
+    const camera = cameraRef.current;
     const replace = replaceRef.current;
     if (upload) upload.addEventListener("change", handleChange);
+    if (camera) camera.addEventListener("change", handleChange);
     if (replace) replace.addEventListener("change", handleChange);
     return () => {
       if (upload) upload.removeEventListener("change", handleChange);
+      if (camera) camera.removeEventListener("change", handleChange);
       if (replace) replace.removeEventListener("change", handleChange);
     };
-  }, [processFile, toast]);
+  }, []); // Empty deps — stable forever
+
+  // iOS Safari page eviction fix:
+  // When iOS evicts the page during the photo picker and restores it,
+  // the change event doesn't re-fire but the file may still be in the input.
+  // These listeners detect page restoration and check for files.
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        setTimeout(checkAllInputs, 100);
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        setTimeout(checkAllInputs, 300);
+      }
+    };
+    const onFocus = () => {
+      setTimeout(checkAllInputs, 300);
+    };
+
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [checkAllInputs]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -84,7 +132,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
             <div className="relative aspect-square max-w-md mx-auto">
               <img
                 src={currentImage}
-                alt="Uploaded dog photo"
+                alt="Uploaded pet photo"
                 className="w-full h-full object-contain"
                 data-testid="img-uploaded-dog"
               />
@@ -129,7 +177,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <CardContent className="flex flex-col items-center justify-center py-16">
+      <CardContent className="flex flex-col items-center justify-center py-12">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           {isDragging ? (
             <Upload className="h-8 w-8 text-primary animate-bounce" />
@@ -138,23 +186,39 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           )}
         </div>
         <h3 className="text-lg font-semibold mb-1" data-testid="text-upload-heading">
-          {isDragging ? "Drop it right here!" : "Drag & drop a photo here"}
+          {isDragging ? "Drop it right here!" : "Upload a photo"}
         </h3>
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
-          or tap the button below to browse your photos
+          Take a new photo or choose one from your library
         </p>
-        <div className="relative inline-flex">
-          <Button className="gap-2">
-            <ImageIcon className="h-4 w-4" />
-            Upload Photo
-          </Button>
-          <input
-            ref={uploadRef}
-            type="file"
-            accept="image/*"
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            data-testid="input-file-upload"
-          />
+        <div className="flex gap-3">
+          <div className="relative inline-flex">
+            <Button className="gap-2">
+              <Camera className="h-4 w-4" />
+              Take Photo
+            </Button>
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              data-testid="input-file-camera"
+            />
+          </div>
+          <div className="relative inline-flex">
+            <Button variant="outline" className="gap-2">
+              <ImageIcon className="h-4 w-4" />
+              Library
+            </Button>
+            <input
+              ref={uploadRef}
+              type="file"
+              accept="image/*"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              data-testid="input-file-upload"
+            />
+          </div>
         </div>
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
