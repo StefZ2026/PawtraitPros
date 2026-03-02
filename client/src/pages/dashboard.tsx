@@ -15,6 +15,7 @@ import { apiRequest, queryClient, getAuthHeaders } from "@/lib/queryClient";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AdminFloatingButton } from "@/components/admin-button";
 import { ImageUpload } from "@/components/image-upload";
+import { BreedSelector } from "@/components/breed-selector";
 import {
   Dog, Cat, Plus, LogOut, Building2, Image, Crown,
   Sparkles, ExternalLink, LayoutDashboard, Shield,
@@ -549,6 +550,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Quick-add client form state
   const [newPetName, setNewPetName] = useState("");
   const [newPetSpecies, setNewPetSpecies] = useState<"dog" | "cat">("dog");
+  const [newPetBreed, setNewPetBreed] = useState("");
   const [newPetOwnerPhone, setNewPetOwnerPhone] = useState("");
   const [newPetOwnerEmail, setNewPetOwnerEmail] = useState("");
   const [newPetPhoto, setNewPetPhoto] = useState<string | null>(null);
@@ -760,7 +762,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       const body: any = {
         name: newPetName,
         species: newPetSpecies,
-        breed: "Mixed", // default — can be edited later
+        breed: newPetBreed,
         ownerPhone: newPetOwnerPhone || undefined,
         ownerEmail: newPetOwnerEmail || undefined,
         originalPhotoUrl: newPetPhoto || undefined,
@@ -782,6 +784,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
       setShowAddClient(false);
       setNewPetName("");
+      setNewPetBreed("");
       setNewPetOwnerPhone("");
       setNewPetOwnerEmail("");
       setNewPetPhoto(null);
@@ -1140,6 +1143,10 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     </Button>
                   </div>
                   <div>
+                    <label className="text-sm font-medium mb-1 block">Breed *</label>
+                    <BreedSelector species={newPetSpecies} value={newPetBreed} onChange={setNewPetBreed} />
+                  </div>
+                  <div>
                     <label className="text-sm font-medium mb-1 flex items-center gap-1"><Phone className="h-3 w-3" /> Owner Phone</label>
                     <Input placeholder="(555) 123-4567" value={newPetOwnerPhone} onChange={(e) => setNewPetOwnerPhone(e.target.value)} />
                   </div>
@@ -1231,7 +1238,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
               <div className="flex gap-2 mt-4">
                 <Button
                   onClick={() => addClientMutation.mutate()}
-                  disabled={!newPetName || !newPetPhoto || addClientMutation.isPending || (industryType === "boarding" && !newPetStayNights)}
+                  disabled={!newPetName || !newPetBreed || !newPetPhoto || addClientMutation.isPending || (industryType === "boarding" && !newPetStayNights)}
                   className="gap-2"
                 >
                   {addClientMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
