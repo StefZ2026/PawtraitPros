@@ -20,6 +20,8 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+  const onUploadRef = useRef(onImageUpload);
+  onUploadRef.current = onImageUpload;
 
   const handleFile = useCallback((file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -36,11 +38,11 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       const result = e.target?.result as string;
       if (!result) return;
 
-      const img = new Image();
+      const img = new window.Image();
       img.onload = () => {
         let { width, height } = img;
         if (width <= MAX_DIM && height <= MAX_DIM) {
-          onImageUpload(result);
+          onUploadRef.current(result);
           return;
         }
         if (width > height) {
@@ -55,12 +57,12 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         canvas.height = height;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0, width, height);
-        onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
+        onUploadRef.current(canvas.toDataURL("image/jpeg", 0.85));
       };
       img.src = result;
     };
     reader.readAsDataURL(file);
-  }, [onImageUpload, toast]);
+  }, [toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
