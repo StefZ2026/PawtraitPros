@@ -1225,7 +1225,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                 </div>
                 <div className="space-y-3">
                   <label className="text-sm font-medium mb-1 block">Photo *</label>
-                  <ImageUpload onImageSelect={(img) => setNewPetPhoto(img)} currentImage={newPetPhoto || undefined} />
+                  <ImageUpload onImageUpload={(img) => setNewPetPhoto(img)} currentImage={newPetPhoto ?? null} onClear={() => setNewPetPhoto(null)} />
                 </div>
               </div>
               <div className="flex gap-2 mt-4">
