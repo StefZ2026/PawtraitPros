@@ -179,9 +179,8 @@ export default function Create() {
         setSpecies(null);
         setSpeciesConfirmed(false);
       }
-    } else {
-      setSpecies("dog");
-      setSpeciesConfirmed(true);
+    } else if (!resolvedOrg) {
+      setSpeciesConfirmed(false);
     }
   }, [orgSpecies, editingDogId, speciesParam, myOrg, targetOrg]);
 
@@ -197,7 +196,7 @@ export default function Create() {
     setSpeciesConfirmed(true);
   };
 
-  const showSpeciesToggle = !editingDogId && !!(targetOrg || myOrg) && (orgSpecies === "both" || (speciesParam === null && orgSpecies !== "dogs" && orgSpecies !== "cats"));
+  const showSpeciesToggle = !editingDogId && !speciesParam && (!(targetOrg || myOrg) || orgSpecies === "both");
 
   const backUrl = orgParam ? `/dashboard?stay=1&org=${orgParam}` : "/dashboard";
 
