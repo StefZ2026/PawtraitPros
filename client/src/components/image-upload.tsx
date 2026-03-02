@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
@@ -17,12 +16,9 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
-  const [, navigate] = useLocation();
   const uploadRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
 
-  // Stable refs so event listeners never go stale
   const onImageUploadRef = useRef(onImageUpload);
   onImageUploadRef.current = onImageUpload;
   const toastRef = useRef(toast);
@@ -40,9 +36,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      if (result) {
-        onImageUploadRef.current(result);
-      }
+      if (result) onImageUploadRef.current(result);
     };
     reader.readAsDataURL(file);
   }, []);
@@ -50,18 +44,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const processFileRef = useRef(processFile);
   processFileRef.current = processFile;
 
-  // Check all file inputs for files (handles BFCache restoration on iOS)
-  const checkAllInputs = useCallback(() => {
-    [uploadRef, cameraRef, replaceRef].forEach(ref => {
-      const input = ref.current;
-      if (input?.files?.length) {
-        processFileRef.current(input.files[0]);
-        input.value = "";
-      }
-    });
-  }, []);
-
-  // Native change event listeners — stable, never re-attached
+  // Native change listeners (desktop) — stable, never re-attached
   useEffect(() => {
     const handleChange = (e: Event) => {
       const input = e.target as HTMLInputElement;
@@ -70,43 +53,19 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       input.value = "";
     };
     const upload = uploadRef.current;
-    const camera = cameraRef.current;
     const replace = replaceRef.current;
     if (upload) upload.addEventListener("change", handleChange);
-    if (camera) camera.addEventListener("change", handleChange);
     if (replace) replace.addEventListener("change", handleChange);
     return () => {
       if (upload) upload.removeEventListener("change", handleChange);
-      if (camera) camera.removeEventListener("change", handleChange);
       if (replace) replace.removeEventListener("change", handleChange);
     };
   }, []);
 
-  // iOS Safari page eviction fix
-  useEffect(() => {
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) setTimeout(checkAllInputs, 100);
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible") setTimeout(checkAllInputs, 300);
-    };
-    const onFocus = () => setTimeout(checkAllInputs, 300);
-
-    window.addEventListener("pageshow", onPageShow);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.removeEventListener("pageshow", onPageShow);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [checkAllInputs]);
-
-  // On iOS, "Library" navigates to a lightweight upload page to avoid eviction
-  const handleLibraryClick = useCallback(() => {
-    sessionStorage.setItem("upload_return_url", window.location.pathname + window.location.search);
-    navigate("/upload-photo");
-  }, [navigate]);
+  // On iOS, navigate to the static upload page (no React bundle, can't be evicted)
+  const handleiOSUpload = useCallback(() => {
+    window.location.href = "/upload.html";
+  }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -141,7 +100,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         </Card>
         <div className="flex items-center justify-center gap-3 mt-3">
           {isIOS ? (
-            <Button variant="outline" size="sm" className="gap-1" onClick={handleLibraryClick}>
+            <Button variant="outline" size="sm" className="gap-1" onClick={handleiOSUpload}>
               <Upload className="h-3.5 w-3.5" />
               Replace Photo
             </Button>
@@ -184,7 +143,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <CardContent className="flex flex-col items-center justify-center py-12">
+      <CardContent className="flex flex-col items-center justify-center py-16">
         <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
           {isDragging ? (
             <Upload className="h-8 w-8 text-primary animate-bounce" />
@@ -193,47 +152,31 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           )}
         </div>
         <h3 className="text-lg font-semibold mb-1" data-testid="text-upload-heading">
-          {isDragging ? "Drop it right here!" : "Upload a photo"}
+          {isDragging ? "Drop it right here!" : "Drag & drop a photo here"}
         </h3>
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
-          Take a new photo or choose one from your library
+          or tap the button below to browse your photos
         </p>
-        <div className="flex gap-3">
+        {isIOS ? (
+          <Button className="gap-2" onClick={handleiOSUpload}>
+            <ImageIcon className="h-4 w-4" />
+            Choose Photo
+          </Button>
+        ) : (
           <div className="relative inline-flex">
             <Button className="gap-2">
-              <Camera className="h-4 w-4" />
-              Take Photo
+              <ImageIcon className="h-4 w-4" />
+              Choose Photo
             </Button>
             <input
-              ref={cameraRef}
+              ref={uploadRef}
               type="file"
               accept="image/*"
-              capture="environment"
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              data-testid="input-file-camera"
+              data-testid="input-file-upload"
             />
           </div>
-          {isIOS ? (
-            <Button variant="outline" className="gap-2" onClick={handleLibraryClick}>
-              <ImageIcon className="h-4 w-4" />
-              Library
-            </Button>
-          ) : (
-            <div className="relative inline-flex">
-              <Button variant="outline" className="gap-2">
-                <ImageIcon className="h-4 w-4" />
-                Library
-              </Button>
-              <input
-                ref={uploadRef}
-                type="file"
-                accept="image/*"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                data-testid="input-file-upload"
-              />
-            </div>
-          )}
-        </div>
+        )}
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
         </p>

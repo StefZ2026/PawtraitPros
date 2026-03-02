@@ -42,11 +42,14 @@ export default function Create() {
   const orgParam = params.get("org");
   const speciesParam = params.get("species") as "dog" | "cat" | null;
 
+  // Guard: don't redirect to login if we're returning from the static upload page
+  // (the full SPA reloads and auth takes a moment to initialize)
+  const hasPendingUpload = !!sessionStorage.getItem("pending_upload_image");
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    if (!authLoading && !isAuthenticated && !hasPendingUpload) {
       window.location.href = "/login";
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, hasPendingUpload]);
 
   const { data: existingDog } = useQuery<any>({
     queryKey: ["/api/dogs", editingDogId],
