@@ -166,6 +166,9 @@ export default function Create() {
   }, [editingDogId, speciesParam]);
 
   useEffect(() => {
+    // Only auto-set species on initial load, not on refetches (which happen on window
+    // focus after the file picker closes and would reset user's species selection)
+    if (speciesConfirmed) return;
     const resolvedOrg = targetOrg || myOrg;
     if (!editingDogId && !speciesParam && resolvedOrg) {
       if (orgSpecies === "cats") {
@@ -174,12 +177,9 @@ export default function Create() {
       } else if (orgSpecies === "dogs") {
         setSpecies("dog");
         setSpeciesConfirmed(true);
-      } else if (orgSpecies === "both") {
-        setSpecies(null);
-        setSpeciesConfirmed(false);
       }
     }
-  }, [orgSpecies, editingDogId, speciesParam, myOrg, targetOrg]);
+  }, [orgSpecies, editingDogId, speciesParam, myOrg, targetOrg, speciesConfirmed]);
 
   const handleSpeciesSelect = (s: "dog" | "cat") => {
     if (s !== species) {

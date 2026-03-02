@@ -105,7 +105,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
             ref={replaceInputRef}
             type="file"
             accept="image/*"
-            className="hidden"
+            className="sr-only"
             onChange={handleInputChange}
             data-testid="input-file-replace"
           />
@@ -160,7 +160,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           ref={uploadInputRef}
           type="file"
           accept="image/*"
-          className="hidden"
+          className="sr-only"
           onChange={handleInputChange}
           data-testid="input-file-upload"
         />
