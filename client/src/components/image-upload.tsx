@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 interface ImageUploadProps {
   onImageUpload: (imageData: string) => void;
@@ -15,6 +17,7 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const uploadRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -42,7 +45,7 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       }
     };
     reader.readAsDataURL(file);
-  }, []); // No deps — uses refs for everything
+  }, []);
 
   const processFileRef = useRef(processFile);
   processFileRef.current = processFile;
@@ -77,26 +80,17 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       if (camera) camera.removeEventListener("change", handleChange);
       if (replace) replace.removeEventListener("change", handleChange);
     };
-  }, []); // Empty deps — stable forever
+  }, []);
 
-  // iOS Safari page eviction fix:
-  // When iOS evicts the page during the photo picker and restores it,
-  // the change event doesn't re-fire but the file may still be in the input.
-  // These listeners detect page restoration and check for files.
+  // iOS Safari page eviction fix
   useEffect(() => {
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        setTimeout(checkAllInputs, 100);
-      }
+      if (e.persisted) setTimeout(checkAllInputs, 100);
     };
     const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        setTimeout(checkAllInputs, 300);
-      }
+      if (document.visibilityState === "visible") setTimeout(checkAllInputs, 300);
     };
-    const onFocus = () => {
-      setTimeout(checkAllInputs, 300);
-    };
+    const onFocus = () => setTimeout(checkAllInputs, 300);
 
     window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisible);
@@ -107,6 +101,12 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       window.removeEventListener("focus", onFocus);
     };
   }, [checkAllInputs]);
+
+  // On iOS, "Library" navigates to a lightweight upload page to avoid eviction
+  const handleLibraryClick = useCallback(() => {
+    sessionStorage.setItem("upload_return_url", window.location.pathname + window.location.search);
+    navigate("/upload-photo");
+  }, [navigate]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -140,19 +140,26 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           </CardContent>
         </Card>
         <div className="flex items-center justify-center gap-3 mt-3">
-          <div className="relative">
-            <Button variant="outline" size="sm" className="gap-1">
+          {isIOS ? (
+            <Button variant="outline" size="sm" className="gap-1" onClick={handleLibraryClick}>
               <Upload className="h-3.5 w-3.5" />
               Replace Photo
             </Button>
-            <input
-              ref={replaceRef}
-              type="file"
-              accept="image/*"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              data-testid="input-file-replace"
-            />
-          </div>
+          ) : (
+            <div className="relative">
+              <Button variant="outline" size="sm" className="gap-1">
+                <Upload className="h-3.5 w-3.5" />
+                Replace Photo
+              </Button>
+              <input
+                ref={replaceRef}
+                type="file"
+                accept="image/*"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                data-testid="input-file-replace"
+              />
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -206,19 +213,26 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               data-testid="input-file-camera"
             />
           </div>
-          <div className="relative inline-flex">
-            <Button variant="outline" className="gap-2">
+          {isIOS ? (
+            <Button variant="outline" className="gap-2" onClick={handleLibraryClick}>
               <ImageIcon className="h-4 w-4" />
               Library
             </Button>
-            <input
-              ref={uploadRef}
-              type="file"
-              accept="image/*"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              data-testid="input-file-upload"
-            />
-          </div>
+          ) : (
+            <div className="relative inline-flex">
+              <Button variant="outline" className="gap-2">
+                <ImageIcon className="h-4 w-4" />
+                Library
+              </Button>
+              <input
+                ref={uploadRef}
+                type="file"
+                accept="image/*"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                data-testid="input-file-upload"
+              />
+            </div>
+          )}
         </div>
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB

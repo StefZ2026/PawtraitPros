@@ -29,6 +29,7 @@ import BatchUpload from "@/pages/batch-upload";
 import EditionLanding from "@/pages/edition-landing";
 import CustomerPortal from "@/pages/customer-portal";
 import CounterDisplay from "@/pages/counter-display";
+import UploadPhoto from "@/pages/upload-photo";
 
 function Router() {
   return (
@@ -43,6 +44,7 @@ function Router() {
       <Route path="/onboarding" component={Onboarding} />
       <Route path="/onboarding/:orgId" component={Onboarding} />
       <Route path="/create" component={Create} />
+      <Route path="/upload-photo" component={UploadPhoto} />
       <Route path="/gallery" component={Gallery} />
       <Route path="/styles" component={Styles} />
       <Route path="/pawfile/:id" component={DogProfile} />

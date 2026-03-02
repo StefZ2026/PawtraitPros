@@ -110,6 +110,18 @@ export default function Create() {
   const isNewPet = !editingDogId;
   const atPetLimit = isNewPet && petLimit != null && petCount >= petLimit;
 
+  // Check for pending image from the lightweight upload page (iOS Safari workaround)
+  useEffect(() => {
+    const pendingImage = sessionStorage.getItem("pending_upload_image");
+    if (pendingImage) {
+      sessionStorage.removeItem("pending_upload_image");
+      setUploadedImage(pendingImage);
+      setViews([]);
+      setActiveViewId(null);
+      setNextViewId(1);
+    }
+  }, []);
+
   useEffect(() => {
     if (existingDog && !loaded) {
       setPetName(existingDog.name || "");
