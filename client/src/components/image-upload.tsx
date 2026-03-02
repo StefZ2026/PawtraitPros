@@ -27,18 +27,14 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      if (!result) return;
-
-      const img = new Image();
-      img.onload = () => {
-        let { width, height } = img;
-        if (width <= MAX_DIM && height <= MAX_DIM) {
-          onImageUpload(result);
-          return;
-        }
+    // Use createObjectURL to avoid loading the entire file as base64 into memory
+    // This prevents iOS Safari from silently killing the page on large photos
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      // Always resize through canvas to produce a manageable data URL
+      if (width > MAX_DIM || height > MAX_DIM) {
         if (width > height) {
           height = Math.round(height * (MAX_DIM / width));
           width = MAX_DIM;
@@ -46,16 +42,25 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           width = Math.round(width * (MAX_DIM / height));
           height = MAX_DIM;
         }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, width, height);
-        onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
-      };
-      img.src = result;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        toast({ title: "Processing error", description: "Could not process the image. Please try another photo.", variant: "destructive" });
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+      onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: "Could not load image", description: "The photo format may not be supported. Try taking a new photo or using a JPG/PNG.", variant: "destructive" });
+    };
+    img.src = objectUrl;
   }, [onImageUpload, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
