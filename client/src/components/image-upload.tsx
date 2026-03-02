@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
@@ -16,8 +16,6 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
@@ -81,7 +79,6 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
-    // Reset so the same file can be re-selected
     e.target.value = "";
   }, [handleFile]);
 
@@ -101,23 +98,19 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
           </CardContent>
         </Card>
         <div className="flex items-center justify-center gap-3 mt-3">
-          <input
-            ref={replaceInputRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            onChange={handleInputChange}
-            data-testid="input-file-replace"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1"
-            onClick={() => replaceInputRef.current?.click()}
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Replace Photo
-          </Button>
+          <div className="relative">
+            <Button variant="outline" size="sm" className="gap-1">
+              <Upload className="h-3.5 w-3.5" />
+              Replace Photo
+            </Button>
+            <input
+              type="file"
+              accept="image/*"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={handleInputChange}
+              data-testid="input-file-replace"
+            />
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -156,21 +149,19 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
           or click the button below to browse your files
         </p>
-        <input
-          ref={uploadInputRef}
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={handleInputChange}
-          data-testid="input-file-upload"
-        />
-        <Button
-          className="gap-2"
-          onClick={() => uploadInputRef.current?.click()}
-        >
-          <ImageIcon className="h-4 w-4" />
-          Choose Photo
-        </Button>
+        <div className="relative inline-flex">
+          <Button className="gap-2">
+            <ImageIcon className="h-4 w-4" />
+            Choose Photo
+          </Button>
+          <input
+            type="file"
+            accept="image/*"
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            onChange={handleInputChange}
+            data-testid="input-file-upload"
+          />
+        </div>
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
         </p>
