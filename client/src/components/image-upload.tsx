@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+const MAX_DIM = 1024;
 const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 interface ImageUploadProps {
@@ -16,8 +17,10 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
-  const processFile = useCallback((file: File) => {
+  const handleFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
       toast({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
       return;
@@ -26,19 +29,36 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       toast({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      if (result) onImageUpload(result);
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const scale = MAX_DIM / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { URL.revokeObjectURL(objectUrl); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+      onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      toast({ title: "Couldn't read image", description: "Try a different photo.", variant: "destructive" });
+    };
+    img.src = objectUrl;
   }, [onImageUpload, toast]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processFile(file);
+    if (file) handleFile(file);
     e.target.value = "";
-  }, [processFile]);
+  }, [handleFile]);
 
   // On iOS, navigate to the static upload page (no React bundle, can't be evicted)
   const handleiOSUpload = useCallback(() => {
@@ -49,8 +69,8 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
-  }, [processFile]);
+    if (file) handleFile(file);
+  }, [handleFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -83,21 +103,25 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               Replace Photo
             </Button>
           ) : (
-            <label>
+            <>
               <input
+                ref={replaceInputRef}
                 type="file"
                 accept="image/*"
                 className="hidden"
                 onChange={handleInputChange}
                 data-testid="input-file-replace"
               />
-              <Button asChild variant="outline" size="sm" className="gap-1 cursor-pointer">
-                <span>
-                  <Upload className="h-3.5 w-3.5" />
-                  Replace Photo
-                </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() => replaceInputRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Replace Photo
               </Button>
-            </label>
+            </>
           )}
           <Button
             variant="ghost"
@@ -143,21 +167,20 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
             Choose Photo
           </Button>
         ) : (
-          <label>
+          <>
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*"
               className="hidden"
               onChange={handleInputChange}
               data-testid="input-file-upload"
             />
-            <Button asChild className="gap-2 cursor-pointer">
-              <span>
-                <ImageIcon className="h-4 w-4" />
-                Choose Photo
-              </span>
+            <Button className="gap-2" onClick={() => fileInputRef.current?.click()}>
+              <ImageIcon className="h-4 w-4" />
+              Choose Photo
             </Button>
-          </label>
+          </>
         )}
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
