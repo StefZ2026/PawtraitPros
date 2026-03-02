@@ -42,14 +42,11 @@ export default function Create() {
   const orgParam = params.get("org");
   const speciesParam = params.get("species") as "dog" | "cat" | null;
 
-  // Guard: don't redirect to login if we're returning from the static upload page
-  // (the full SPA reloads and auth takes a moment to initialize)
-  const hasPendingUpload = !!sessionStorage.getItem("pending_upload_image") || !!params.get("pending_image");
   useEffect(() => {
-    if (!authLoading && !isAuthenticated && !hasPendingUpload) {
+    if (!authLoading && !isAuthenticated) {
       window.location.href = "/login";
     }
-  }, [isAuthenticated, authLoading, hasPendingUpload]);
+  }, [isAuthenticated, authLoading]);
 
   const { data: existingDog } = useQuery<any>({
     queryKey: ["/api/dogs", editingDogId],
@@ -79,12 +76,8 @@ export default function Create() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [petDescription, setPetDescription] = useState("");
-  const [species, setSpecies] = useState<"dog" | "cat" | null>(
-    speciesParam || (sessionStorage.getItem("create_species") as "dog" | "cat" | null)
-  );
-  const [speciesConfirmed, setSpeciesConfirmed] = useState(
-    !!speciesParam || sessionStorage.getItem("create_speciesConfirmed") === "true"
-  );
+  const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || null);
+  const [speciesConfirmed, setSpeciesConfirmed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const [views, setViews] = useState<PortraitView[]>([]);
@@ -112,30 +105,6 @@ export default function Create() {
   const isPaidPlan = targetOrg?.isPaidPlan ?? false;
   const isNewPet = !editingDogId;
   const atPetLimit = isNewPet && petLimit != null && petCount >= petLimit;
-
-  // Check for pending image from the static upload page (iOS Safari workaround)
-  useEffect(() => {
-    // Server-side upload: image URL arrives via query param
-    const pendingUrl = params.get("pending_image");
-    if (pendingUrl) {
-      setUploadedImage(pendingUrl);
-      setViews([]);
-      setActiveViewId(null);
-      setNextViewId(1);
-      // Clean the URL so it doesn't re-trigger on refresh
-      window.history.replaceState({}, "", window.location.pathname);
-      return;
-    }
-    // Legacy: sessionStorage fallback
-    const pendingImage = sessionStorage.getItem("pending_upload_image");
-    if (pendingImage) {
-      sessionStorage.removeItem("pending_upload_image");
-      setUploadedImage(pendingImage);
-      setViews([]);
-      setActiveViewId(null);
-      setNextViewId(1);
-    }
-  }, []);
 
   useEffect(() => {
     if (existingDog && !loaded) {
@@ -197,9 +166,6 @@ export default function Create() {
   }, [editingDogId, speciesParam]);
 
   useEffect(() => {
-    // Only auto-set species on initial load, not on refetches (which happen on window
-    // focus after the file picker closes and would reset user's species selection)
-    if (speciesConfirmed) return;
     const resolvedOrg = targetOrg || myOrg;
     if (!editingDogId && !speciesParam && resolvedOrg) {
       if (orgSpecies === "cats") {
@@ -208,17 +174,12 @@ export default function Create() {
       } else if (orgSpecies === "dogs") {
         setSpecies("dog");
         setSpeciesConfirmed(true);
+      } else if (orgSpecies === "both") {
+        setSpecies(null);
+        setSpeciesConfirmed(false);
       }
     }
-  }, [orgSpecies, editingDogId, speciesParam, myOrg, targetOrg, speciesConfirmed]);
-
-  // Persist species selection in sessionStorage so it survives iOS page eviction
-  useEffect(() => {
-    if (speciesConfirmed && species) {
-      sessionStorage.setItem("create_species", species);
-      sessionStorage.setItem("create_speciesConfirmed", "true");
-    }
-  }, [species, speciesConfirmed]);
+  }, [orgSpecies, editingDogId, speciesParam, myOrg, targetOrg]);
 
   const handleSpeciesSelect = (s: "dog" | "cat") => {
     if (s !== species) {
