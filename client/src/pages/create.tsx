@@ -76,8 +76,8 @@ export default function Create() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [petDescription, setPetDescription] = useState("");
-  const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || null);
-  const [speciesConfirmed, setSpeciesConfirmed] = useState(false);
+  const [species, setSpecies] = useState<"dog" | "cat" | null>(speciesParam || "dog");
+  const [speciesConfirmed, setSpeciesConfirmed] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   const [views, setViews] = useState<PortraitView[]>([]);
@@ -616,7 +616,7 @@ export default function Create() {
               <div>
                 <h2 className="text-lg font-semibold mb-4" data-testid="text-section-photo">Upload Photo</h2>
                 <ImageUpload
-                  onImageUpload={(img) => { toast({ title: "DEBUG: onImageUpload called", description: `Data URL length: ${img.length}` }); setUploadedImage(img); setViews([]); setActiveViewId(null); setNextViewId(1); }}
+                  onImageUpload={(img) => { setUploadedImage(img); setViews([]); setActiveViewId(null); setNextViewId(1); }}
                   currentImage={uploadedImage}
                   onClear={() => { setUploadedImage(null); setViews([]); setActiveViewId(null); setNextViewId(1); }}
                 />
