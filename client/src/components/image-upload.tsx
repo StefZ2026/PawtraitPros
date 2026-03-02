@@ -27,37 +27,19 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       return;
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MAX_DIM || height > MAX_DIM) {
-        if (width > height) {
-          height = Math.round(height * (MAX_DIM / width));
-          width = MAX_DIM;
-        } else {
-          width = Math.round(width * (MAX_DIM / height));
-          height = MAX_DIM;
-        }
+    toast({ title: "DEBUG 2: Reading file", description: `type: ${file.type || "none"}, size: ${(file.size / 1024).toFixed(0)}KB` });
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      toast({ title: "DEBUG 3: Read complete", description: `got ${result ? (result.length / 1024).toFixed(0) + "KB data" : "EMPTY"}` });
+      if (result) {
+        onImageUpload(result);
       }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        URL.revokeObjectURL(objectUrl);
-        toast({ title: "Processing error", description: "Could not process the image. Please try another photo.", variant: "destructive" });
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(objectUrl);
-      onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      toast({ title: "Could not load image", description: "The photo format may not be supported. Try taking a new photo or using a JPG/PNG.", variant: "destructive" });
+    reader.onerror = () => {
+      toast({ title: "DEBUG 3: Read FAILED", description: `${reader.error}`, variant: "destructive" });
     };
-    img.src = objectUrl;
+    reader.readAsDataURL(file);
   }, [onImageUpload, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -77,10 +59,11 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
   }, []);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    toast({ title: "DEBUG 1: File received", description: `files: ${e.target.files?.length ?? 0}` });
     const file = e.target.files?.[0];
     if (file) handleFile(file);
     e.target.value = "";
-  }, [handleFile]);
+  }, [handleFile, toast]);
 
   if (currentImage) {
     return (
