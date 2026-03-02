@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
@@ -18,10 +18,6 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const replaceInputRef = useRef<HTMLInputElement>(null);
-  const onUploadRef = useRef(onImageUpload);
-  onUploadRef.current = onImageUpload;
 
   const handleFile = useCallback((file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type)) {
@@ -38,11 +34,11 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       const result = e.target?.result as string;
       if (!result) return;
 
-      const img = new window.Image();
+      const img = new Image();
       img.onload = () => {
         let { width, height } = img;
         if (width <= MAX_DIM && height <= MAX_DIM) {
-          onUploadRef.current(result);
+          onImageUpload(result);
           return;
         }
         if (width > height) {
@@ -57,12 +53,12 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         canvas.height = height;
         const ctx = canvas.getContext("2d")!;
         ctx.drawImage(img, 0, 0, width, height);
-        onUploadRef.current(canvas.toDataURL("image/jpeg", 0.85));
+        onImageUpload(canvas.toDataURL("image/jpeg", 0.85));
       };
       img.src = result;
     };
     reader.readAsDataURL(file);
-  }, [toast]);
+  }, [onImageUpload, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -90,29 +86,32 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
       <div className="relative">
         <Card className="overflow-hidden">
           <CardContent className="p-0">
-            <div className="relative aspect-square max-w-md mx-auto">
+            <div className="relative max-w-md mx-auto flex items-center justify-center" style={{ maxHeight: "500px" }}>
               <img
                 src={currentImage}
-                alt="Uploaded dog photo"
-                className="w-full h-full object-contain"
+                alt="Uploaded pet photo"
+                className="max-w-full max-h-[500px] object-contain"
                 data-testid="img-uploaded-dog"
               />
             </div>
           </CardContent>
         </Card>
         <div className="flex items-center justify-center gap-3 mt-3">
-          <input
-            ref={replaceInputRef}
-            type="file"
-            accept={ACCEPT_STRING}
-            className="hidden"
-            onChange={handleInputChange}
-            data-testid="input-file-replace"
-          />
-          <Button variant="outline" size="sm" className="gap-1 cursor-pointer" onClick={() => replaceInputRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" />
-            Replace Photo
-          </Button>
+          <label>
+            <input
+              type="file"
+              accept={ACCEPT_STRING}
+              className="hidden"
+              onChange={handleInputChange}
+              data-testid="input-file-replace"
+            />
+            <Button asChild variant="outline" size="sm" className="gap-1 cursor-pointer">
+              <span>
+                <Upload className="h-3.5 w-3.5" />
+                Replace Photo
+              </span>
+            </Button>
+          </label>
           <Button
             variant="ghost"
             size="sm"
@@ -151,18 +150,21 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
         <p className="text-sm text-muted-foreground mb-5 text-center max-w-xs">
           or click the button below to browse your files
         </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT_STRING}
-          className="hidden"
-          onChange={handleInputChange}
-          data-testid="input-file-upload"
-        />
-        <Button className="gap-2 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-          <ImageIcon className="h-4 w-4" />
-          Choose Photo
-        </Button>
+        <label>
+          <input
+            type="file"
+            accept={ACCEPT_STRING}
+            className="hidden"
+            onChange={handleInputChange}
+            data-testid="input-file-upload"
+          />
+          <Button asChild className="gap-2 cursor-pointer">
+            <span>
+              <ImageIcon className="h-4 w-4" />
+              Choose Photo
+            </span>
+          </Button>
+        </label>
         <p className="text-xs text-muted-foreground mt-5">
           JPG, PNG, or WebP up to 20 MB
         </p>
