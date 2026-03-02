@@ -44,7 +44,7 @@ export default function Create() {
 
   // Guard: don't redirect to login if we're returning from the static upload page
   // (the full SPA reloads and auth takes a moment to initialize)
-  const hasPendingUpload = !!sessionStorage.getItem("pending_upload_image");
+  const hasPendingUpload = !!sessionStorage.getItem("pending_upload_image") || !!params.get("pending_image");
   useEffect(() => {
     if (!authLoading && !isAuthenticated && !hasPendingUpload) {
       window.location.href = "/login";
@@ -113,8 +113,20 @@ export default function Create() {
   const isNewPet = !editingDogId;
   const atPetLimit = isNewPet && petLimit != null && petCount >= petLimit;
 
-  // Check for pending image from the lightweight upload page (iOS Safari workaround)
+  // Check for pending image from the static upload page (iOS Safari workaround)
   useEffect(() => {
+    // Server-side upload: image URL arrives via query param
+    const pendingUrl = params.get("pending_image");
+    if (pendingUrl) {
+      setUploadedImage(pendingUrl);
+      setViews([]);
+      setActiveViewId(null);
+      setNextViewId(1);
+      // Clean the URL so it doesn't re-trigger on refresh
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
+    // Legacy: sessionStorage fallback
     const pendingImage = sessionStorage.getItem("pending_upload_image");
     if (pendingImage) {
       sessionStorage.removeItem("pending_upload_image");

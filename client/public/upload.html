@@ -90,7 +90,7 @@
 </style>
 </head>
 <body>
-<div class="card">
+<form method="POST" action="/api/upload-temp" enctype="multipart/form-data" id="uploadForm" class="card">
   <div class="icon">
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
       <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 19.5V4.5a2.25 2.25 0 0 0-2.25-2.25H3.75A2.25 2.25 0 0 0 1.5 4.5v15a2.25 2.25 0 0 0 2.25 2.25Z" />
@@ -103,61 +103,23 @@
       <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 19.5V4.5a2.25 2.25 0 0 0-2.25-2.25H3.75A2.25 2.25 0 0 0 1.5 4.5v15a2.25 2.25 0 0 0 2.25 2.25Z" />
     </svg>
     Browse Library
-    <input type="file" accept="image/*" id="fileInput">
+    <input type="file" accept="image/*" name="photo" id="fileInput">
   </label>
-  <div class="status" id="status"><span class="spinner"></span> Loading photo...</div>
+  <div class="status" id="status"><span class="spinner"></span> Uploading photo...</div>
   <a class="back" href="/create">&larr; Back</a>
-</div>
+</form>
 <script>
 (function() {
   var input = document.getElementById('fileInput');
   var status = document.getElementById('status');
+  var form = document.getElementById('uploadForm');
 
   input.addEventListener('change', function() {
     var file = input.files && input.files[0];
     if (!file) return;
+    // Show uploading spinner and submit the form to the server
     status.className = 'status show';
-
-    // Always resize to keep sessionStorage safe (5MB limit)
-    var img = new Image();
-    var url = URL.createObjectURL(file);
-    img.onload = function() {
-      var max = 1500;
-      var w = img.width, h = img.height;
-      if (w > max || h > max) {
-        if (w > h) { h = Math.round(h * max / w); w = max; }
-        else { w = Math.round(w * max / h); h = max; }
-      }
-      var canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      var base64 = canvas.toDataURL('image/jpeg', 0.85);
-      URL.revokeObjectURL(url);
-
-      try {
-        sessionStorage.setItem('pending_upload_image', base64);
-        window.location.href = '/create';
-      } catch (e) {
-        // If still too large, reduce more
-        canvas.width = Math.round(w * 0.6);
-        canvas.height = Math.round(h * 0.6);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        base64 = canvas.toDataURL('image/jpeg', 0.7);
-        try {
-          sessionStorage.setItem('pending_upload_image', base64);
-          window.location.href = '/create';
-        } catch (e2) {
-          status.className = 'status show';
-          status.innerHTML = 'Photo is too large. Please choose a smaller photo.';
-        }
-      }
-    };
-    img.onerror = function() {
-      URL.revokeObjectURL(url);
-      status.innerHTML = 'Could not read photo. Please try another.';
-    };
-    img.src = url;
+    form.submit();
   });
 })();
 </script>

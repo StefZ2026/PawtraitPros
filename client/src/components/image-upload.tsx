@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
@@ -16,51 +16,29 @@ interface ImageUploadProps {
 export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const { toast } = useToast();
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const replaceRef = useRef<HTMLInputElement>(null);
-
-  const onImageUploadRef = useRef(onImageUpload);
-  onImageUploadRef.current = onImageUpload;
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
 
   const processFile = useCallback((file: File) => {
     if (file.type && !file.type.startsWith("image/")) {
-      toastRef.current({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
+      toast({ title: "Not an image", description: "Please select a photo.", variant: "destructive" });
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      toastRef.current({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
+      toast({ title: "File too large", description: "Please use an image under 20 MB.", variant: "destructive" });
       return;
     }
     const reader = new FileReader();
     reader.onloadend = () => {
       const result = reader.result as string;
-      if (result) onImageUploadRef.current(result);
+      if (result) onImageUpload(result);
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [onImageUpload, toast]);
 
-  const processFileRef = useRef(processFile);
-  processFileRef.current = processFile;
-
-  // Native change listeners (desktop) — stable, never re-attached
-  useEffect(() => {
-    const handleChange = (e: Event) => {
-      const input = e.target as HTMLInputElement;
-      const file = input.files?.[0];
-      if (file) processFileRef.current(file);
-      input.value = "";
-    };
-    const upload = uploadRef.current;
-    const replace = replaceRef.current;
-    if (upload) upload.addEventListener("change", handleChange);
-    if (replace) replace.addEventListener("change", handleChange);
-    return () => {
-      if (upload) upload.removeEventListener("change", handleChange);
-      if (replace) replace.removeEventListener("change", handleChange);
-    };
-  }, []);
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    e.target.value = "";
+  }, [processFile]);
 
   // On iOS, navigate to the static upload page (no React bundle, can't be evicted)
   const handleiOSUpload = useCallback(() => {
@@ -111,9 +89,9 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
                 Replace Photo
               </Button>
               <input
-                ref={replaceRef}
                 type="file"
                 accept="image/*"
+                onChange={handleFileChange}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 data-testid="input-file-replace"
               />
@@ -169,9 +147,9 @@ export function ImageUpload({ onImageUpload, currentImage, onClear }: ImageUploa
               Choose Photo
             </Button>
             <input
-              ref={uploadRef}
               type="file"
               accept="image/*"
+              onChange={handleFileChange}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               data-testid="input-file-upload"
             />
