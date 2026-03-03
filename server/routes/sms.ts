@@ -1,3 +1,5 @@
+import { uploadToStorage, isDataUri } from "../supabase-storage";
+
 export interface SmsSendResult {
   success: boolean;
   error?: string;
@@ -40,7 +42,7 @@ async function sendViaTwilio(phone: string, body: string, mediaUrl?: string): Pr
   }
 
   const params: Record<string, string> = { To: phone, MessagingServiceSid: twilioMsgSvc, Body: body };
-  if (mediaUrl && mediaUrl.startsWith('https://')) params.MediaUrl = mediaUrl;
+  if (mediaUrl) params.MediaUrl = mediaUrl;
 
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
     method: "POST",
@@ -64,7 +66,7 @@ async function sendViaTelnyx(phone: string, body: string, mediaUrl?: string): Pr
   const from = process.env.TELNYX_PHONE_NUMBER!;
 
   const payload: Record<string, any> = { from, to: phone, text: body };
-  if (mediaUrl && mediaUrl.startsWith('https://')) {
+  if (mediaUrl) {
     payload.media_urls = [mediaUrl];
     payload.type = "MMS";
   }
@@ -98,6 +100,20 @@ async function sendViaTelnyx(phone: string, body: string, mediaUrl?: string): Pr
 export async function sendSms(to: string, body: string, mediaUrl?: string): Promise<SmsSendResult> {
   const phone = formatPhoneNumber(to);
   const errors: string[] = [];
+
+  // Convert base64 data URIs to HTTPS URLs via Supabase Storage
+  // Telnyx/Twilio require publicly accessible HTTPS URLs for MMS
+  if (mediaUrl && isDataUri(mediaUrl)) {
+    try {
+      const filename = `mms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      mediaUrl = await uploadToStorage(mediaUrl, "portraits", filename);
+      console.log(`[sms] Converted data URI to HTTPS: ${mediaUrl}`);
+    } catch (err: any) {
+      console.warn(`[sms] Failed to upload media for MMS: ${err.message}`);
+      // Don't fail the whole SMS — send without image rather than not at all
+      mediaUrl = undefined;
+    }
+  }
 
   // Telnyx first — 10DLC campaign is ACTIVE and delivering
   // Twilio campaigns are still in review and silently drop messages
