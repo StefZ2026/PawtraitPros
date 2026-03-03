@@ -48,7 +48,6 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
   const [igOpen, setIgOpen] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [smsConsent, setSmsConsent] = useState(false);
-  const [privacyConsent, setPrivacyConsent] = useState(false);
   const [sending, setSending] = useState(false);
   const [igPosting, setIgPosting] = useState(false);
   const [igCaption, setIgCaption] = useState("");
@@ -264,7 +263,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         </Tooltip>
       </div>
 
-      <Dialog open={smsOpen} onOpenChange={(open) => { setSmsOpen(open); if (!open) { setSmsConsent(false); setPrivacyConsent(false); setPhoneNumber(""); } }}>
+      <Dialog open={smsOpen} onOpenChange={(open) => { setSmsOpen(open); if (!open) { setSmsConsent(false); setPhoneNumber(""); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Send via Text</DialogTitle>
@@ -275,15 +274,18 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
               placeholder="(555) 123-4567"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && smsConsent && privacyConsent && handleSendSms()}
+              onKeyDown={(e) => e.key === "Enter" && phoneNumber.trim() && handleSendSms()}
               disabled={sending}
               className="flex-1"
             />
-            <Button onClick={handleSendSms} disabled={sending || !phoneNumber.trim() || !smsConsent || !privacyConsent}>
+            <Button onClick={handleSendSms} disabled={sending || !phoneNumber.trim()}>
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
           <div className="space-y-2">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              By providing your phone number, you agree to receive SMS notifications from Pawtrait Pros. Message frequency may vary. Standard Message and Data Rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.
+            </p>
             <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
               <input
                 type="checkbox"
@@ -291,16 +293,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
                 onChange={(e) => setSmsConsent(e.target.checked)}
                 className="mt-0.5 rounded border-gray-300"
               />
-              <span>By providing this phone number, you agree to receive SMS messages from Pawtrait Pros. Message frequency may vary. Standard message and data rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.</span>
-            </label>
-            <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                checked={privacyConsent}
-                onChange={(e) => setPrivacyConsent(e.target.checked)}
-                className="mt-0.5 rounded border-gray-300"
-              />
-              <span>I have read and agree to the Pawtrait Pros <a href="/privacy" target="_blank" className="underline text-primary">Privacy Policy</a>.</span>
+              <span>I agree to receive this text message.</span>
             </label>
           </div>
         </DialogContent>
