@@ -16,7 +16,7 @@ export function registerSmsRoutes(app: Express): void {
 
   app.post("/api/send-sms", isAuthenticated, smsRateLimiter, async (req: any, res: Response) => {
     try {
-      const { to, message } = req.body;
+      const { to, message, mediaUrl } = req.body;
       if (!to || !message) {
         return res.status(400).json({ error: "Phone number and message are required" });
       }
@@ -32,7 +32,7 @@ export function registerSmsRoutes(app: Express): void {
       }
 
       const phone = formatPhoneNumber(cleaned);
-      const result = await sendSms(phone, message);
+      const result = await sendSms(phone, message, mediaUrl || undefined);
 
       if (!result.success) {
         throw new Error(result.error || "Failed to send text message");

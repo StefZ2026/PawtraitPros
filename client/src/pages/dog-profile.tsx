@@ -476,7 +476,7 @@ export default function DogProfile() {
           {!isCustomerView && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} />
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} />
             </div>
           )}
         </div>

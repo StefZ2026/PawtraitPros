@@ -51,7 +51,7 @@ export async function deliverPortraitToOwner(
   if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
     try {
       const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
-      const smsResult = await sendSms(dog.ownerPhone, smsBody);
+      const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
       if (smsResult.success) {
         methods.push("sms");
         sent = true;
