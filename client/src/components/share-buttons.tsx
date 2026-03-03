@@ -96,7 +96,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ to: phoneNumber, message: smsBody, mediaUrl: portraitImageUrl || undefined }),
+        body: JSON.stringify({ to: phoneNumber, message: smsBody, mediaUrl: portraitImageUrl?.startsWith('https://') ? portraitImageUrl : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send");

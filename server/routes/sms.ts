@@ -40,7 +40,7 @@ async function sendViaTwilio(phone: string, body: string, mediaUrl?: string): Pr
   }
 
   const params: Record<string, string> = { To: phone, MessagingServiceSid: twilioMsgSvc, Body: body };
-  if (mediaUrl) params.MediaUrl = mediaUrl;
+  if (mediaUrl && mediaUrl.startsWith('https://')) params.MediaUrl = mediaUrl;
 
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
     method: "POST",
@@ -64,7 +64,7 @@ async function sendViaTelnyx(phone: string, body: string, mediaUrl?: string): Pr
   const from = process.env.TELNYX_PHONE_NUMBER!;
 
   const payload: Record<string, any> = { from, to: phone, text: body };
-  if (mediaUrl) {
+  if (mediaUrl && mediaUrl.startsWith('https://')) {
     payload.media_urls = [mediaUrl];
     payload.type = "MMS";
   }
