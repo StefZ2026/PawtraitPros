@@ -90,23 +90,8 @@ export async function sendSms(to: string, body: string): Promise<SmsSendResult> 
   const phone = formatPhoneNumber(to);
   const errors: string[] = [];
 
-  // Try Twilio first
-  if (isTwilioConfigured()) {
-    try {
-      const result = await sendViaTwilio(phone, body);
-      if (result.success) {
-        console.log(`[sms] Sent via Twilio to ${phone}`);
-        return result;
-      }
-      console.warn(`[sms] Twilio failed: ${result.error}`);
-      errors.push(result.error || "Twilio failed");
-    } catch (err: any) {
-      console.warn(`[sms] Twilio error: ${err.message}`);
-      errors.push(`Twilio: ${err.message}`);
-    }
-  }
-
-  // Fall back to Telnyx
+  // Telnyx first — 10DLC campaign is ACTIVE and delivering
+  // Twilio campaigns are still in review and silently drop messages
   if (isTelnyxConfigured()) {
     try {
       const result = await sendViaTelnyx(phone, body);
@@ -119,6 +104,22 @@ export async function sendSms(to: string, body: string): Promise<SmsSendResult> 
     } catch (err: any) {
       console.warn(`[sms] Telnyx error: ${err.message}`);
       errors.push(`Telnyx: ${err.message}`);
+    }
+  }
+
+  // Fall back to Twilio
+  if (isTwilioConfigured()) {
+    try {
+      const result = await sendViaTwilio(phone, body);
+      if (result.success) {
+        console.log(`[sms] Sent via Twilio to ${phone}`);
+        return result;
+      }
+      console.warn(`[sms] Twilio failed: ${result.error}`);
+      errors.push(result.error || "Twilio failed");
+    } catch (err: any) {
+      console.warn(`[sms] Twilio error: ${err.message}`);
+      errors.push(`Twilio: ${err.message}`);
     }
   }
 
