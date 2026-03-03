@@ -109,9 +109,8 @@ export async function sendSms(to: string, body: string, mediaUrl?: string): Prom
       mediaUrl = await uploadToStorage(mediaUrl, "portraits", filename);
       console.log(`[sms] Converted data URI to HTTPS: ${mediaUrl}`);
     } catch (err: any) {
-      console.warn(`[sms] Failed to upload media for MMS: ${err.message}`);
-      // Don't fail the whole SMS — send without image rather than not at all
-      mediaUrl = undefined;
+      console.error(`[sms] Failed to upload media for MMS: ${err.message}`);
+      return { success: false, error: `Failed to process portrait image: ${err.message}` };
     }
   }
 
