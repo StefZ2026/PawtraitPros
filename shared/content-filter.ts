@@ -29,16 +29,16 @@ function normalizeText(text: string): string {
 const blockedPatterns = blockedWords.map(w => new RegExp(`\\b${w}\\b`, "i"));
 
 export function containsInappropriateLanguage(text: string): boolean {
+  // Word boundary check on original text
   if (blockedPatterns.some(p => p.test(text))) return true;
 
+  // Strip non-alpha (catches "f.u.c.k" → "fuck") and check word boundaries
   const stripped = text.toLowerCase().replace(/[^a-z\s]/g, "");
   if (blockedPatterns.some(p => p.test(stripped))) return true;
 
+  // Leet-speak normalization (catches "f*ck" → "fuck") and check word boundaries
   const normalized = normalizeText(text);
-  if (blockedWords.some(w => normalized.includes(w))) return true;
-
-  const spaceless = text.toLowerCase().replace(/[\s._\-*!@#$%^&()]/g, "");
-  if (blockedWords.some(w => spaceless.includes(w))) return true;
+  if (blockedPatterns.some(p => p.test(normalized))) return true;
 
   return false;
 }
