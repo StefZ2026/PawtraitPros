@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import sharp from "sharp";
 import { Semaphore } from "./semaphore";
 
 export const ai = new GoogleGenAI({
@@ -72,8 +73,18 @@ Now apply the following artistic style to this exact animal:
 
 `;
 
+async function resizeForGemini(dataUri: string): Promise<{ mimeType: string; data: string }> {
+  const { mimeType, data } = parseBase64(dataUri);
+  const inputBuffer = Buffer.from(data, "base64");
+  const resized = await sharp(inputBuffer)
+    .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+  return { mimeType: "image/jpeg", data: resized.toString("base64") };
+}
+
 async function generateWithImage(prompt: string, sourceImage: string): Promise<string | null> {
-  const { mimeType, data } = parseBase64(sourceImage);
+  const { mimeType, data } = await resizeForGemini(sourceImage);
   const enhancedPrompt = FIDELITY_PREFIX + prompt;
   return geminiSemaphore.run(() =>
     callWithRetry(async () => {
