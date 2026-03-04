@@ -1,4 +1,5 @@
-import { uploadToStorage, isDataUri } from "../supabase-storage";
+import sharp from "sharp";
+import { uploadToStorage, fetchImageAsBuffer } from "../supabase-storage";
 
 export interface SmsSendResult {
   success: boolean;
@@ -101,15 +102,18 @@ export async function sendSms(to: string, body: string, mediaUrl?: string): Prom
   const phone = formatPhoneNumber(to);
   const errors: string[] = [];
 
-  // Convert base64 data URIs to HTTPS URLs via Supabase Storage
-  // Telnyx/Twilio require publicly accessible HTTPS URLs for MMS
-  if (mediaUrl && isDataUri(mediaUrl)) {
+  // Compress portrait to MMS-friendly JPEG and upload to Supabase Storage
+  // Full-quality PNGs (1.5MB+) exceed carrier MMS limits (~600KB-1.2MB)
+  if (mediaUrl) {
     try {
-      const filename = `mms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-      mediaUrl = await uploadToStorage(mediaUrl, "portraits", filename);
-      console.log(`[sms] Converted data URI to HTTPS: ${mediaUrl}`);
+      const imgBuffer = await fetchImageAsBuffer(mediaUrl);
+      const compressed = await sharp(imgBuffer).jpeg({ quality: 75 }).toBuffer();
+      const fname = `mms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const dataUri = `data:image/jpeg;base64,${compressed.toString("base64")}`;
+      mediaUrl = await uploadToStorage(dataUri, "portraits", fname);
+      console.log(`[sms] Compressed ${imgBuffer.length}B -> ${compressed.length}B, uploaded: ${mediaUrl}`);
     } catch (err: any) {
-      console.error(`[sms] Failed to upload media for MMS: ${err.message}`);
+      console.error(`[sms] Failed to prepare MMS image: ${err.message}`);
       return { success: false, error: `Failed to process portrait image: ${err.message}` };
     }
   }
