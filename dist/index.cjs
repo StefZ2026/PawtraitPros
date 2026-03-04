@@ -252,6 +252,10 @@ var init_schema = __esm({
       // Printful variant ID
       quantity: (0, import_pg_core2.integer)("quantity").default(1).notNull(),
       priceCents: (0, import_pg_core2.integer)("price_cents").notNull(),
+      occasion: (0, import_pg_core2.text)("occasion"),
+      // card occasion ID: "birthday", "valentines", etc.
+      artworkUrl: (0, import_pg_core2.text)("artwork_url"),
+      // public URL of generated card artwork
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
     customerSessions = (0, import_pg_core2.pgTable)("customer_sessions", {
@@ -1045,7 +1049,7 @@ async function resolveOrgForUser(userId, userEmail, dogId) {
   }
   return { org: null, error: "You need to create an organization first", status: 400 };
 }
-var import_express_rate_limit2, ADMIN_EMAIL, aiRateLimiter, apiRateLimiter, MAX_ADDITIONAL_SLOTS, MAX_EDITS_PER_IMAGE, isAdmin;
+var import_express_rate_limit2, ADMIN_EMAIL, aiRateLimiter, apiRateLimiter, publicExpensiveRateLimiter, MAX_ADDITIONAL_SLOTS, MAX_EDITS_PER_IMAGE, isAdmin;
 var init_helpers = __esm({
   "server/routes/helpers.ts"() {
     "use strict";
@@ -1070,6 +1074,14 @@ var init_helpers = __esm({
       message: { error: "Too many requests. Please try again shortly." },
       standardHeaders: true,
       legacyHeaders: false
+    });
+    publicExpensiveRateLimiter = (0, import_express_rate_limit2.default)({
+      windowMs: 60 * 1e3,
+      max: 5,
+      message: { error: "Too many requests. Please wait before trying again." },
+      standardHeaders: true,
+      legacyHeaders: false,
+      validate: { xForwardedForHeader: false }
     });
     MAX_ADDITIONAL_SLOTS = 5;
     MAX_EDITS_PER_IMAGE = 4;
@@ -1480,23 +1492,27 @@ async function callWithRetry(fn, label) {
 }
 async function generateImage(prompt, sourceImage) {
   if (sourceImage) {
-    try {
-      const result = await generateWithImage(prompt, sourceImage);
-      if (result) return result;
-    } catch {
-    }
+    const result = await generateWithImage(prompt, sourceImage);
+    if (result) return result;
+    throw new Error("Image generation with reference photo returned no result. Please try again.");
   }
   return generateTextOnly(prompt);
 }
+async function resizeForGemini(dataUri) {
+  const { mimeType, data } = parseBase64(dataUri);
+  const inputBuffer = Buffer.from(data, "base64");
+  const resized = await (0, import_sharp.default)(inputBuffer).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+  return { mimeType: "image/jpeg", data: resized.toString("base64") };
+}
 async function generateWithImage(prompt, sourceImage) {
-  const { mimeType, data } = parseBase64(sourceImage);
+  const { mimeType, data } = await resizeForGemini(sourceImage);
   const enhancedPrompt = FIDELITY_PREFIX + prompt;
   return geminiSemaphore.run(
     () => callWithRetry(async () => {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: [{ role: "user", parts: [{ inlineData: { mimeType, data } }, { text: enhancedPrompt }] }],
-        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+        model: "gemini-3-pro-image-preview",
+        contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
+        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE], imageConfig: { imageSize: "2K" } }
       });
       return extractImageFromResponse(response);
     }, "generateWithImage")
@@ -1507,7 +1523,7 @@ async function generateTextOnly(prompt) {
     const result = await geminiSemaphore.run(
       () => callWithRetry(async () => {
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash-image",
+          model: "gemini-3-pro-image-preview",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
         });
@@ -1523,7 +1539,7 @@ async function editImage(currentImage, editPrompt) {
   return geminiSemaphore.run(
     () => callWithRetry(async () => {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
+        model: "gemini-3-pro-image-preview",
         contents: [{
           role: "user",
           parts: [
@@ -1539,40 +1555,28 @@ async function editImage(currentImage, editPrompt) {
     }, "editImage")
   );
 }
-var import_genai, ai, geminiSemaphore, FIDELITY_PREFIX;
+var import_genai, import_sharp, ai, geminiSemaphore, FIDELITY_PREFIX;
 var init_gemini = __esm({
   "server/gemini.ts"() {
     "use strict";
     import_genai = require("@google/genai");
+    import_sharp = __toESM(require("sharp"), 1);
     init_semaphore();
     ai = new import_genai.GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY
     });
     geminiSemaphore = new Semaphore(10);
-    FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 THE PHOTO IS THE GROUND TRUTH.
-Study the attached photo carefully. This is the EXACT animal you must depict.
+    FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 YOU MUST DEPICT THIS EXACT ANIMAL.
 
-CRITICAL RULE \u2014 PHOTO OVERRIDES TEXT:
-The style description below may mention a breed name (e.g., "Beagle", "Labrador", "Persian cat"). IGNORE any breed name in the text if it does not match what you see in the photo. The PHOTO is the sole authority on what this animal looks like. If the text says "Beagle" but the photo shows a Chow Chow, you MUST depict a Chow Chow. If the text says "Tabby" but the photo shows a Siamese, you MUST depict a Siamese. NEVER generate an animal that matches the text breed instead of the photo \u2014 the photo always wins.
+MANDATORY RULES (violating any rule = total failure):
+1. SINGLE ANIMAL ONLY \u2014 depict ONLY the one animal from the reference photo. Never add extra animals, companions, or duplicates to the scene.
+2. PHOTO OVERRIDES TEXT \u2014 if the text mentions a breed that doesn't match the photo, depict what you SEE in the photo. The photo is always the sole authority.
+3. EXACT COLORS AND PATTERNS \u2014 reproduce each color exactly where it appears on the body. White chest stays white, dark back stays dark, patches stay in the same locations and proportions. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT shift colors to match "typical breed" palettes or scene lighting.
+4. PRESERVE UNIQUE FEATURES \u2014 floppy ears stay floppy, perked ears stay perked. If ears are asymmetric (one up, one down; one folded, one straight), keep them asymmetric. Underbites, crooked tails, scars, heterochromia, unusual markings \u2014 reproduce them ALL exactly. Do NOT "fix" or normalize any feature to match breed standard.
+5. PRESERVE FACE AND BODY \u2014 match this animal's exact muzzle shape, eye color, ear shape and position, fur texture and length, and body proportions from the photo.
+6. PHOTOREALISTIC ANIMAL \u2014 the animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costume, and background \u2014 but the animal itself must always look like a genuine photograph of a real animal.
 
-COLOR AND PATTERN MATCHING IS THE #1 PRIORITY:
-Most animals are NOT one uniform color. Study WHERE each color appears on this specific animal's body:
-- Note which areas are lighter vs darker (chest, belly, legs, face, back, ears, tail)
-- Note any two-tone or multi-tone patterns \u2014 e.g., white chest with reddish back, dark face with lighter body, tabby stripes, tuxedo markings, brindle patterns
-- Note the EXACT boundaries where one color transitions to another
-You must reproduce the PRECISE color of EACH body area \u2014 not a uniform "average" color, not a "typical" breed color, not a slightly different shade. If the chest is white and the back is reddish, the portrait must show a white chest and a reddish back in those same proportions. If there are patches, spots, or gradients, they must appear in the same locations. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT let the artistic style, scene lighting, or background colors influence or shift the animal's actual coat colors.
-
-You MUST also faithfully reproduce THIS SPECIFIC animal's:
-- Face shape, muzzle, and facial structure
-- Ear shape, size, and positioning
-- Fur/coat texture and length
-- Eye color and shape
-- Body size and proportions
-- Any unique distinguishing features (spots, patches, scars, etc.)
-
-DO NOT substitute a generic or different-looking animal. DO NOT default to a "breed typical" appearance. The generated portrait must be unmistakably recognizable as the SAME individual animal in the reference photo.
-
-Now apply the following artistic style while preserving this exact animal's appearance, coloring, and color distribution:
+Now apply the following artistic style to this exact animal:
 
 `;
   }
@@ -1596,7 +1600,130 @@ function isTelnyxConfigured() {
 function isSmsConfigured() {
   return isTwilioConfigured() || isTelnyxConfigured();
 }
-async function sendViaTwilio(phone, body) {
+function recordSend(phone) {
+  const now = Date.now();
+  const timestamps = recentSends.get(phone) || [];
+  timestamps.push(now);
+  recentSends.set(phone, timestamps.filter((t) => now - t < RATE_WINDOW_MS));
+}
+function getRecentSendCount(phone) {
+  const now = Date.now();
+  const timestamps = recentSends.get(phone) || [];
+  const recent = timestamps.filter((t) => now - t < RATE_WINDOW_MS);
+  recentSends.set(phone, recent);
+  return recent.length;
+}
+function getRetryStatus(messageId) {
+  return retryQueue.get(messageId);
+}
+function scheduleRetry(messageId, entry) {
+  console.log(`[sms] Carrier rejected ${messageId} to ${entry.phone}, queuing retry ${entry.attempts + 1}/${MAX_RETRY_ATTEMPTS} in 15min`);
+  entry.attempts++;
+  retryQueue.set(messageId, entry);
+  setTimeout(async () => {
+    try {
+      console.log(`[sms] Retrying ${messageId} to ${entry.phone} (attempt ${entry.attempts})`);
+      const result = await sendViaTelnyx(entry.phone, entry.body, entry.mediaUrl);
+      if (!result.success || !result.messageId) {
+        console.warn(`[sms] Retry send failed for ${messageId}: ${result.error}`);
+        if (entry.attempts < MAX_RETRY_ATTEMPTS) {
+          scheduleRetry(messageId, entry);
+        } else {
+          entry.status = "failed";
+          entry.lastError = result.error || "All retries exhausted";
+          retryQueue.set(messageId, entry);
+          console.error(`[sms] All retries exhausted for ${messageId} to ${entry.phone}`);
+        }
+        return;
+      }
+      const deliveryStatus = await pollDeliveryStatus(result.messageId);
+      if (deliveryStatus === "delivered") {
+        entry.status = "delivered";
+        retryQueue.set(messageId, entry);
+        console.log(`[sms] Retry delivered! ${messageId} to ${entry.phone}`);
+      } else if (deliveryStatus === "failed" && entry.attempts < MAX_RETRY_ATTEMPTS) {
+        scheduleRetry(messageId, entry);
+      } else {
+        entry.status = "failed";
+        entry.lastError = "Carrier rejected after retry";
+        retryQueue.set(messageId, entry);
+      }
+    } catch (err) {
+      console.error(`[sms] Retry error for ${messageId}: ${err.message}`);
+      if (entry.attempts < MAX_RETRY_ATTEMPTS) {
+        scheduleRetry(messageId, entry);
+      } else {
+        entry.status = "failed";
+        entry.lastError = err.message;
+        retryQueue.set(messageId, entry);
+      }
+    }
+  }, RETRY_DELAY_MS);
+}
+async function pollDeliveryStatus(messageId) {
+  const apiKey = process.env.TELNYX_API_KEY;
+  const MAX_POLLS = 6;
+  const POLL_INTERVAL_MS = 3e3;
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    try {
+      const res = await fetch(`https://api.telnyx.com/v2/messages/${messageId}`, {
+        headers: { "Authorization": `Bearer ${apiKey}` }
+      });
+      if (!res.ok) {
+        console.warn(`[sms] Poll ${i + 1}/${MAX_POLLS} failed: HTTP ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const status = data.data?.to?.[0]?.status;
+      if (status === "delivered") {
+        console.log(`[sms] Delivery confirmed for ${messageId} (poll ${i + 1})`);
+        return "delivered";
+      }
+      if (status === "delivery_failed" || status === "sending_failed") {
+        const errors = data.data?.errors || [];
+        console.warn(`[sms] Delivery failed for ${messageId}: status=${status}, errors=${JSON.stringify(errors)}`);
+        return "failed";
+      }
+      console.log(`[sms] Poll ${i + 1}/${MAX_POLLS} for ${messageId}: status=${status}`);
+    } catch (err) {
+      console.warn(`[sms] Poll error for ${messageId}: ${err.message}`);
+    }
+  }
+  console.warn(`[sms] Polling timed out for ${messageId} after ${MAX_POLLS} attempts`);
+  return "unknown";
+}
+async function sendViaTelnyx(phone, body, mediaUrl) {
+  const apiKey = process.env.TELNYX_API_KEY;
+  const from = process.env.TELNYX_PHONE_NUMBER;
+  const payload = { from, to: phone, text: body };
+  if (mediaUrl) {
+    payload.media_urls = [mediaUrl];
+    payload.type = "MMS";
+  }
+  const res = await fetch("https://api.telnyx.com/v2/messages", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    const detail = err.errors?.[0]?.detail || err.errors?.[0]?.title || "Failed";
+    return { success: false, error: `Telnyx: ${detail}`, provider: "telnyx" };
+  }
+  const data = await res.json();
+  const messageId = data.data?.id;
+  const status = data.data?.to?.[0]?.status;
+  if (status === "delivery_failed") {
+    const errDetail = data.data?.errors?.[0]?.detail || "Delivery failed";
+    return { success: false, error: `Telnyx: ${errDetail}`, provider: "telnyx", messageId };
+  }
+  return { success: true, provider: "telnyx", messageId };
+}
+async function sendViaTwilio(phone, body, mediaUrl) {
   const twilioSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioMsgSvc = process.env.TWILIO_MESSAGING_SERVICE_SID;
   let authHeader;
@@ -1605,13 +1732,15 @@ async function sendViaTwilio(phone, body) {
   } else {
     authHeader = `Basic ${Buffer.from(`${process.env.TWILIO_API_KEY_SID}:${process.env.TWILIO_API_KEY_SECRET}`).toString("base64")}`;
   }
+  const params = { To: phone, MessagingServiceSid: twilioMsgSvc, Body: body };
+  if (mediaUrl) params.MediaUrl = mediaUrl;
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       "Authorization": authHeader
     },
-    body: new URLSearchParams({ To: phone, MessagingServiceSid: twilioMsgSvc, Body: body }).toString()
+    body: new URLSearchParams(params).toString()
   });
   if (!res.ok) {
     const err = await res.json();
@@ -1619,38 +1748,83 @@ async function sendViaTwilio(phone, body) {
   }
   return { success: true, provider: "twilio" };
 }
-async function sendViaTelnyx(phone, body) {
-  const apiKey = process.env.TELNYX_API_KEY;
-  const from = process.env.TELNYX_PHONE_NUMBER;
-  const res = await fetch("https://api.telnyx.com/v2/messages", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ from, to: phone, text: body })
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    const detail = err.errors?.[0]?.detail || err.errors?.[0]?.title || "Failed";
-    return { success: false, error: `Telnyx: ${detail}`, provider: "telnyx" };
-  }
-  const data = await res.json();
-  const status = data.data?.to?.[0]?.status;
-  if (status === "delivery_failed") {
-    const errDetail = data.data?.errors?.[0]?.detail || "Delivery failed";
-    return { success: false, error: `Telnyx: ${errDetail}`, provider: "telnyx" };
-  }
-  return { success: true, provider: "telnyx" };
-}
-async function sendSms(to, body) {
+async function sendSms(to, body, mediaUrl) {
   const phone = formatPhoneNumber(to);
   const errors = [];
+  if (mediaUrl) {
+    try {
+      const imgBuffer = await fetchImageAsBuffer(mediaUrl);
+      const compressed = await (0, import_sharp4.default)(imgBuffer).jpeg({ quality: 75 }).toBuffer();
+      const fname = `mms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const dataUri = `data:image/jpeg;base64,${compressed.toString("base64")}`;
+      mediaUrl = await uploadToStorage(dataUri, "portraits", fname);
+      console.log(`[sms] Compressed ${imgBuffer.length}B -> ${compressed.length}B, uploaded: ${mediaUrl}`);
+    } catch (err) {
+      console.error(`[sms] Failed to prepare MMS image: ${err.message}`);
+      return { success: false, error: `Failed to process portrait image: ${err.message}` };
+    }
+  }
+  const recentCount = getRecentSendCount(phone);
+  if (recentCount >= MAX_SENDS_BEFORE_DELAY) {
+    console.log(`[sms] ${recentCount} recent sends to ${phone}, queueing with ${DELAY_MS / 6e4}min delay`);
+    const queueId = `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const entry = { phone, body, mediaUrl, attempts: 0, status: "pending" };
+    retryQueue.set(queueId, entry);
+    setTimeout(async () => {
+      try {
+        console.log(`[sms] Sending delayed message ${queueId} to ${phone}`);
+        recordSend(phone);
+        const result = await sendViaTelnyx(phone, body, mediaUrl);
+        if (result.success && result.messageId) {
+          const deliveryStatus = await pollDeliveryStatus(result.messageId);
+          entry.status = deliveryStatus === "failed" ? "failed" : "delivered";
+          if (deliveryStatus === "failed" && entry.attempts < MAX_RETRY_ATTEMPTS) {
+            scheduleRetry(queueId, entry);
+          }
+        } else {
+          entry.status = "failed";
+          entry.lastError = result.error;
+        }
+        retryQueue.set(queueId, entry);
+      } catch (err) {
+        entry.status = "failed";
+        entry.lastError = err.message;
+        retryQueue.set(queueId, entry);
+      }
+    }, DELAY_MS);
+    return { success: true, queued: true, messageId: queueId };
+  }
+  recordSend(phone);
+  if (isTelnyxConfigured()) {
+    try {
+      const result = await sendViaTelnyx(phone, body, mediaUrl);
+      if (result.success && result.messageId) {
+        console.log(`[sms] Accepted by Telnyx: ${result.messageId} to ${phone}${mediaUrl ? " (MMS)" : ""}`);
+        const deliveryStatus = await pollDeliveryStatus(result.messageId);
+        if (deliveryStatus === "delivered") {
+          return { success: true, delivered: true, provider: "telnyx", messageId: result.messageId };
+        }
+        if (deliveryStatus === "failed") {
+          const entry = { phone, body, mediaUrl, attempts: 0, status: "pending" };
+          scheduleRetry(result.messageId, entry);
+          return { success: false, error: "Carrier rejected the message", retrying: true, messageId: result.messageId, provider: "telnyx" };
+        }
+        return { success: true, delivered: false, provider: "telnyx", messageId: result.messageId };
+      }
+      if (result.error) {
+        console.warn(`[sms] Telnyx failed: ${result.error}`);
+        errors.push(result.error);
+      }
+    } catch (err) {
+      console.warn(`[sms] Telnyx error: ${err.message}`);
+      errors.push(`Telnyx: ${err.message}`);
+    }
+  }
   if (isTwilioConfigured()) {
     try {
-      const result = await sendViaTwilio(phone, body);
+      const result = await sendViaTwilio(phone, body, mediaUrl);
       if (result.success) {
-        console.log(`[sms] Sent via Twilio to ${phone}`);
+        console.log(`[sms] Sent via Twilio to ${phone}${mediaUrl ? " (MMS)" : ""}`);
         return result;
       }
       console.warn(`[sms] Twilio failed: ${result.error}`);
@@ -1660,28 +1834,41 @@ async function sendSms(to, body) {
       errors.push(`Twilio: ${err.message}`);
     }
   }
-  if (isTelnyxConfigured()) {
-    try {
-      const result = await sendViaTelnyx(phone, body);
-      if (result.success) {
-        console.log(`[sms] Sent via Telnyx to ${phone}`);
-        return result;
-      }
-      console.warn(`[sms] Telnyx failed: ${result.error}`);
-      errors.push(result.error || "Telnyx failed");
-    } catch (err) {
-      console.warn(`[sms] Telnyx error: ${err.message}`);
-      errors.push(`Telnyx: ${err.message}`);
-    }
-  }
   if (errors.length === 0) {
     return { success: false, error: "No SMS provider configured" };
   }
   return { success: false, error: errors.join("; ") };
 }
+var import_sharp4, recentSends, RATE_WINDOW_MS, MAX_SENDS_BEFORE_DELAY, DELAY_MS, retryQueue, MAX_RETRY_ATTEMPTS, RETRY_DELAY_MS;
 var init_sms = __esm({
   "server/routes/sms.ts"() {
     "use strict";
+    import_sharp4 = __toESM(require("sharp"), 1);
+    init_supabase_storage();
+    recentSends = /* @__PURE__ */ new Map();
+    RATE_WINDOW_MS = 60 * 60 * 1e3;
+    MAX_SENDS_BEFORE_DELAY = 3;
+    DELAY_MS = 10 * 60 * 1e3;
+    retryQueue = /* @__PURE__ */ new Map();
+    MAX_RETRY_ATTEMPTS = 3;
+    RETRY_DELAY_MS = 15 * 60 * 1e3;
+    setInterval(() => {
+      const retryIds = Array.from(retryQueue.keys());
+      for (const id of retryIds) {
+        const entry = retryQueue.get(id);
+        if (entry.status !== "pending") {
+          retryQueue.delete(id);
+        }
+      }
+      const now = Date.now();
+      const phones = Array.from(recentSends.keys());
+      for (const phone of phones) {
+        const timestamps = recentSends.get(phone);
+        const recent = timestamps.filter((t) => now - t < RATE_WINDOW_MS);
+        if (recent.length === 0) recentSends.delete(phone);
+        else recentSends.set(phone, recent);
+      }
+    }, 30 * 60 * 1e3);
   }
 });
 
@@ -1812,7 +1999,7 @@ async function deliverPortraitToOwner(dog, org) {
   if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
     try {
       const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
-      const smsResult = await sendSms(dog.ownerPhone, smsBody);
+      const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
       if (smsResult.success) {
         methods.push("sms");
         sent = true;
@@ -1860,11 +2047,16 @@ var init_delivery = __esm({
 // server/gelato-config.ts
 var gelato_config_exports = {};
 __export(gelato_config_exports, {
+  CARD_DIMENSIONS: () => CARD_DIMENSIONS,
+  CARD_OCCASIONS: () => CARD_OCCASIONS,
   GELATO_CARD_FLAT_5x7_PRODUCT_UID: () => GELATO_CARD_FLAT_5x7_PRODUCT_UID,
   GELATO_CARD_FOLDED_5x7_PRODUCT_UID: () => GELATO_CARD_FOLDED_5x7_PRODUCT_UID,
   GELATO_PRODUCTS: () => GELATO_PRODUCTS,
   getAllGelatoProducts: () => getAllGelatoProducts,
-  getGelatoProduct: () => getGelatoProduct
+  getAllOccasions: () => getAllOccasions,
+  getGelatoProduct: () => getGelatoProduct,
+  getOccasion: () => getOccasion,
+  sortOccasionsForDisplay: () => sortOccasionsForDisplay
 });
 function getGelatoProduct(key) {
   return GELATO_PRODUCTS[key];
@@ -1872,12 +2064,32 @@ function getGelatoProduct(key) {
 function getAllGelatoProducts() {
   return Object.values(GELATO_PRODUCTS);
 }
-var GELATO_CARD_FLAT_5x7_PRODUCT_UID, GELATO_CARD_FOLDED_5x7_PRODUCT_UID, GELATO_PRODUCTS;
+function getOccasion(id) {
+  return CARD_OCCASIONS.find((o) => o.id === id);
+}
+function getAllOccasions() {
+  return CARD_OCCASIONS;
+}
+function sortOccasionsForDisplay(month) {
+  return CARD_OCCASIONS.map((o) => ({
+    ...o,
+    featured: o.seasonalMonths !== null && o.seasonalMonths.includes(month)
+  })).sort((a, b) => {
+    if (a.featured && !b.featured) return -1;
+    if (!a.featured && b.featured) return 1;
+    const aEvergreen = a.seasonalMonths === null;
+    const bEvergreen = b.seasonalMonths === null;
+    if (aEvergreen && !bEvergreen) return -1;
+    if (!aEvergreen && bEvergreen) return 1;
+    return a.sortOrder - b.sortOrder;
+  });
+}
+var GELATO_CARD_FLAT_5x7_PRODUCT_UID, GELATO_CARD_FOLDED_5x7_PRODUCT_UID, GELATO_PRODUCTS, CARD_DIMENSIONS, CARD_OCCASIONS;
 var init_gelato_config = __esm({
   "server/gelato-config.ts"() {
     "use strict";
-    GELATO_CARD_FLAT_5x7_PRODUCT_UID = "cards_pf_a5_pt_350-gsm-coated-silk_cl_4-4_ct_matt-protection_prt_1-1";
-    GELATO_CARD_FOLDED_5x7_PRODUCT_UID = "cards_pf_a5_pt_350-gsm-coated-silk_cl_4-4_ft_fold-ver_ct_matt-protection_prt_1-1";
+    GELATO_CARD_FLAT_5x7_PRODUCT_UID = "cards_pf_5r_pt_130-lb-cover-coated-silk_cl_4-4_ct_matt-protection_prt_1-1_ver";
+    GELATO_CARD_FOLDED_5x7_PRODUCT_UID = "brochures_pf_5r_pt_130-lb-cover-coated-silk_cl_4-4_ft_fold-ver_ct_matt-protection_prt_1-1_ver";
     GELATO_PRODUCTS = {
       card_flat_5x7: {
         productUid: GELATO_CARD_FLAT_5x7_PRODUCT_UID,
@@ -1885,10 +2097,9 @@ var init_gelato_config = __esm({
         format: "flat",
         size: "5x7",
         priceCents: 1500,
-        // $15.00 per card
         artworkFiles: [
-          { type: "default", description: "Front artwork (print-ready PDF/PNG/JPG)" },
-          { type: "back", description: "Back artwork (print-ready PDF/PNG/JPG)" }
+          { type: "default", description: "Front artwork (print-ready PNG/JPG)" },
+          { type: "back", description: "Back artwork (print-ready PNG/JPG)" }
         ]
       },
       card_folded_5x7: {
@@ -1897,13 +2108,150 @@ var init_gelato_config = __esm({
         format: "folded",
         size: "5x7",
         priceCents: 2e3,
-        // $20.00 per card
         artworkFiles: [
-          { type: "default", description: "Outside artwork \u2014 front cover + back (multi-page PDF or single image)" },
-          { type: "inside", description: "Inside artwork (optional \u2014 leave blank for white interior)" }
+          { type: "default", description: "Outside artwork \u2014 front cover + back when folded" },
+          { type: "inside", description: "Inside artwork (greeting text spread)" }
         ]
       }
     };
+    CARD_DIMENSIONS = {
+      flat_front: { width: 1500, height: 2100 },
+      // portrait orientation
+      flat_back: { width: 1500, height: 2100 },
+      folded_outside: { width: 1500, height: 2100 },
+      // outside when closed (front cover visible)
+      folded_inside: { width: 1500, height: 2100 }
+      // inside spread when opened
+    };
+    CARD_OCCASIONS = [
+      {
+        id: "birthday",
+        name: "Birthday",
+        greetingText: "Happy Birthday!",
+        subText: "Wishing you a day full of treats and belly rubs!",
+        seasonalMonths: null,
+        sortOrder: 1,
+        templateColors: { primary: "#FF6B35", secondary: "#FFF0E6", textColor: "#CC4400" }
+        // warm orange
+      },
+      {
+        id: "thank_you",
+        name: "Thank You",
+        greetingText: "Thank You!",
+        subText: "Your kindness means the world to us.",
+        seasonalMonths: null,
+        sortOrder: 2,
+        templateColors: { primary: "#2E8B57", secondary: "#E0F2E9", textColor: "#1B5E3A" }
+        // sea green
+      },
+      {
+        id: "congratulations",
+        name: "Congratulations",
+        greetingText: "Congratulations!",
+        subText: "Here's to celebrating this special moment!",
+        seasonalMonths: null,
+        sortOrder: 3,
+        templateColors: { primary: "#DAA520", secondary: "#FDF5DC", textColor: "#8B6914" }
+        // goldenrod
+      },
+      {
+        id: "get_well",
+        name: "Get Well Soon",
+        greetingText: "Get Well Soon!",
+        subText: "Sending warm thoughts and healing vibes your way.",
+        seasonalMonths: null,
+        sortOrder: 4,
+        templateColors: { primary: "#4A90D9", secondary: "#E1EFFA", textColor: "#2A5FAA" }
+        // cornflower blue
+      },
+      {
+        id: "thinking_of_you",
+        name: "Thinking of You",
+        greetingText: "Thinking of You",
+        subText: "Just a little reminder that someone cares.",
+        seasonalMonths: null,
+        sortOrder: 5,
+        templateColors: { primary: "#9B59B6", secondary: "#F0E4F7", textColor: "#6C3483" }
+        // soft purple
+      },
+      {
+        id: "valentines",
+        name: "Valentine's Day",
+        greetingText: "Be My Valentine!",
+        subText: "You make my heart do zoomies!",
+        seasonalMonths: [0, 1],
+        // Jan–Feb
+        sortOrder: 10,
+        templateColors: { primary: "#E91E63", secondary: "#FDDDE6", textColor: "#AD1457" }
+        // hot pink
+      },
+      {
+        id: "easter",
+        name: "Easter / Spring",
+        greetingText: "Happy Easter!",
+        subText: "Hoppy Easter from your favorite fur baby!",
+        seasonalMonths: [2, 3],
+        // Mar–Apr
+        sortOrder: 11,
+        templateColors: { primary: "#7CB342", secondary: "#EDF5E0", textColor: "#4E7A1E" }
+        // spring green
+      },
+      {
+        id: "mothers_day",
+        name: "Mother's Day",
+        greetingText: "Happy Mother's Day!",
+        subText: "To the best pet mom \u2014 with love and slobbery kisses.",
+        seasonalMonths: [3, 4],
+        // Apr–May
+        sortOrder: 12,
+        templateColors: { primary: "#E84393", secondary: "#FDE0ED", textColor: "#B5176D" }
+        // rose pink
+      },
+      {
+        id: "fathers_day",
+        name: "Father's Day",
+        greetingText: "Happy Father's Day!",
+        subText: "To the best pet dad \u2014 thanks for all the walks and treats.",
+        seasonalMonths: [4, 5],
+        // May–Jun
+        sortOrder: 13,
+        templateColors: { primary: "#2C3E7B", secondary: "#DEE3F2", textColor: "#1A2550" }
+        // navy blue
+      },
+      {
+        id: "halloween",
+        name: "Halloween",
+        greetingText: "Happy Halloween!",
+        subText: "Have a spooktacular day!",
+        seasonalMonths: [8, 9],
+        // Sep–Oct
+        sortOrder: 14,
+        templateColors: { primary: "#FF6F00", secondary: "#FFE8CC", textColor: "#CC5800" }
+        // pumpkin orange
+      },
+      {
+        id: "holiday",
+        name: "Holiday / Christmas",
+        greetingText: "Happy Holidays!",
+        subText: "Wishing you a season full of joy, love, and treats!",
+        seasonalMonths: [10, 11],
+        // Nov–Dec
+        sortOrder: 15,
+        templateColors: { primary: "#1B7A3D", secondary: "#DFF0E5", textColor: "#145C2E" }
+        // christmas green
+      },
+      {
+        id: "new_year",
+        name: "New Year",
+        greetingText: "Happy New Year!",
+        subText: "Here's to a pawsome new year together!",
+        seasonalMonths: [11, 0],
+        // Dec–Jan
+        sortOrder: 16,
+        templateColors: { primary: "#C0A000", secondary: "#FAF6DC", textColor: "#8B7500" }
+        // champagne gold
+      }
+    ];
   }
 });
 
@@ -1917,7 +2265,8 @@ __export(gelato_exports, {
   getGelatoProduct: () => getGelatoProduct2,
   listCatalogs: () => listCatalogs,
   quoteGelatoOrder: () => quoteGelatoOrder,
-  searchCardProducts: () => searchCardProducts
+  searchCardProducts: () => searchCardProducts,
+  searchFoldedCardProducts: () => searchFoldedCardProducts
 });
 function getApiKey2() {
   const key = process.env.GELATO_API_KEY;
@@ -1983,9 +2332,13 @@ async function listCatalogs() {
 async function searchCardProducts() {
   return gelatoFetch(GELATO_PRODUCT_BASE, "/catalogs/cards/products:search", {
     method: "POST",
-    body: JSON.stringify({
-      attributeFilters: {}
-    })
+    body: JSON.stringify({ attributeFilters: {} })
+  });
+}
+async function searchFoldedCardProducts() {
+  return gelatoFetch(GELATO_PRODUCT_BASE, "/catalogs/folded-cards/products:search", {
+    method: "POST",
+    body: JSON.stringify({ attributeFilters: {} })
   });
 }
 async function getGelatoProduct2(productUid) {
@@ -2284,6 +2637,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 var import_express2 = __toESM(require("express"), 1);
+var import_crypto4 = __toESM(require("crypto"), 1);
 var import_helmet = __toESM(require("helmet"), 1);
 
 // server/auth.ts
@@ -2995,7 +3349,7 @@ function registerPlansBillingRoutes(app2) {
       res.json({ url: session.url });
     } catch (error) {
       console.error("Error creating checkout session:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to create checkout session" });
+      res.status(500).json({ error: "Failed to create checkout session" });
     }
   });
   app2.post("/api/stripe/confirm-checkout", isAuthenticated, async (req, res) => {
@@ -3215,7 +3569,7 @@ function registerPlansBillingRoutes(app2) {
       });
     } catch (error) {
       console.error("Error changing plan:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to change plan" });
+      res.status(500).json({ error: "Failed to change plan" });
     }
   });
   app2.post("/api/stripe/cancel-plan-change", isAuthenticated, async (req, res) => {
@@ -3251,7 +3605,7 @@ function registerPlansBillingRoutes(app2) {
       res.json({ success: true });
     } catch (error) {
       console.error("Error canceling plan change:", error?.message || error);
-      res.status(500).json({ error: error?.message || "Failed to cancel plan change" });
+      res.status(500).json({ error: "Failed to cancel plan change" });
     }
   });
   app2.get("/api/addon-slots", isAuthenticated, async (req, res) => {
@@ -3383,7 +3737,7 @@ function registerPackRoutes(app2) {
       const isAdmin2 = userEmail === process.env.ADMIN_EMAIL;
       const orgIdParam = req.query.orgId;
       let orgId = null;
-      if (orgIdParam) {
+      if (isAdmin2 && orgIdParam) {
         orgId = parseInt(orgIdParam);
       } else {
         const org = await storage.getOrganizationByOwner(userId);
@@ -3562,9 +3916,7 @@ function containsInappropriateLanguage(text2) {
   const stripped = text2.toLowerCase().replace(/[^a-z\s]/g, "");
   if (blockedPatterns.some((p) => p.test(stripped))) return true;
   const normalized = normalizeText(text2);
-  if (blockedWords.some((w) => normalized.includes(w))) return true;
-  const spaceless = text2.toLowerCase().replace(/[\s._\-*!@#$%^&()]/g, "");
-  if (blockedWords.some((w) => spaceless.includes(w))) return true;
+  if (blockedPatterns.some((p) => p.test(normalized))) return true;
   return false;
 }
 
@@ -3932,8 +4284,6 @@ function registerDogRoutes(app2) {
         age: dog.age,
         description: dog.description,
         originalPhotoUrl: dog.original_photo_url,
-        ownerEmail: dog.owner_email,
-        ownerPhone: dog.owner_phone,
         petCode: dog.pet_code,
         isAvailable: dog.is_available,
         createdAt: dog.created_at,
@@ -4013,7 +4363,7 @@ function registerDogRoutes(app2) {
       res.status(500).json({ error: "Failed to fetch styles" });
     }
   });
-  app2.post("/api/dogs/code/:petCode/generate", async (req, res) => {
+  app2.post("/api/dogs/code/:petCode/generate", publicExpensiveRateLimiter, async (req, res) => {
     try {
       const { petCode } = req.params;
       const { styleId } = req.body;
@@ -4110,7 +4460,7 @@ function registerDogRoutes(app2) {
       });
     } catch (error) {
       console.error("Error generating portrait via pet code:", error);
-      res.status(500).json({ error: error.message || "Failed to generate portrait" });
+      res.status(500).json({ error: "Failed to generate portrait" });
     }
   });
   app2.get("/api/dogs", async (req, res) => {
@@ -4234,7 +4584,12 @@ function registerDogRoutes(app2) {
       if (limitError) {
         return res.status(403).json({ error: limitError });
       }
-      const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...dogData } = req.body;
+      const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...rawData } = req.body;
+      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "externalId", "externalSource", "tags"];
+      const dogData = {};
+      for (const key of allowedFields) {
+        if (rawData[key] !== void 0) dogData[key] = rawData[key];
+      }
       if (dogData.species && !["dog", "cat"].includes(dogData.species)) {
         return res.status(400).json({ error: "species must be 'dog' or 'cat'" });
       }
@@ -4258,7 +4613,7 @@ function registerDogRoutes(app2) {
       }
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error creating pet:", errMsg, error);
-      res.status(500).json({ error: `Failed to save pet: ${errMsg}` });
+      res.status(500).json({ error: "Failed to save pet" });
     }
   });
   app2.patch("/api/dogs/:id", isAuthenticated, async (req, res) => {
@@ -4277,7 +4632,12 @@ function registerDogRoutes(app2) {
           return res.status(403).json({ error: "Not authorized to edit this dog" });
         }
       }
-      const { selectedPortraitId, ...dogData } = req.body;
+      const { selectedPortraitId, ...rawData } = req.body;
+      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "originalPhotoUrl", "tags"];
+      const dogData = {};
+      for (const key of allowedFields) {
+        if (rawData[key] !== void 0) dogData[key] = rawData[key];
+      }
       if (dogData.name && containsInappropriateLanguage(dogData.name)) {
         return res.status(400).json({ error: "Please choose a family-friendly name" });
       }
@@ -4298,7 +4658,7 @@ function registerDogRoutes(app2) {
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error("Error updating pet:", errMsg, error);
-      res.status(500).json({ error: `Failed to update pet: ${errMsg}` });
+      res.status(500).json({ error: "Failed to update pet" });
     }
   });
   app2.post("/api/dogs/:id/check-in", isAuthenticated, async (req, res) => {
@@ -4475,15 +4835,15 @@ function registerDogRoutes(app2) {
 }
 
 // server/routes/portraits.ts
-var import_sharp2 = __toESM(require("sharp"), 1);
+var import_sharp3 = __toESM(require("sharp"), 1);
 init_storage();
 init_gemini();
 
 // server/generate-mockups.ts
-var import_sharp = __toESM(require("sharp"), 1);
+var import_sharp2 = __toESM(require("sharp"), 1);
 init_storage();
 init_supabase_storage();
-import_sharp.default.cache(false);
+import_sharp2.default.cache(false);
 var WIDTH = 1200;
 var HEIGHT = 630;
 var CREAM_BG = { r: 253, g: 250, b: 245 };
@@ -4541,14 +4901,14 @@ function pillSvg(text2, fontSize, bgColor, textColor, paddingX, paddingY) {
   return { svg: Buffer.from(svg), width, height };
 }
 async function resizeToFit(imageBuffer, maxW, maxH) {
-  return (0, import_sharp.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "center" }).png().toBuffer();
+  return (0, import_sharp2.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "center" }).png().toBuffer();
 }
 async function makeRoundedImage(imageBuffer, w, h, radius) {
   const resized = await resizeToFit(imageBuffer, w, h);
   const mask = Buffer.from(
     `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
   );
-  return (0, import_sharp.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  return (0, import_sharp2.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
 }
 async function generateShowcaseMockup(orgId) {
   const org = await storage.getOrganization(orgId);
@@ -4574,10 +4934,10 @@ async function generateShowcaseMockup(orgId) {
   if (petCount === 0) throw new Error("No pets with portraits found");
   const petsToShow = dogsWithPortraits.slice(0, 4);
   const composites = [];
-  const bg = await (0, import_sharp.default)({
+  const bg = await (0, import_sharp2.default)({
     create: { width: WIDTH, height: HEIGHT, channels: 4, background: CREAM_BG }
   }).png().toBuffer();
-  const topBar = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
+  const topBar = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
   composites.push({ input: topBar, top: 0, left: 0 });
   const orgLogoSize = 70;
   let orgLogoWidth = 0;
@@ -4604,7 +4964,7 @@ async function generateShowcaseMockup(orgId) {
   for (let i = 0; i < petsToShow.length; i++) {
     const pet = petsToShow[i];
     const x = startX + i * (portraitW + 20);
-    const cardBg = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(portraitW, portraitAreaHeight, 12, "white"))).png().toBuffer();
+    const cardBg = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(portraitW, portraitAreaHeight, 12, "white"))).png().toBuffer();
     composites.push({ input: cardBg, top: portraitAreaTop, left: x });
     const rounded = await makeRoundedImage(pet.portraitBuffer, portraitW - 16, portraitImgH - 8, 8);
     composites.push({ input: rounded, top: portraitAreaTop + 8, left: x + 8 });
@@ -4617,7 +4977,7 @@ async function generateShowcaseMockup(orgId) {
   composites.push({ input: poweredByText, top: HEIGHT - 38, left: WIDTH - 370 });
   const ppLogo = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo.svg, top: HEIGHT - 48, left: WIDTH - 280 });
-  return (0, import_sharp.default)(bg).composite(composites).png().toBuffer();
+  return (0, import_sharp2.default)(bg).composite(composites).png().toBuffer();
 }
 async function generatePawfileMockup(dogId) {
   const dog = await storage.getDog(dogId);
@@ -4628,10 +4988,10 @@ async function generatePawfileMockup(dogId) {
   if (!portrait || !portrait.generatedImageUrl) throw new Error("No portrait found");
   const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
   const composites = [];
-  const bg = await (0, import_sharp.default)({
+  const bg = await (0, import_sharp2.default)({
     create: { width: WIDTH, height: HEIGHT, channels: 4, background: CREAM_BG }
   }).png().toBuffer();
-  const topBar = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
+  const topBar = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
   composites.push({ input: topBar, top: 0, left: 0 });
   const portraitW = 420;
   const portraitH = 480;
@@ -4674,7 +5034,7 @@ async function generatePawfileMockup(dogId) {
   composites.push({ input: poweredByText2, top: HEIGHT - 38, left: WIDTH - 370 });
   const ppLogo2 = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo2.svg, top: HEIGHT - 48, left: WIDTH - 280 });
-  return (0, import_sharp.default)(bg).composite(composites).png().toBuffer();
+  return (0, import_sharp2.default)(bg).composite(composites).png().toBuffer();
 }
 
 // server/routes/portraits.ts
@@ -4754,7 +5114,7 @@ function processNext() {
 }
 
 // server/routes/portraits.ts
-import_sharp2.default.cache(false);
+import_sharp3.default.cache(false);
 var MAX_STYLES_PER_PET = 5;
 function registerPortraitRoutes(app2) {
   registerWorker(async (job) => {
@@ -4911,18 +5271,18 @@ function registerPortraitRoutes(app2) {
         res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
         return res.send(portraitBuffer);
       }
-      const portraitMeta = await (0, import_sharp2.default)(portraitBuffer).metadata();
+      const portraitMeta = await (0, import_sharp3.default)(portraitBuffer).metadata();
       const pw = portraitMeta.width || 1024;
       const ph = portraitMeta.height || 1024;
       const logoSize = Math.max(48, Math.round(Math.min(pw, ph) * 0.08));
       const margin = Math.round(logoSize * 0.4);
-      const resizedLogo = await (0, import_sharp2.default)(logoBuffer).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().png().toBuffer();
+      const resizedLogo = await (0, import_sharp3.default)(logoBuffer).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().png().toBuffer();
       const circleSize = logoSize + 8;
       const circleSvg = Buffer.from(
         `<svg width="${circleSize}" height="${circleSize}"><circle cx="${circleSize / 2}" cy="${circleSize / 2}" r="${circleSize / 2}" fill="rgba(255,255,255,0.6)"/></svg>`
       );
-      const logoBadge = await (0, import_sharp2.default)(circleSvg).composite([{ input: resizedLogo, gravity: "center" }]).png().toBuffer();
-      const result = await (0, import_sharp2.default)(portraitBuffer).composite([{
+      const logoBadge = await (0, import_sharp3.default)(circleSvg).composite([{ input: resizedLogo, gravity: "center" }]).png().toBuffer();
+      const result = await (0, import_sharp3.default)(portraitBuffer).composite([{
         input: logoBadge,
         top: ph - circleSize - margin,
         left: pw - circleSize - margin
@@ -5045,8 +5405,18 @@ function registerPortraitRoutes(app2) {
       if (dogName && (typeof dogName !== "string" || dogName.length > 100)) {
         return res.status(400).json({ error: "Invalid dog name." });
       }
-      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/")) {
+      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/") && !originalImage.startsWith("https://")) {
         return res.status(400).json({ error: "Invalid image format." });
+      }
+      let resolvedImage = originalImage || null;
+      if (resolvedImage && !isDataUri(resolvedImage)) {
+        try {
+          const buf = await fetchImageAsBuffer(resolvedImage);
+          resolvedImage = `data:image/png;base64,${buf.toString("base64")}`;
+        } catch (err) {
+          console.error("[generate-portrait] Failed to fetch source image:", err);
+          return res.status(400).json({ error: "Could not load the source image. Please re-upload the photo." });
+        }
       }
       const sanitizedPrompt = sanitizeForPrompt(prompt);
       if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
@@ -5119,7 +5489,7 @@ function registerPortraitRoutes(app2) {
       }
       const jobId = enqueue("generate", {
         prompt: sanitizedPrompt,
-        originalImage: originalImage || null,
+        originalImage: resolvedImage,
         dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
         dogId: dogId ? parseInt(dogId) : null,
         styleId: styleId ? parseInt(styleId) : null,
@@ -5396,6 +5766,12 @@ function registerBatchRoutes(app2) {
         return res.status(404).json({ error: "Batch session not found" });
       }
       const batch = batchResult.rows[0];
+      if (batch.owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
       if (batch.status !== "uploading" && batch.status !== "assigning") {
         return res.status(400).json({ error: "Batch is no longer accepting photos" });
       }
@@ -5429,11 +5805,20 @@ function registerBatchRoutes(app2) {
         return res.status(400).json({ error: "dogId is required" });
       }
       const batchResult = await pool.query(
-        `SELECT organization_id FROM batch_sessions WHERE id = $1`,
+        `SELECT bs.organization_id, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
         [batchId]
       );
       if (batchResult.rows.length === 0) {
         return res.status(404).json({ error: "Batch session not found" });
+      }
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
       }
       const dog = await storage.getDog(parseInt(dogId));
       if (!dog || dog.organizationId !== batchResult.rows[0].organization_id) {
@@ -5462,7 +5847,7 @@ function registerBatchRoutes(app2) {
         return res.status(400).json({ error: "Invalid batch ID" });
       }
       const batchResult = await pool.query(
-        `SELECT bs.*, o.industry_type, o.id as org_id FROM batch_sessions bs
+        `SELECT bs.*, o.industry_type, o.id as org_id, o.owner_id FROM batch_sessions bs
          JOIN organizations o ON o.id = bs.organization_id
          WHERE bs.id = $1`,
         [batchId]
@@ -5471,6 +5856,13 @@ function registerBatchRoutes(app2) {
         return res.status(404).json({ error: "Batch session not found" });
       }
       const batch = batchResult.rows[0];
+      const userId = req.user.claims.sub;
+      if (batch.owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
       const photosResult = await pool.query(
         `SELECT * FROM batch_photos WHERE batch_session_id = $1 AND dog_id IS NOT NULL ORDER BY id`,
         [batchId]
@@ -5501,11 +5893,20 @@ function registerBatchRoutes(app2) {
         return res.status(400).json({ error: "Invalid batch ID" });
       }
       const batchResult = await pool.query(
-        `SELECT * FROM batch_sessions WHERE id = $1`,
+        `SELECT bs.*, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
         [batchId]
       );
       if (batchResult.rows.length === 0) {
         return res.status(404).json({ error: "Batch session not found" });
+      }
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
       }
       const photosResult = await pool.query(
         `SELECT bp.id, bp.dog_id, bp.assigned_at, bp.created_at,
@@ -5742,7 +6143,191 @@ function buildOrderItem(variantId, quantity, imageUrl) {
 // server/routes/merch.ts
 init_email();
 init_helpers();
+init_gelato_config();
+
+// server/card-artwork.ts
+var import_sharp5 = __toESM(require("sharp"), 1);
+init_supabase_storage();
+init_gelato_config();
+import_sharp5.default.cache(false);
+function roundedRectSvg2(w, h, r, fill) {
+  return `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="${fill}"/></svg>`;
+}
+function textSvg2(text2, fontSize, color, maxWidth, fontWeight = "bold", align = "start") {
+  const escaped = text2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const anchor = align === "middle" ? "middle" : "start";
+  const x = align === "middle" ? maxWidth / 2 : 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${Math.round(fontSize * 1.5)}">
+    <text x="${x}" y="${fontSize}" font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${escaped}</text>
+  </svg>`;
+  return Buffer.from(svg);
+}
+function multiLineTextSvg(lines, fontSize, color, maxWidth, fontWeight = "normal", lineHeight = 1.6, align = "middle") {
+  const anchor = align === "middle" ? "middle" : "start";
+  const x = align === "middle" ? maxWidth / 2 : 0;
+  const totalHeight = Math.round(fontSize * lineHeight * lines.length);
+  const escapedLines = lines.map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+  const tspans = escapedLines.map((l, i) => `<tspan x="${x}" dy="${i === 0 ? fontSize : Math.round(fontSize * lineHeight)}">${l}</tspan>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${totalHeight + 20}">
+    <text font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${tspans}</text>
+  </svg>`;
+  return Buffer.from(svg);
+}
+function decorativeBorderSvg(w, h, color, thickness, radius) {
+  const inset = thickness / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect x="${inset}" y="${inset}" width="${w - thickness}" height="${h - thickness}" rx="${radius}" ry="${radius}" fill="none" stroke="${color}" stroke-width="${thickness}"/>
+  </svg>`;
+  return Buffer.from(svg);
+}
+async function resizeToFit2(imageBuffer, maxW, maxH) {
+  return (0, import_sharp5.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "top" }).png().toBuffer();
+}
+async function makeRoundedImage2(imageBuffer, w, h, radius) {
+  const resized = await resizeToFit2(imageBuffer, w, h);
+  const mask = Buffer.from(
+    `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
+  );
+  return (0, import_sharp5.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+}
+async function generateFlatCardArtwork(portraitUrl, occasion, petName, orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.flat_front;
+  const { primary, secondary, textColor } = occasion.templateColors;
+  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
+  const composites = [];
+  const bg = await (0, import_sharp5.default)({
+    create: { width: W, height: H, channels: 4, background: hexToRgb(secondary) }
+  }).png().toBuffer();
+  composites.push({ input: decorativeBorderSvg(W, H, primary, 16, 24), top: 0, left: 0 });
+  composites.push({ input: decorativeBorderSvg(W - 60, H - 60, primary, 4, 16), top: 30, left: 30 });
+  const greetingText = textSvg2(occasion.greetingText, 72, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 80, left: 60 });
+  const portraitW = W - 200;
+  const portraitH = H - 550;
+  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitW, portraitH, 20);
+  const portraitLeft = Math.round((W - portraitW) / 2);
+  composites.push({ input: roundedPortrait, top: 220, left: portraitLeft });
+  const nameText = textSvg2(petName, 52, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 220 + portraitH + 30, left: 60 });
+  const fromText = textSvg2(`from ${orgName}`, 24, primary, W - 120, "normal", "middle");
+  composites.push({ input: fromText, top: H - 80, left: 60 });
+  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFlatCardBack(orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.flat_back;
+  const composites = [];
+  const bg = await (0, import_sharp5.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const orgText = textSvg2(orgName, 32, "#666666", W - 200, "normal", "middle");
+  composites.push({ input: orgText, top: Math.round(H / 2) - 40, left: 100 });
+  const poweredText = textSvg2("Powered by Pawtrait Pros", 22, "#999999", W - 200, "normal", "middle");
+  composites.push({ input: poweredText, top: Math.round(H / 2) + 10, left: 100 });
+  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFoldedOutsideArtwork(portraitUrl, occasion, petName, orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.folded_outside;
+  const { primary, secondary, textColor } = occasion.templateColors;
+  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
+  const composites = [];
+  const bg = await (0, import_sharp5.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const halfH = Math.round(H / 2);
+  const frontBg = await (0, import_sharp5.default)(Buffer.from(roundedRectSvg2(W, halfH, 0, secondary))).png().toBuffer();
+  composites.push({ input: frontBg, top: 0, left: 0 });
+  composites.push({ input: decorativeBorderSvg(W - 40, halfH - 40, primary, 4, 12), top: 20, left: 20 });
+  const greetingText = textSvg2(occasion.greetingText, 42, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 30, left: 60 });
+  const portraitSize = halfH - 200;
+  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitSize, portraitSize, 16);
+  composites.push({ input: roundedPortrait, top: 95, left: Math.round((W - portraitSize) / 2) });
+  const nameText = textSvg2(petName, 34, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 95 + portraitSize + 10, left: 60 });
+  const backTop = halfH;
+  const orgText = textSvg2(orgName, 28, "#666666", W - 200, "normal", "middle");
+  composites.push({ input: orgText, top: backTop + Math.round(halfH / 2) - 30, left: 100 });
+  const poweredText = textSvg2("Powered by Pawtrait Pros", 20, "#999999", W - 200, "normal", "middle");
+  composites.push({ input: poweredText, top: backTop + Math.round(halfH / 2) + 10, left: 100 });
+  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFoldedInsideArtwork(occasion, petName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.folded_inside;
+  const { primary, textColor } = occasion.templateColors;
+  const composites = [];
+  const bg = await (0, import_sharp5.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const halfH = Math.round(H / 2);
+  const lineSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W - 200}" height="4"><rect x="0" y="0" width="${W - 200}" height="4" rx="2" ry="2" fill="${primary}" opacity="0.3"/></svg>`
+  );
+  composites.push({ input: lineSvg, top: halfH - 20, left: 100 });
+  const greetingTop = halfH + 80;
+  const greetingText = textSvg2(occasion.greetingText, 64, textColor, W - 160, "bold", "middle");
+  composites.push({ input: greetingText, top: greetingTop, left: 80 });
+  const personalizedSub = occasion.subText.replace(/\b(your|you)\b/gi, petName + "'s");
+  const subLines = wrapText(personalizedSub, 35);
+  const subText = multiLineTextSvg(subLines, 32, primary, W - 160, "normal", 1.6, "middle");
+  composites.push({ input: subText, top: greetingTop + 110, left: 80 });
+  const heartSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="${primary}" opacity="0.4">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+    </svg>`
+  );
+  composites.push({ input: heartSvg, top: greetingTop + 280, left: Math.round(W / 2) - 20 });
+  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
+}
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return { r: 255, g: 255, b: 255 };
+  return {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  };
+}
+function wrapText(text2, maxCharsPerLine) {
+  const words = text2.split(" ");
+  const lines = [];
+  let currentLine = "";
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 > maxCharsPerLine && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = currentLine ? `${currentLine} ${word}` : word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+function bufferToDataUri(buffer, mimeType = "image/png") {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+// server/routes/merch.ts
+init_supabase_storage();
 function registerMerchRoutes(app2) {
+  const previewCache = /* @__PURE__ */ new Map();
+  const PREVIEW_CACHE_TTL = 15 * 60 * 1e3;
+  const PREVIEW_CACHE_MAX = 50;
+  function getCachedPreview(key) {
+    const entry = previewCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > PREVIEW_CACHE_TTL) {
+      previewCache.delete(key);
+      return null;
+    }
+    return entry.buffer;
+  }
+  function setCachedPreview(key, buffer) {
+    if (previewCache.size >= PREVIEW_CACHE_MAX) {
+      const oldest = [...previewCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+      if (oldest) previewCache.delete(oldest[0]);
+    }
+    previewCache.set(key, { buffer, timestamp: Date.now() });
+  }
   app2.get("/api/merch/products", async (req, res) => {
     try {
       res.json({
@@ -5784,10 +6369,10 @@ function registerMerchRoutes(app2) {
       res.json({ rates });
     } catch (error) {
       console.error("Error estimating shipping:", error);
-      res.status(500).json({ error: error.message || "Failed to estimate shipping" });
+      res.status(500).json({ error: "Failed to estimate shipping" });
     }
   });
-  app2.post("/api/merch/checkout", async (req, res) => {
+  app2.post("/api/merch/checkout", publicExpensiveRateLimiter, async (req, res) => {
     try {
       const { items, customer, address, imageUrl, portraitId, dogId, orgId, sessionToken } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
@@ -5805,17 +6390,21 @@ function registerMerchRoutes(app2) {
       let subtotalCents = 0;
       const validatedItems = [];
       for (const item of items) {
-        const product = getProduct(item.productKey);
-        if (!product) {
+        const isCard = item.productKey.startsWith("card_");
+        const printfulProduct = isCard ? null : getProduct(item.productKey);
+        const gelatoProduct = isCard ? getGelatoProduct(item.productKey) : null;
+        if (!printfulProduct && !gelatoProduct) {
           return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
         }
+        const priceCents = printfulProduct?.priceCents || gelatoProduct?.priceCents || 0;
         const qty = item.quantity || 1;
-        subtotalCents += product.priceCents * qty;
+        subtotalCents += priceCents * qty;
         validatedItems.push({
           productKey: item.productKey,
-          variantId: product.variantId,
+          variantId: printfulProduct?.variantId || 0,
           quantity: qty,
-          priceCents: product.priceCents
+          priceCents,
+          occasion: isCard ? item.occasion || void 0 : void 0
         });
       }
       const recipient = {
@@ -5830,8 +6419,9 @@ function registerMerchRoutes(app2) {
       };
       let shippingCents = 0;
       try {
-        const shippingItems = validatedItems.map((i) => ({ variant_id: i.variantId, quantity: i.quantity }));
-        const rates = await estimateShipping(recipient, shippingItems);
+        const printfulShippingItems = validatedItems.filter((i) => !i.productKey.startsWith("card_")).map((i) => ({ variant_id: i.variantId, quantity: i.quantity }));
+        if (printfulShippingItems.length === 0) throw new Error("No Printful items for shipping estimate");
+        const rates = await estimateShipping(recipient, printfulShippingItems);
         if (rates.length > 0) {
           shippingCents = Math.round(parseFloat(rates[0].rate) * 100);
         }
@@ -5867,20 +6457,24 @@ function registerMerchRoutes(app2) {
       const merchOrderId = orderResult.rows[0].id;
       for (const item of validatedItems) {
         await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents]
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, occasion)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.occasion || null]
         );
       }
       const org = await storage.getOrganization(parseInt(orgId));
       const testMode = org?.stripeTestMode;
       const stripe = getStripeClient(testMode);
       const lineItems = validatedItems.map((item) => {
-        const product = getProduct(item.productKey);
+        const printfulProduct = getProduct(item.productKey);
+        const gelatoProduct = getGelatoProduct(item.productKey);
+        const occasion = item.occasion ? getOccasion(item.occasion) : null;
+        let displayName = printfulProduct?.name || gelatoProduct?.name || item.productKey;
+        if (occasion) displayName = `${occasion.name} ${displayName}`;
         return {
           price_data: {
             currency: "usd",
-            product_data: { name: product?.name || item.productKey },
+            product_data: { name: displayName },
             unit_amount: item.priceCents
           },
           quantity: item.quantity
@@ -5927,10 +6521,10 @@ function registerMerchRoutes(app2) {
       });
     } catch (error) {
       console.error("Error creating merch checkout:", error);
-      res.status(500).json({ error: error.message || "Failed to create checkout" });
+      res.status(500).json({ error: "Failed to create checkout" });
     }
   });
-  app2.post("/api/merch/confirm-checkout", async (req, res) => {
+  app2.post("/api/merch/confirm-checkout", publicExpensiveRateLimiter, async (req, res) => {
     try {
       const { sessionId } = req.body;
       if (!sessionId) {
@@ -5971,6 +6565,8 @@ function registerMerchRoutes(app2) {
         console.error(`[merch] No imageUrl in session metadata for order ${order.id}`);
         return res.json({ orderId: order.id, status: "paid", warning: "Fulfillment pending \u2014 missing image URL" });
       }
+      const printfulRows = itemsResult.rows.filter((item) => !item.product_key.startsWith("card_"));
+      const gelatoRows = itemsResult.rows.filter((item) => item.product_key.startsWith("card_"));
       const recipient = {
         name: order.customer_name,
         address1: order.shipping_street,
@@ -5981,75 +6577,152 @@ function registerMerchRoutes(app2) {
         email: order.customer_email,
         phone: order.customer_phone
       };
-      try {
-        const printfulItems = itemsResult.rows.map(
-          (item) => buildOrderItem(item.variant_id, item.quantity, imageUrl)
-        );
-        const printfulOrder = await createOrder(recipient, printfulItems, String(order.id));
-        await pool.query(
-          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
-          [String(printfulOrder.id), printfulOrder.status, order.id]
-        );
+      let printfulOrderId = null;
+      let gelatoOrderId = null;
+      if (printfulRows.length > 0) {
         try {
-          await confirmOrder(printfulOrder.id);
+          const printfulItems = printfulRows.map(
+            (item) => buildOrderItem(item.variant_id, item.quantity, imageUrl)
+          );
+          const printfulOrder = await createOrder(recipient, printfulItems, String(order.id));
+          printfulOrderId = printfulOrder.id;
           await pool.query(
-            `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+            `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+            [String(printfulOrder.id), printfulOrder.status, order.id]
+          );
+          try {
+            await confirmOrder(printfulOrder.id);
+            await pool.query(
+              `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+              [order.id]
+            );
+          } catch (confirmErr) {
+            console.warn(`[merch] Printful auto-confirm failed for order ${order.id}:`, confirmErr.message);
+          }
+        } catch (printfulErr) {
+          console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
+          await pool.query(
+            `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
             [order.id]
           );
-        } catch (confirmErr) {
-          console.warn(`[merch] Auto-confirm failed for order ${order.id}:`, confirmErr.message);
         }
-        if (order.customer_email && isEmailConfigured()) {
-          try {
-            const itemDescriptions = itemsResult.rows.map((item) => {
-              const product = getProduct(item.product_key);
-              return `${product?.name || item.product_key} x${item.quantity}`;
-            });
-            const orgName = org?.name || "Pawtrait Pros";
-            const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
-            const dogName = dogResult?.name || "your pet";
-            const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
-            let attachments;
-            if (order.portrait_id) {
-              try {
-                const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
-                const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
-                if (downloadRes.ok) {
-                  const buffer = Buffer.from(await downloadRes.arrayBuffer());
-                  attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
-                }
-              } catch (dlErr) {
-                console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
+      }
+      if (gelatoRows.length > 0) {
+        try {
+          const { createGelatoOrder: createGelatoOrder2, buildCardOrderItem: buildCardOrderItem2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const petName = dogResult?.name || "Your Pet";
+          const orgName = org?.name || "Pawtrait Pros";
+          const gelatoItems = [];
+          for (let i = 0; i < gelatoRows.length; i++) {
+            const item = gelatoRows[i];
+            const product = getGelatoProduct(item.product_key);
+            const occasion = item.occasion ? getOccasion(item.occasion) : null;
+            let files;
+            if (occasion) {
+              const format = product?.format || "flat";
+              console.log(`[merch] Generating ${occasion.id} ${format} card artwork for order ${order.id}`);
+              if (format === "flat") {
+                const frontBuf = await generateFlatCardArtwork(imageUrl, occasion, petName, orgName);
+                const backBuf = await generateFlatCardBack(orgName);
+                const frontUrl = await uploadToStorage(bufferToDataUri(frontBuf), "portraits", `card-${order.id}-${i}-front.png`);
+                const backUrl = await uploadToStorage(bufferToDataUri(backBuf), "portraits", `card-${order.id}-${i}-back.png`);
+                files = [{ type: "default", url: frontUrl }, { type: "back", url: backUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [frontUrl, item.id]);
+              } else {
+                const outsideBuf = await generateFoldedOutsideArtwork(imageUrl, occasion, petName, orgName);
+                const insideBuf = await generateFoldedInsideArtwork(occasion, petName);
+                const outsideUrl = await uploadToStorage(bufferToDataUri(outsideBuf), "portraits", `card-${order.id}-${i}-outside.png`);
+                const insideUrl = await uploadToStorage(bufferToDataUri(insideBuf), "portraits", `card-${order.id}-${i}-inside.png`);
+                files = [{ type: "default", url: outsideUrl }, { type: "inside", url: insideUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [outsideUrl, item.id]);
               }
+            } else {
+              files = [{ type: "default", url: imageUrl }];
             }
-            await sendEmail(order.customer_email, subject, html, attachments, orgName);
-            console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
-          } catch (emailErr) {
-            console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+            gelatoItems.push(buildCardOrderItem2(
+              product?.productUid || item.product_key,
+              item.quantity,
+              files,
+              `item-${order.id}-${i}`
+            ));
+          }
+          const nameParts = (order.customer_name || "Customer").split(" ");
+          const gelatoAddress = {
+            firstName: nameParts[0] || "Customer",
+            lastName: nameParts.slice(1).join(" ") || "",
+            addressLine1: order.shipping_street,
+            city: order.shipping_city,
+            state: order.shipping_state,
+            postCode: order.shipping_zip,
+            country: order.shipping_country || "US",
+            email: order.customer_email,
+            phone: order.customer_phone
+          };
+          const gelatoOrder = await createGelatoOrder2(
+            gelatoItems,
+            gelatoAddress,
+            `pp-${order.id}`,
+            `org-${order.organization_id}`
+          );
+          gelatoOrderId = gelatoOrder.id;
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET printful_order_id = $1, status = 'submitted' WHERE id = $2`,
+              [`gelato:${gelatoOrder.id}`, order.id]
+            );
+          }
+          console.log(`[merch] Gelato order ${gelatoOrder.id} created for merch order ${order.id}`);
+        } catch (gelatoErr) {
+          console.error(`[merch] Gelato order failed for paid order ${order.id}:`, gelatoErr.message);
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
+              [order.id]
+            );
           }
         }
-        res.json({
-          orderId: order.id,
-          printfulOrderId: printfulOrder.id,
-          totalCents: order.total_cents,
-          status: "confirmed"
-        });
-      } catch (printfulErr) {
-        console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
-        await pool.query(
-          `UPDATE merch_orders SET status = 'paid_fulfillment_pending', printful_status = $1 WHERE id = $2`,
-          [printfulErr.message, order.id]
-        );
-        res.json({
-          orderId: order.id,
-          totalCents: order.total_cents,
-          status: "paid",
-          warning: "Payment received but fulfillment pending \u2014 we'll process it shortly"
-        });
       }
+      if (order.customer_email && isEmailConfigured()) {
+        try {
+          const itemDescriptions = itemsResult.rows.map((item) => {
+            const product = getProduct(item.product_key);
+            return `${product?.name || item.product_key} x${item.quantity}`;
+          });
+          const orgName = org?.name || "Pawtrait Pros";
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const dogName = dogResult?.name || "your pet";
+          const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+          let attachments;
+          if (order.portrait_id) {
+            try {
+              const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
+              const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
+              if (downloadRes.ok) {
+                const buffer = Buffer.from(await downloadRes.arrayBuffer());
+                attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
+              }
+            } catch (dlErr) {
+              console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
+            }
+          }
+          await sendEmail(order.customer_email, subject, html, attachments, orgName);
+          console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
+        } catch (emailErr) {
+          console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+        }
+      }
+      const finalStatus = printfulOrderId || gelatoOrderId ? "confirmed" : "paid_fulfillment_pending";
+      res.json({
+        orderId: order.id,
+        printfulOrderId,
+        gelatoOrderId,
+        totalCents: order.total_cents,
+        status: finalStatus
+      });
     } catch (error) {
       console.error("Error confirming merch checkout:", error);
-      res.status(500).json({ error: error.message || "Failed to confirm checkout" });
+      res.status(500).json({ error: "Failed to confirm checkout" });
     }
   });
   app2.get("/api/merch/order/:id", isAuthenticated, async (req, res) => {
@@ -6064,6 +6737,14 @@ function registerMerchRoutes(app2) {
       );
       if (orderResult.rows.length === 0) {
         return res.status(404).json({ error: "Order not found" });
+      }
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      if (userEmail !== ADMIN_EMAIL) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || orderResult.rows[0].organization_id !== org.id) {
+          return res.status(403).json({ error: "Not authorized to view this order" });
+        }
       }
       const itemsResult = await pool.query(
         `SELECT * FROM merch_order_items WHERE order_id = $1`,
@@ -6141,24 +6822,82 @@ function registerMerchRoutes(app2) {
       res.json({ orderId, printfulStatus: printfulOrder.status, printfulOrder });
     } catch (error) {
       console.error("Error syncing merch order:", error);
-      res.status(500).json({ error: error.message || "Failed to sync order" });
+      res.status(500).json({ error: "Failed to sync order" });
     }
   });
   app2.get("/api/gelato/products", async (_req, res) => {
     try {
-      const { getAllGelatoProducts: getAllGelatoProducts2 } = await Promise.resolve().then(() => (init_gelato_config(), gelato_config_exports));
-      res.json({ cards: getAllGelatoProducts2() });
+      res.json({ cards: getAllGelatoProducts() });
     } catch (error) {
       console.error("Error fetching Gelato products:", error);
       res.status(500).json({ error: "Failed to fetch card products" });
     }
   });
   app2.get("/api/gelato/availability", async (_req, res) => {
+    const available = !!process.env.GELATO_API_KEY;
     const month = (/* @__PURE__ */ new Date()).getMonth();
-    const available = month === 10 || month === 11;
-    res.json({ available, season: available ? "holiday" : null });
+    const occasions = sortOccasionsForDisplay(month);
+    res.json({ available, occasions });
   });
-  app2.post("/api/gelato/order", async (req, res) => {
+  app2.get("/api/cards/occasions", async (_req, res) => {
+    const month = (/* @__PURE__ */ new Date()).getMonth();
+    res.json({ occasions: sortOccasionsForDisplay(month) });
+  });
+  app2.post("/api/cards/preview", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { portraitId, occasion: occasionId, format, petName } = req.body;
+      if (!portraitId || !occasionId) {
+        return res.status(400).json({ error: "portraitId and occasion are required" });
+      }
+      const occasion = getOccasion(occasionId);
+      if (!occasion) {
+        return res.status(400).json({ error: `Unknown occasion: ${occasionId}` });
+      }
+      const cardFormat = format || "flat";
+      const cacheKey = `${portraitId}-${occasionId}-${cardFormat}`;
+      const cached = getCachedPreview(cacheKey);
+      if (cached) {
+        res.set("Content-Type", "image/png");
+        res.set("Cache-Control", "public, max-age=900");
+        return res.send(cached);
+      }
+      const portrait = await storage.getPortrait(portraitId);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).json({ error: "Portrait not found" });
+      }
+      const name = petName || "Your Pet";
+      let orgName = "Your Business";
+      try {
+        if (portrait.dogId) {
+          const dog = await storage.getDog(portrait.dogId);
+          if (dog?.organizationId) {
+            const org = await storage.getOrganization(dog.organizationId);
+            if (org?.name) orgName = org.name;
+          }
+        }
+      } catch (e) {
+      }
+      let previewBuf;
+      const { default: sharpLib } = await import("sharp");
+      if (cardFormat === "folded") {
+        const fullSpread = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+        const meta = await sharpLib(fullSpread).metadata();
+        const halfH = Math.round((meta.height || 2100) / 2);
+        previewBuf = await sharpLib(fullSpread).extract({ left: 0, top: 0, width: meta.width || 1500, height: halfH }).png().toBuffer();
+      } else {
+        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+      }
+      const preview = await sharpLib(previewBuf).resize(600, null, { fit: "inside" }).png().toBuffer();
+      setCachedPreview(cacheKey, preview);
+      res.set("Content-Type", "image/png");
+      res.set("Cache-Control", "public, max-age=900");
+      res.send(preview);
+    } catch (error) {
+      console.error("Error generating card preview:", error);
+      res.status(500).json({ error: "Failed to generate preview" });
+    }
+  });
+  app2.post("/api/gelato/order", publicExpensiveRateLimiter, async (req, res) => {
     try {
       const { items, customer, address, artworkUrls } = req.body;
       if (!items || !Array.isArray(items) || items.length === 0) {
@@ -6270,7 +7009,7 @@ function registerMerchRoutes(app2) {
       }
     } catch (error) {
       console.error("Error creating Gelato order:", error);
-      res.status(500).json({ error: error.message || "Failed to create card order" });
+      res.status(500).json({ error: "Failed to create card order" });
     }
   });
   app2.get("/api/gelato/discover-products", isAuthenticated, async (req, res) => {
@@ -6279,13 +7018,14 @@ function registerMerchRoutes(app2) {
       return res.status(403).json({ error: "Admin only" });
     }
     try {
-      const { searchCardProducts: searchCardProducts2, listCatalogs: listCatalogs2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
+      const { searchCardProducts: searchCardProducts2, searchFoldedCardProducts: searchFoldedCardProducts2, listCatalogs: listCatalogs2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
       const catalogs = await listCatalogs2();
-      const cards = await searchCardProducts2();
-      res.json({ catalogs, cards });
+      const flatCards = await searchCardProducts2();
+      const foldedCards = await searchFoldedCardProducts2();
+      res.json({ catalogs, flatCards, foldedCards });
     } catch (error) {
       console.error("Error discovering Gelato products:", error);
-      res.status(500).json({ error: error.message || "Failed to discover products" });
+      res.status(500).json({ error: "Failed to discover products" });
     }
   });
 }
@@ -6344,10 +7084,10 @@ function registerCustomerSessionRoutes(app2) {
       });
     } catch (error) {
       console.error("Error creating customer session:", error);
-      res.status(500).json({ error: error.message || "Failed to create customer session" });
+      res.status(500).json({ error: "Failed to create customer session" });
     }
   });
-  app2.post("/api/customer-session/from-code", async (req, res) => {
+  app2.post("/api/customer-session/from-code", publicExpensiveRateLimiter, async (req, res) => {
     try {
       const { petCode } = req.body;
       if (!petCode) {
@@ -6389,7 +7129,7 @@ function registerCustomerSessionRoutes(app2) {
       });
     } catch (error) {
       console.error("Error creating customer session from code:", error);
-      res.status(500).json({ error: error.message || "Failed to create session" });
+      res.status(500).json({ error: "Failed to create session" });
     }
   });
   app2.get("/api/customer-session/:token", async (req, res) => {
@@ -6514,7 +7254,7 @@ function registerCustomerSessionRoutes(app2) {
       res.json({ success: true, message: "SMS sent" });
     } catch (error) {
       console.error("Error sending customer session SMS:", error);
-      res.status(500).json({ error: error.message || "Failed to send SMS" });
+      res.status(500).json({ error: "Failed to send SMS" });
     }
   });
 }
@@ -6678,9 +7418,8 @@ function registerAdminRoutes(app2) {
       if (error instanceof import_zod2.z.ZodError) {
         return res.status(400).json({ error: error.errors });
       }
-      const errMsg = error instanceof Error ? error.message : String(error);
-      console.error("Error creating pet for org:", errMsg, error);
-      res.status(500).json({ error: `Failed to save pet: ${errMsg}` });
+      console.error("Error creating pet for org:", error);
+      res.status(500).json({ error: "Failed to save pet" });
     }
   });
   app2.get("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
@@ -6993,7 +7732,7 @@ function registerSmsRoutes(app2) {
   });
   app2.post("/api/send-sms", isAuthenticated, smsRateLimiter, async (req, res) => {
     try {
-      const { to, message } = req.body;
+      const { to, message, mediaUrl } = req.body;
       if (!to || !message) {
         return res.status(400).json({ error: "Phone number and message are required" });
       }
@@ -7005,16 +7744,32 @@ function registerSmsRoutes(app2) {
         return res.status(503).json({ error: "SMS service is not configured" });
       }
       const phone = formatPhoneNumber(cleaned);
-      const result = await sendSms(phone, message);
-      if (!result.success) {
-        throw new Error(result.error || "Failed to send text message");
+      const result = await sendSms(phone, message, mediaUrl || void 0);
+      if (result.queued) {
+        return res.json({ success: true, queued: true, messageId: result.messageId });
       }
-      res.json({ success: true });
+      if (result.retrying) {
+        return res.json({ success: false, retrying: true, messageId: result.messageId, error: result.error });
+      }
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to send text message" });
+      }
+      res.json({ success: true, delivered: result.delivered, messageId: result.messageId });
     } catch (error) {
       console.error("SMS send error:", error);
-      const errMsg = error?.message || "Failed to send text message";
-      res.status(500).json({ error: errMsg });
+      res.status(500).json({ error: "Failed to send text message" });
     }
+  });
+  app2.get("/api/sms-status/:messageId", isAuthenticated, (req, res) => {
+    const { messageId } = req.params;
+    const entry = getRetryStatus(messageId);
+    if (!entry) {
+      return res.json({ status: "unknown" });
+    }
+    res.json({
+      status: entry.status,
+      error: entry.lastError
+    });
   });
 }
 
@@ -7212,7 +7967,7 @@ function registerInstagramRoutes(app2) {
       }
     } catch (error) {
       console.error("[instagram] Connect error:", error);
-      res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(error.message || "unknown"));
+      res.redirect("/settings?instagram=error&detail=connect_failed");
     }
   });
   app2.post("/api/instagram/post", isAuthenticated, async (req, res) => {
@@ -7311,7 +8066,7 @@ function registerInstagramRoutes(app2) {
       });
     } catch (error) {
       console.error("[instagram] Post error:", error);
-      res.status(500).json({ error: error.message || "Failed to post to Instagram" });
+      res.status(500).json({ error: "Failed to post to Instagram" });
     }
   });
   app2.delete("/api/instagram/disconnect", isAuthenticated, async (req, res) => {
@@ -7465,7 +8220,7 @@ function registerInstagramRoutes(app2) {
       res.redirect(authUrl);
     } catch (error) {
       console.error("[instagram-native] Connect error:", error);
-      res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(error.message || "unknown"));
+      res.redirect("/settings?instagram=error&detail=connect_failed");
     }
   });
   app2.get("/api/instagram-native/callback", async (req, res) => {
@@ -7538,7 +8293,7 @@ function registerInstagramRoutes(app2) {
       res.redirect("/settings?instagram=connected");
     } catch (error) {
       console.error("[instagram-native] Callback error:", error);
-      res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(error.message || "callback_failed"));
+      res.redirect("/settings?instagram=error&detail=callback_failed");
     }
   });
   app2.post("/api/instagram-native/post", isAuthenticated, async (req, res) => {
@@ -7660,7 +8415,7 @@ function registerInstagramRoutes(app2) {
       });
     } catch (error) {
       console.error("[instagram-native] Post error:", error);
-      res.status(500).json({ error: error.message || "Failed to post to Instagram" });
+      res.status(500).json({ error: "Failed to post to Instagram" });
     }
   });
   app2.delete("/api/instagram-native/disconnect", isAuthenticated, async (req, res) => {
@@ -8540,6 +9295,9 @@ async function seedDatabase() {
           price_cents INTEGER NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )`);
+        await pool.query("ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS occasion TEXT");
+        await pool.query("ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS artwork_url TEXT");
+        console.log("[migration] Merch order items card columns ready");
         await pool.query(`CREATE TABLE IF NOT EXISTS customer_sessions (
           id SERIAL PRIMARY KEY,
           token VARCHAR(8) NOT NULL UNIQUE,
@@ -9070,7 +9828,17 @@ function setupOgMetaRoutes(app2) {
 // server/index.ts
 var app = (0, import_express2.default)();
 app.use((0, import_helmet.default)({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://api.qrserver.com"],
+      connectSrc: ["'self'", "https://*.supabase.co", "https://api.stripe.com"],
+      frameSrc: ["https://js.stripe.com"]
+    }
+  },
   crossOriginEmbedderPolicy: false
 }));
 app.disable("x-powered-by");
@@ -9080,6 +9848,19 @@ app.post(
   import_express2.default.raw({ type: "application/json" }),
   async (req, res) => {
     try {
+      const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
+      if (gelatoSecret) {
+        const signature = req.headers["x-gelato-hmac-sha256"];
+        if (!signature) {
+          console.warn("[gelato-webhook] Missing signature header \u2014 rejecting");
+          return res.status(401).json({ error: "Missing webhook signature" });
+        }
+        const expected = import_crypto4.default.createHmac("sha256", gelatoSecret).update(req.body).digest("hex");
+        if (!import_crypto4.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          console.warn("[gelato-webhook] Invalid signature \u2014 rejecting");
+          return res.status(401).json({ error: "Invalid webhook signature" });
+        }
+      }
       const body = JSON.parse(req.body.toString());
       const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
       console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
@@ -9150,6 +9931,19 @@ app.post(
   import_express2.default.raw({ type: "application/json" }),
   async (req, res) => {
     try {
+      const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
+      if (printfulSecret) {
+        const signature = req.headers["x-printful-signature"];
+        if (!signature) {
+          console.warn("[printful-webhook] Missing signature header \u2014 rejecting");
+          return res.status(401).json({ error: "Missing webhook signature" });
+        }
+        const expected = import_crypto4.default.createHmac("sha256", printfulSecret).update(req.body).digest("hex");
+        if (!import_crypto4.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          console.warn("[printful-webhook] Invalid signature \u2014 rejecting");
+          return res.status(401).json({ error: "Invalid webhook signature" });
+        }
+      }
       const body = JSON.parse(req.body.toString());
       const { type, data } = body;
       console.log(`[printful-webhook] Received event: ${type}`);
@@ -9310,10 +10104,9 @@ httpServer.listen({ port, host: "0.0.0.0" }, () => {
     }
     app.use((err, _req, res, next) => {
       const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
       console.error("Internal Server Error:", err);
       if (res.headersSent) return next(err);
-      return res.status(status).json({ message });
+      return res.status(status).json({ message: "Internal Server Error" });
     });
     if (process.env.NODE_ENV === "production") {
       serveStatic(app);
