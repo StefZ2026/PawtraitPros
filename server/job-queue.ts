@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 
 export interface Job {
   id: string;
-  type: "generate" | "edit" | "batch";
+  type: "generate" | "edit" | "batch" | "group";
   status: "queued" | "processing" | "completed" | "failed";
   progress: { current: number; total: number };
   payload: any;

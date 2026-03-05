@@ -216,6 +216,26 @@ export async function createDogWithPortrait(dogData: any, orgId: number, origina
   return dog;
 }
 
+export async function getSameOwnerPets(dogId: number, orgId: number): Promise<any[]> {
+  const dog = await storage.getDog(dogId);
+  if (!dog) return [];
+
+  const ownerEmail = (dog as any).ownerEmail?.trim().toLowerCase() || null;
+  const ownerPhone = (dog as any).ownerPhone?.replace(/\D/g, '') || null;
+
+  if (!ownerEmail && !ownerPhone) return [];
+
+  const allDogs = await storage.getDogsByOrganization(orgId);
+  return allDogs.filter(d => {
+    if (d.id === dogId) return false;
+    const dEmail = (d as any).ownerEmail?.trim().toLowerCase() || null;
+    const dPhone = (d as any).ownerPhone?.replace(/\D/g, '') || null;
+    if (ownerEmail && dEmail && ownerEmail === dEmail) return true;
+    if (ownerPhone && dPhone && ownerPhone === dPhone) return true;
+    return false;
+  });
+}
+
 export const isAdmin = async (req: any, res: Response, next: NextFunction) => {
   if (!req.user?.claims?.email || req.user.claims.email !== ADMIN_EMAIL) {
     return res.status(403).json({ error: "Admin access required" });

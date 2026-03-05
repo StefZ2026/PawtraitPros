@@ -348,6 +348,14 @@ export async function seedDatabase() {
     console.log('[migration] consent columns:', migErr.message);
   }
 
+  // Migration: group portrait support
+  try {
+    await pool.query('ALTER TABLE portraits ADD COLUMN IF NOT EXISTS group_id TEXT');
+    console.log('[migration] portraits group_id column ready');
+  } catch (migErr: any) {
+    console.log('[migration] portraits group_id:', migErr.message);
+  }
+
   await seedSubscriptionPlans();
 
   // Ensure Stripe products/prices exist for all vertical plans (idempotent)

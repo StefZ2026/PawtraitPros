@@ -119,6 +119,7 @@ export const portraits = pgTable("portraits", {
   previousImageUrl: text("previous_image_url"),
   isSelected: boolean("is_selected").default(false).notNull(),
   editCount: integer("edit_count").default(0).notNull(),
+  groupId: text("group_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

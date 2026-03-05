@@ -115,6 +115,54 @@ async function generateTextOnly(prompt: string): Promise<string> {
   throw new Error("Failed to generate image after retries");
 }
 
+const GROUP_FIDELITY_PREFIX = `MULTIPLE REFERENCE PHOTOS ATTACHED — YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
+
+MANDATORY RULES (violating any rule = total failure):
+1. DEPICT ALL ANIMALS — every reference photo represents a different animal. ALL of them must appear in the final image. Do not omit any.
+2. PHOTO OVERRIDES TEXT — if the text mentions breeds that don't match the photos, depict what you SEE in each photo. Each photo is the authority for its animal.
+3. EXACT COLORS AND PATTERNS — for EACH animal, reproduce its exact coat colors, patterns, markings, and proportions as seen in its reference photo. Do NOT simplify multi-colored coats or shift colors.
+4. PRESERVE UNIQUE FEATURES — for each animal, maintain its exact ear shape, muzzle shape, eye color, fur texture, body proportions, and any unique features. Do NOT normalize any feature.
+5. DIFFERENTIATE CLEARLY — each animal must be clearly distinguishable from the others. Position them so viewers can see each one fully. No animal should be obscured or hidden behind another.
+6. PHOTOREALISTIC ANIMALS — every animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costumes, and background — but each animal itself must always look like a genuine photograph of a real animal.
+7. NATURAL INTERACTION — the animals should appear together naturally, as friends or companions sharing the scene. They can be side by side, playing, or posed together.
+
+Reference photos are provided in order. Now apply the following artistic style to ALL of these animals together:
+
+`;
+
+export async function generateGroupPortrait(
+  prompt: string,
+  sourceImages: string[]
+): Promise<string> {
+  const resizedImages = await Promise.all(
+    sourceImages.map(img => resizeForGemini(img))
+  );
+
+  const enhancedPrompt = GROUP_FIDELITY_PREFIX + prompt;
+
+  const parts: any[] = [{ text: enhancedPrompt }];
+  for (const { mimeType, data } of resizedImages) {
+    parts.push({ inlineData: { mimeType, data } });
+  }
+
+  const result = await geminiSemaphore.run(() =>
+    callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [{ role: "user", parts }],
+        config: {
+          responseModalities: [Modality.TEXT, Modality.IMAGE],
+          imageConfig: { imageSize: "2K" },
+        },
+      });
+      return extractImageFromResponse(response);
+    }, "generateGroupPortrait")
+  );
+
+  if (!result) throw new Error("Group portrait generation returned no result");
+  return result;
+}
+
 export async function editImage(currentImage: string, editPrompt: string): Promise<string> {
   const { mimeType, data } = parseBase64(currentImage);
   return geminiSemaphore.run(() =>

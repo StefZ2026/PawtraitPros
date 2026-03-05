@@ -21,13 +21,14 @@ import {
   Sparkles, ExternalLink, LayoutDashboard, Shield,
   ArrowLeft, Heart, Trash2, LogIn, Eye, Upload, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap, Search
+  ChevronDown, ChevronUp, Zap, Search, Users
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { LogoCropDialog } from "@/components/logo-crop-dialog";
+import { GroupPortraitDialog } from "@/components/group-portrait-dialog";
 import type { Organization, Dog as DogType } from "@shared/schema";
 
 interface DogWithPortrait extends DogType {
@@ -648,6 +649,69 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const readyForGeneration = todaysDogs.filter(d => d.originalPhotoUrl && !d.portrait?.generatedImageUrl);
   const generatedToday = todaysDogs.filter(d => d.portrait?.generatedImageUrl);
 
+  // Owner grouping: group today's dogs by normalized ownerEmail or ownerPhone
+  const ownerGroups = useMemo(() => {
+    const groups = new Map<string, number[]>(); // ownerKey → dogIds
+    for (const dog of todaysDogs) {
+      const email = (dog as any).ownerEmail?.trim().toLowerCase() || null;
+      const phone = (dog as any).ownerPhone?.replace(/\D/g, '') || null;
+      const key = email || phone;
+      if (!key) continue;
+      // Try to find existing group by either email or phone match
+      let found = false;
+      for (const [gKey, ids] of groups) {
+        const firstDog = todaysDogs.find(d => d.id === ids[0]);
+        if (!firstDog) continue;
+        const gEmail = (firstDog as any).ownerEmail?.trim().toLowerCase() || null;
+        const gPhone = (firstDog as any).ownerPhone?.replace(/\D/g, '') || null;
+        if ((email && gEmail && email === gEmail) || (phone && gPhone && phone === gPhone)) {
+          ids.push(dog.id);
+          found = true;
+          break;
+        }
+      }
+      if (!found) groups.set(key + '-' + dog.id, [dog.id]);
+    }
+    return groups;
+  }, [todaysDogs]);
+
+  // Set of dogIds that have a same-owner sibling also checked in today
+  const groupedDogIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const [, dogIds] of ownerGroups) {
+      if (dogIds.length >= 2) {
+        for (const id of dogIds) ids.add(id);
+      }
+    }
+    return ids;
+  }, [ownerGroups]);
+
+  // Get sibling dog ids for a given dog
+  const getSiblingIds = (dogId: number): number[] => {
+    for (const [, ids] of ownerGroups) {
+      if (ids.includes(dogId) && ids.length >= 2) {
+        return ids;
+      }
+    }
+    return [];
+  };
+
+  // Group portrait dialog state
+  const [groupPortraitDogs, setGroupPortraitDogs] = useState<number[]>([]);
+  const [showGroupPortraitDialog, setShowGroupPortraitDialog] = useState(false);
+
+  // Same-owner check-in suggestions
+  const { data: ownerSuggestions } = useQuery({
+    queryKey: ["/api/organizations", organization?.id, "same-owner-suggestions", today],
+    queryFn: async () => {
+      if (!organization?.id) return { suggestions: [] };
+      const res = await apiRequest("GET", `/api/organizations/${organization.id}/same-owner-suggestions?date=${today}`);
+      return res.json();
+    },
+    enabled: !!organization?.id,
+    refetchInterval: 30000,
+  });
+
   // Wizard state
   const [wizardStep, setWizardStep] = useState<number | null>(null);
   const [styleMode, setStyleMode] = useState<"one-for-all" | "individual">("one-for-all");
@@ -1250,6 +1314,29 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           </Card>
         )}
 
+        {/* Same-owner check-in suggestions */}
+        {(ownerSuggestions?.suggestions || []).length > 0 && (
+          <div className="space-y-2 mb-4">
+            {ownerSuggestions.suggestions.map((s: any) => (
+              <div key={`${s.checkedInDog.id}-${s.suggestedDog.id}`} className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                <Users className="h-4 w-4 text-amber-600 shrink-0" />
+                <span className="text-sm flex-1">
+                  <strong>{s.suggestedDog.name}</strong> has the same owner as <strong>{s.checkedInDog.name}</strong>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 gap-1"
+                  onClick={() => checkInMutation.mutate(s.suggestedDog.id)}
+                  disabled={checkInMutation.isPending}
+                >
+                  <LogIn className="h-3 w-3" /> Check In
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {dogsLoading ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-48" />)}
@@ -1374,6 +1461,23 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                       </span>
                     </div>
                   </div>
+                  {/* Group Portrait button — only shown when sibling is also checked in */}
+                  {groupedDogIds.has(dog.id) && (
+                    <div className="px-2 pt-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-1.5 h-7 text-xs border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950"
+                        onClick={() => {
+                          const siblings = getSiblingIds(dog.id);
+                          setGroupPortraitDogs(siblings);
+                          setShowGroupPortraitDialog(true);
+                        }}
+                      >
+                        <Users className="h-3 w-3" /> Group Portrait
+                      </Button>
+                    </div>
+                  )}
                   <div className="p-2 pt-1 flex items-center gap-1">
                     {(dog as any).ownerPhone && (
                       <span className="text-[11px] text-muted-foreground flex items-center gap-0.5 truncate">
@@ -2080,6 +2184,14 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         hasStripeSubscription={!!(organization as any).hasActiveSubscription}
         orgId={organization.id}
         isAdmin={isAdmin}
+      />
+      <GroupPortraitDialog
+        open={showGroupPortraitDialog}
+        onOpenChange={setShowGroupPortraitDialog}
+        dogIds={groupPortraitDogs}
+        dogs={todaysDogs}
+        styles={selectedPack?.styles || []}
+        organizationId={organization.id}
       />
     </div>
   );

@@ -3,10 +3,10 @@ import sharp from "sharp";
 sharp.cache(false);
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
-import { generateImage, editImage } from "../gemini";
+import { generateImage, editImage, generateGroupPortrait } from "../gemini";
 import { generateShowcaseMockup, generatePawfileMockup } from "../generate-mockups";
 import { isTrialExpired } from "../subscription";
-import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit, generatePetCode } from "./helpers";
+import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit, generatePetCode, getSameOwnerPets } from "./helpers";
 import { uploadToStorage, isDataUri, fetchImageAsBuffer } from "../supabase-storage";
 import { enqueue, registerWorker, type Job } from "../job-queue";
 
@@ -123,6 +123,39 @@ export function registerPortraitRoutes(app: Express): void {
         success: true,
         portraitId: portrait.id,
         generatedImageUrl,
+      };
+    }
+
+    if (job.type === "group") {
+      const generatedImageRaw = await generateGroupPortrait(p.prompt, p.sourceImages);
+
+      let generatedImageUrl = generatedImageRaw;
+      try {
+        const fname = `group-portrait-${p.groupId}-${Date.now()}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Group portrait upload failed, using base64 fallback:", err);
+      }
+
+      const portraitIds: number[] = [];
+      for (const dogId of p.dogIds) {
+        const portrait = await storage.createPortrait({
+          dogId,
+          styleId: p.styleId,
+          generatedImageUrl,
+          groupId: p.groupId,
+          isSelected: false,
+        });
+        portraitIds.push(portrait.id);
+        await storage.incrementOrgPortraitsUsed(p.orgId);
+      }
+
+      return {
+        generatedImageUrl,
+        groupId: p.groupId,
+        portraitIds,
+        dogIds: p.dogIds,
+        creditsUsed: p.dogIds.length,
       };
     }
 
@@ -471,6 +504,152 @@ export function registerPortraitRoutes(app: Express): void {
     } catch (error) {
       console.error("[generate-portrait]", error);
       res.status(500).json({ error: "Failed to start portrait generation. Please try again." });
+    }
+  });
+
+  // POST /api/generate-group-portrait — ASYNC: returns jobId immediately
+  app.post("/api/generate-group-portrait", isAuthenticated, aiRateLimiter, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, styleId } = req.body;
+
+      if (!Array.isArray(dogIds) || dogIds.length < 2 || dogIds.length > 5) {
+        return res.status(400).json({ error: "Please select 2-5 pets for a group portrait." });
+      }
+      if (!styleId || typeof styleId !== "number") {
+        return res.status(400).json({ error: "Style is required." });
+      }
+
+      // Fetch all dogs and validate
+      const dogs = await Promise.all(dogIds.map((id: number) => storage.getDog(id)));
+      const missingIdx = dogs.findIndex(d => !d);
+      if (missingIdx !== -1) {
+        return res.status(404).json({ error: `Pet not found (id: ${dogIds[missingIdx]}).` });
+      }
+
+      // All dogs must belong to the same org
+      const orgId = dogs[0]!.organizationId;
+      if (!dogs.every(d => d!.organizationId === orgId)) {
+        return res.status(400).json({ error: "All pets must belong to the same organization." });
+      }
+
+      // Validate user has access to this org
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      if (!userIsAdmin) {
+        const { org, error, status } = await resolveOrgForUser(userId, userEmail);
+        if (error) return res.status(status || 400).json({ error });
+        if (org.id !== orgId) return res.status(403).json({ error: "Not authorized for this organization." });
+      }
+
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found." });
+
+      if (org.subscriptionStatus === "canceled") {
+        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
+      }
+      if (isTrialExpired(org)) {
+        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade." });
+      }
+      if (!org.planId) {
+        return res.status(403).json({ error: "No plan selected. Please choose a plan first." });
+      }
+
+      // Verify same owner
+      const firstDog = dogs[0]!;
+      const ownerEmail = (firstDog as any).ownerEmail?.trim().toLowerCase() || null;
+      const ownerPhone = (firstDog as any).ownerPhone?.replace(/\D/g, '') || null;
+      if (!ownerEmail && !ownerPhone) {
+        return res.status(400).json({ error: "The first pet has no owner contact info. Please add an email or phone." });
+      }
+      for (let i = 1; i < dogs.length; i++) {
+        const d = dogs[i]!;
+        const dEmail = (d as any).ownerEmail?.trim().toLowerCase() || null;
+        const dPhone = (d as any).ownerPhone?.replace(/\D/g, '') || null;
+        const emailMatch = ownerEmail && dEmail && ownerEmail === dEmail;
+        const phoneMatch = ownerPhone && dPhone && ownerPhone === dPhone;
+        if (!emailMatch && !phoneMatch) {
+          return res.status(400).json({ error: `${d.name} doesn't share an owner with ${firstDog.name}.` });
+        }
+      }
+
+      // All dogs must have a photo
+      const noPhoto = dogs.find(d => !d!.originalPhotoUrl);
+      if (noPhoto) {
+        return res.status(400).json({ error: `${noPhoto!.name} has no photo. Please add a photo first.` });
+      }
+
+      // All dogs must be checked in today
+      const today = new Date().toISOString().slice(0, 10);
+      const notCheckedIn = dogs.find(d => (d as any).checkedInAt !== today);
+      if (notCheckedIn) {
+        return res.status(400).json({ error: `${notCheckedIn!.name} is not checked in today.` });
+      }
+
+      // Credit check
+      const plan = await storage.getSubscriptionPlan(org.planId);
+      if (plan && plan.monthlyPortraitCredits) {
+        const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
+        const creditsNeeded = dogIds.length;
+        if (creditsUsed + creditsNeeded > plan.monthlyPortraitCredits) {
+          if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
+            return res.status(403).json({
+              error: `Group portrait needs ${creditsNeeded} credits but you only have ${plan.monthlyPortraitCredits - creditsUsed} remaining.`,
+              creditsUsed,
+              creditsLimit: plan.monthlyPortraitCredits,
+              creditsNeeded,
+            });
+          }
+        }
+      }
+
+      // Build the combined prompt
+      const style = await storage.getPortraitStyle(styleId);
+      if (!style) return res.status(404).json({ error: "Style not found." });
+
+      const petNames = dogs.map(d => d!.name).join(" and ");
+      const petBreeds = dogs.map(d => d!.breed || "mixed breed").join(" and ");
+      const species = dogs[0]!.species || "dog";
+      let prompt = style.promptTemplate
+        .replace(/\{name\}/gi, petNames)
+        .replace(/\{breed\}/gi, petBreeds)
+        .replace(/\{species\}/gi, species);
+      prompt += `\n\nThis is a GROUP portrait of ${dogs.length} ${species}s together. Each reference photo shows one ${species}.`;
+
+      const sanitizedPrompt = sanitizeForPrompt(prompt);
+      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
+
+      // Resolve all source images to data URIs
+      const sourceImages: string[] = [];
+      for (const dog of dogs) {
+        let imgUrl = dog!.originalPhotoUrl!;
+        if (!isDataUri(imgUrl)) {
+          try {
+            const buf = await fetchImageAsBuffer(imgUrl);
+            imgUrl = `data:image/png;base64,${buf.toString('base64')}`;
+          } catch (err) {
+            console.error(`[group-portrait] Failed to fetch photo for ${dog!.name}:`, err);
+            return res.status(400).json({ error: `Could not load photo for ${dog!.name}. Please re-upload.` });
+          }
+        }
+        sourceImages.push(imgUrl);
+      }
+
+      const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const jobId = enqueue("group", {
+        prompt: sanitizedPrompt,
+        sourceImages,
+        dogIds: dogIds.map(Number),
+        styleId,
+        orgId: org.id,
+        groupId,
+      });
+
+      res.status(202).json({ jobId, groupId });
+    } catch (error) {
+      console.error("[generate-group-portrait]", error);
+      res.status(500).json({ error: "Failed to start group portrait generation. Please try again." });
     }
   });
 

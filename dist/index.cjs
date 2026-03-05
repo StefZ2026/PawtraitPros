@@ -218,6 +218,7 @@ var init_schema = __esm({
       previousImageUrl: (0, import_pg_core2.text)("previous_image_url"),
       isSelected: (0, import_pg_core2.boolean)("is_selected").default(false).notNull(),
       editCount: (0, import_pg_core2.integer)("edit_count").default(0).notNull(),
+      groupId: (0, import_pg_core2.text)("group_id"),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
     merchOrders = (0, import_pg_core2.pgTable)("merch_orders", {
@@ -548,6 +549,9 @@ var init_storage = __esm({
           await tx.update(portraits).set({ isSelected: false }).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId));
           await tx.update(portraits).set({ isSelected: true }).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.id, portraitId), (0, import_drizzle_orm4.eq)(portraits.dogId, dogId)));
         });
+      }
+      async getPortraitsByGroupId(groupId) {
+        return db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.groupId, groupId));
       }
       async incrementPortraitEditCount(portraitId) {
         await db.update(portraits).set({ editCount: import_drizzle_orm4.sql`COALESCE(${portraits.editCount}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(portraits.id, portraitId));
@@ -1011,6 +1015,22 @@ async function createDogWithPortrait(dogData, orgId, originalPhotoUrl, generated
     }
   }
   return dog;
+}
+async function getSameOwnerPets(dogId, orgId) {
+  const dog = await storage.getDog(dogId);
+  if (!dog) return [];
+  const ownerEmail = dog.ownerEmail?.trim().toLowerCase() || null;
+  const ownerPhone = dog.ownerPhone?.replace(/\D/g, "") || null;
+  if (!ownerEmail && !ownerPhone) return [];
+  const allDogs = await storage.getDogsByOrganization(orgId);
+  return allDogs.filter((d) => {
+    if (d.id === dogId) return false;
+    const dEmail = d.ownerEmail?.trim().toLowerCase() || null;
+    const dPhone = d.ownerPhone?.replace(/\D/g, "") || null;
+    if (ownerEmail && dEmail && ownerEmail === dEmail) return true;
+    if (ownerPhone && dPhone && ownerPhone === dPhone) return true;
+    return false;
+  });
 }
 function toPublicOrg(org) {
   return {
@@ -1534,6 +1554,31 @@ async function generateTextOnly(prompt) {
   }
   throw new Error("Failed to generate image after retries");
 }
+async function generateGroupPortrait(prompt, sourceImages) {
+  const resizedImages = await Promise.all(
+    sourceImages.map((img) => resizeForGemini(img))
+  );
+  const enhancedPrompt = GROUP_FIDELITY_PREFIX + prompt;
+  const parts = [{ text: enhancedPrompt }];
+  for (const { mimeType, data } of resizedImages) {
+    parts.push({ inlineData: { mimeType, data } });
+  }
+  const result = await geminiSemaphore.run(
+    () => callWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [{ role: "user", parts }],
+        config: {
+          responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE],
+          imageConfig: { imageSize: "2K" }
+        }
+      });
+      return extractImageFromResponse(response);
+    }, "generateGroupPortrait")
+  );
+  if (!result) throw new Error("Group portrait generation returned no result");
+  return result;
+}
 async function editImage(currentImage, editPrompt) {
   const { mimeType, data } = parseBase64(currentImage);
   return geminiSemaphore.run(
@@ -1555,7 +1600,7 @@ async function editImage(currentImage, editPrompt) {
     }, "editImage")
   );
 }
-var import_genai, import_sharp, ai, geminiSemaphore, FIDELITY_PREFIX;
+var import_genai, import_sharp, ai, geminiSemaphore, FIDELITY_PREFIX, GROUP_FIDELITY_PREFIX;
 var init_gemini = __esm({
   "server/gemini.ts"() {
     "use strict";
@@ -1577,6 +1622,20 @@ MANDATORY RULES (violating any rule = total failure):
 6. PHOTOREALISTIC ANIMAL \u2014 the animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costume, and background \u2014 but the animal itself must always look like a genuine photograph of a real animal.
 
 Now apply the following artistic style to this exact animal:
+
+`;
+    GROUP_FIDELITY_PREFIX = `MULTIPLE REFERENCE PHOTOS ATTACHED \u2014 YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
+
+MANDATORY RULES (violating any rule = total failure):
+1. DEPICT ALL ANIMALS \u2014 every reference photo represents a different animal. ALL of them must appear in the final image. Do not omit any.
+2. PHOTO OVERRIDES TEXT \u2014 if the text mentions breeds that don't match the photos, depict what you SEE in each photo. Each photo is the authority for its animal.
+3. EXACT COLORS AND PATTERNS \u2014 for EACH animal, reproduce its exact coat colors, patterns, markings, and proportions as seen in its reference photo. Do NOT simplify multi-colored coats or shift colors.
+4. PRESERVE UNIQUE FEATURES \u2014 for each animal, maintain its exact ear shape, muzzle shape, eye color, fur texture, body proportions, and any unique features. Do NOT normalize any feature.
+5. DIFFERENTIATE CLEARLY \u2014 each animal must be clearly distinguishable from the others. Position them so viewers can see each one fully. No animal should be obscured or hidden behind another.
+6. PHOTOREALISTIC ANIMALS \u2014 every animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costumes, and background \u2014 but each animal itself must always look like a genuine photograph of a real animal.
+7. NATURAL INTERACTION \u2014 the animals should appear together naturally, as friends or companions sharing the scene. They can be side by side, playing, or posed together.
+
+Reference photos are provided in order. Now apply the following artistic style to ALL of these animals together:
 
 `;
   }
@@ -4683,6 +4742,52 @@ function registerDogRoutes(app2) {
       res.status(500).json({ error: "Failed to check in pet" });
     }
   });
+  app2.get("/api/organizations/:orgId/same-owner-suggestions", isAuthenticated, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || org.id !== orgId) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+      const date = req.query.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const allDogs = await storage.getDogsByOrganization(orgId);
+      const checkedIn = allDogs.filter((d) => {
+        if (d.checkedInAt === date) return true;
+        const created = new Date(d.createdAt).toISOString().split("T")[0];
+        return created === date;
+      });
+      const suggestions = [];
+      const suggestedIds = /* @__PURE__ */ new Set();
+      for (const dog of checkedIn) {
+        const siblings = await getSameOwnerPets(dog.id, orgId);
+        for (const sibling of siblings) {
+          const sibCheckedIn = sibling.checkedInAt === date || new Date(sibling.createdAt).toISOString().split("T")[0] === date;
+          if (sibCheckedIn || suggestedIds.has(sibling.id)) continue;
+          suggestedIds.add(sibling.id);
+          const ownerEmail = dog.ownerEmail?.trim().toLowerCase() || null;
+          const sibEmail = sibling.ownerEmail?.trim().toLowerCase() || null;
+          const ownerPhone = dog.ownerPhone?.replace(/\D/g, "") || null;
+          const sibPhone = sibling.ownerPhone?.replace(/\D/g, "") || null;
+          const emailMatch = ownerEmail && sibEmail && ownerEmail === sibEmail;
+          const phoneMatch = ownerPhone && sibPhone && ownerPhone === sibPhone;
+          suggestions.push({
+            checkedInDog: { id: dog.id, name: dog.name },
+            suggestedDog: { id: sibling.id, name: sibling.name, breed: sibling.breed },
+            matchedOn: emailMatch && phoneMatch ? "both" : emailMatch ? "ownerEmail" : "ownerPhone"
+          });
+        }
+      }
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error getting same-owner suggestions:", error);
+      res.status(500).json({ error: "Failed to get suggestions" });
+    }
+  });
   app2.delete("/api/dogs/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -5216,6 +5321,35 @@ function registerPortraitRoutes(app2) {
         generatedImageUrl
       };
     }
+    if (job.type === "group") {
+      const generatedImageRaw = await generateGroupPortrait(p.prompt, p.sourceImages);
+      let generatedImageUrl = generatedImageRaw;
+      try {
+        const fname = `group-portrait-${p.groupId}-${Date.now()}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Group portrait upload failed, using base64 fallback:", err);
+      }
+      const portraitIds = [];
+      for (const dogId of p.dogIds) {
+        const portrait = await storage.createPortrait({
+          dogId,
+          styleId: p.styleId,
+          generatedImageUrl,
+          groupId: p.groupId,
+          isSelected: false
+        });
+        portraitIds.push(portrait.id);
+        await storage.incrementOrgPortraitsUsed(p.orgId);
+      }
+      return {
+        generatedImageUrl,
+        groupId: p.groupId,
+        portraitIds,
+        dogIds: p.dogIds,
+        creditsUsed: p.dogIds.length
+      };
+    }
     throw new Error(`Unknown job type: ${job.type}`);
   });
   app2.get("/api/portraits/:id/image", async (req, res) => {
@@ -5505,6 +5639,123 @@ function registerPortraitRoutes(app2) {
     } catch (error) {
       console.error("[generate-portrait]", error);
       res.status(500).json({ error: "Failed to start portrait generation. Please try again." });
+    }
+  });
+  app2.post("/api/generate-group-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, styleId } = req.body;
+      if (!Array.isArray(dogIds) || dogIds.length < 2 || dogIds.length > 5) {
+        return res.status(400).json({ error: "Please select 2-5 pets for a group portrait." });
+      }
+      if (!styleId || typeof styleId !== "number") {
+        return res.status(400).json({ error: "Style is required." });
+      }
+      const dogs2 = await Promise.all(dogIds.map((id) => storage.getDog(id)));
+      const missingIdx = dogs2.findIndex((d) => !d);
+      if (missingIdx !== -1) {
+        return res.status(404).json({ error: `Pet not found (id: ${dogIds[missingIdx]}).` });
+      }
+      const orgId = dogs2[0].organizationId;
+      if (!dogs2.every((d) => d.organizationId === orgId)) {
+        return res.status(400).json({ error: "All pets must belong to the same organization." });
+      }
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+      if (!userIsAdmin) {
+        const { org: org2, error, status } = await resolveOrgForUser(userId, userEmail);
+        if (error) return res.status(status || 400).json({ error });
+        if (org2.id !== orgId) return res.status(403).json({ error: "Not authorized for this organization." });
+      }
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found." });
+      if (org.subscriptionStatus === "canceled") {
+        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
+      }
+      if (isTrialExpired(org)) {
+        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade." });
+      }
+      if (!org.planId) {
+        return res.status(403).json({ error: "No plan selected. Please choose a plan first." });
+      }
+      const firstDog = dogs2[0];
+      const ownerEmail = firstDog.ownerEmail?.trim().toLowerCase() || null;
+      const ownerPhone = firstDog.ownerPhone?.replace(/\D/g, "") || null;
+      if (!ownerEmail && !ownerPhone) {
+        return res.status(400).json({ error: "The first pet has no owner contact info. Please add an email or phone." });
+      }
+      for (let i = 1; i < dogs2.length; i++) {
+        const d = dogs2[i];
+        const dEmail = d.ownerEmail?.trim().toLowerCase() || null;
+        const dPhone = d.ownerPhone?.replace(/\D/g, "") || null;
+        const emailMatch = ownerEmail && dEmail && ownerEmail === dEmail;
+        const phoneMatch = ownerPhone && dPhone && ownerPhone === dPhone;
+        if (!emailMatch && !phoneMatch) {
+          return res.status(400).json({ error: `${d.name} doesn't share an owner with ${firstDog.name}.` });
+        }
+      }
+      const noPhoto = dogs2.find((d) => !d.originalPhotoUrl);
+      if (noPhoto) {
+        return res.status(400).json({ error: `${noPhoto.name} has no photo. Please add a photo first.` });
+      }
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const notCheckedIn = dogs2.find((d) => d.checkedInAt !== today);
+      if (notCheckedIn) {
+        return res.status(400).json({ error: `${notCheckedIn.name} is not checked in today.` });
+      }
+      const plan = await storage.getSubscriptionPlan(org.planId);
+      if (plan && plan.monthlyPortraitCredits) {
+        const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
+        const creditsNeeded = dogIds.length;
+        if (creditsUsed + creditsNeeded > plan.monthlyPortraitCredits) {
+          if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
+            return res.status(403).json({
+              error: `Group portrait needs ${creditsNeeded} credits but you only have ${plan.monthlyPortraitCredits - creditsUsed} remaining.`,
+              creditsUsed,
+              creditsLimit: plan.monthlyPortraitCredits,
+              creditsNeeded
+            });
+          }
+        }
+      }
+      const style = await storage.getPortraitStyle(styleId);
+      if (!style) return res.status(404).json({ error: "Style not found." });
+      const petNames = dogs2.map((d) => d.name).join(" and ");
+      const petBreeds = dogs2.map((d) => d.breed || "mixed breed").join(" and ");
+      const species = dogs2[0].species || "dog";
+      let prompt = style.promptTemplate.replace(/\{name\}/gi, petNames).replace(/\{breed\}/gi, petBreeds).replace(/\{species\}/gi, species);
+      prompt += `
+
+This is a GROUP portrait of ${dogs2.length} ${species}s together. Each reference photo shows one ${species}.`;
+      const sanitizedPrompt = sanitizeForPrompt(prompt);
+      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
+      const sourceImages = [];
+      for (const dog of dogs2) {
+        let imgUrl = dog.originalPhotoUrl;
+        if (!isDataUri(imgUrl)) {
+          try {
+            const buf = await fetchImageAsBuffer(imgUrl);
+            imgUrl = `data:image/png;base64,${buf.toString("base64")}`;
+          } catch (err) {
+            console.error(`[group-portrait] Failed to fetch photo for ${dog.name}:`, err);
+            return res.status(400).json({ error: `Could not load photo for ${dog.name}. Please re-upload.` });
+          }
+        }
+        sourceImages.push(imgUrl);
+      }
+      const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const jobId = enqueue("group", {
+        prompt: sanitizedPrompt,
+        sourceImages,
+        dogIds: dogIds.map(Number),
+        styleId,
+        orgId: org.id,
+        groupId
+      });
+      res.status(202).json({ jobId, groupId });
+    } catch (error) {
+      console.error("[generate-group-portrait]", error);
+      res.status(500).json({ error: "Failed to start group portrait generation. Please try again." });
     }
   });
   app2.post("/api/edit-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
@@ -9389,6 +9640,12 @@ async function seedDatabase() {
     console.log("[migration] consent columns ready");
   } catch (migErr) {
     console.log("[migration] consent columns:", migErr.message);
+  }
+  try {
+    await pool.query("ALTER TABLE portraits ADD COLUMN IF NOT EXISTS group_id TEXT");
+    console.log("[migration] portraits group_id column ready");
+  } catch (migErr) {
+    console.log("[migration] portraits group_id:", migErr.message);
   }
   await seedSubscriptionPlans();
   try {

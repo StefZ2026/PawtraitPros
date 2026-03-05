@@ -62,6 +62,7 @@ export interface IStorage {
   createPortrait(portrait: InsertPortrait): Promise<Portrait>;
   updatePortrait(id: number, portrait: Partial<InsertPortrait>): Promise<Portrait | undefined>;
   selectPortraitForGallery(dogId: number, portraitId: number): Promise<void>;
+  getPortraitsByGroupId(groupId: string): Promise<Portrait[]>;
   incrementPortraitEditCount(portraitId: number): Promise<void>;
   incrementOrgPortraitsUsed(orgId: number): Promise<void>;
   getAccurateCreditsUsed(orgId: number): Promise<{ creditsUsed: number; billingCycleStart: Date | null }>;
@@ -257,6 +258,10 @@ export class DatabaseStorage implements IStorage {
       await tx.update(portraits).set({ isSelected: false }).where(eq(portraits.dogId, dogId));
       await tx.update(portraits).set({ isSelected: true }).where(and(eq(portraits.id, portraitId), eq(portraits.dogId, dogId)));
     });
+  }
+
+  async getPortraitsByGroupId(groupId: string): Promise<Portrait[]> {
+    return db.select().from(portraits).where(eq(portraits.groupId, groupId));
   }
 
   async incrementPortraitEditCount(portraitId: number): Promise<void> {

@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
-import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter } from "./helpers";
+import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter, getSameOwnerPets } from "./helpers";
 import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
@@ -564,6 +564,65 @@ export function registerDogRoutes(app: Express): void {
     } catch (error) {
       console.error("Error checking in pet:", error);
       res.status(500).json({ error: "Failed to check in pet" });
+    }
+  });
+
+  // Same-owner check-in suggestions
+  app.get("/api/organizations/:orgId/same-owner-suggestions", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const userIsAdmin = userEmail === ADMIN_EMAIL;
+
+      if (!userIsAdmin) {
+        const org = await storage.getOrganizationByOwner(userId);
+        if (!org || org.id !== orgId) {
+          return res.status(403).json({ error: "Not authorized" });
+        }
+      }
+
+      const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const allDogs = await storage.getDogsByOrganization(orgId);
+
+      // Find dogs checked in today
+      const checkedIn = allDogs.filter(d => {
+        if ((d as any).checkedInAt === date) return true;
+        const created = new Date(d.createdAt).toISOString().split("T")[0];
+        return created === date;
+      });
+
+      const suggestions: any[] = [];
+      const suggestedIds = new Set<number>();
+
+      for (const dog of checkedIn) {
+        const siblings = await getSameOwnerPets(dog.id, orgId);
+        for (const sibling of siblings) {
+          // Skip if sibling is already checked in or already suggested
+          const sibCheckedIn = (sibling as any).checkedInAt === date ||
+            new Date(sibling.createdAt).toISOString().split("T")[0] === date;
+          if (sibCheckedIn || suggestedIds.has(sibling.id)) continue;
+
+          suggestedIds.add(sibling.id);
+          const ownerEmail = (dog as any).ownerEmail?.trim().toLowerCase() || null;
+          const sibEmail = (sibling as any).ownerEmail?.trim().toLowerCase() || null;
+          const ownerPhone = (dog as any).ownerPhone?.replace(/\D/g, '') || null;
+          const sibPhone = (sibling as any).ownerPhone?.replace(/\D/g, '') || null;
+          const emailMatch = ownerEmail && sibEmail && ownerEmail === sibEmail;
+          const phoneMatch = ownerPhone && sibPhone && ownerPhone === sibPhone;
+
+          suggestions.push({
+            checkedInDog: { id: dog.id, name: dog.name },
+            suggestedDog: { id: sibling.id, name: sibling.name, breed: sibling.breed },
+            matchedOn: emailMatch && phoneMatch ? "both" : emailMatch ? "ownerEmail" : "ownerPhone",
+          });
+        }
+      }
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error getting same-owner suggestions:", error);
+      res.status(500).json({ error: "Failed to get suggestions" });
     }
   });
 
