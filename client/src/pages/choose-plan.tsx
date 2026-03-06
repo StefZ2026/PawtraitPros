@@ -53,6 +53,17 @@ export default function ChoosePlan() {
     enabled: !isAdminFlow && isAuthenticated,
   });
 
+  const { data: adminTargetOrg } = useQuery<any>({
+    queryKey: ["/api/admin/organizations", orgId],
+    queryFn: async () => {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/admin/organizations/${orgId}`, { headers });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: isAdminFlow && !!orgId,
+  });
+
   const effectiveOrgId = orgId || myOrg?.id || null;
 
   const { data: subInfo } = useQuery<SubscriptionInfo>({
@@ -69,7 +80,10 @@ export default function ChoosePlan() {
   const isExistingSubscriber = subInfo?.hasStripeSubscription || (subInfo?.subscriptionStatus === "active");
   const currentPlanId = subInfo?.currentPlanId || myOrg?.planId;
 
-  const activePlans = (plans || []).filter(p => p.isActive).sort((a, b) => a.priceMonthly - b.priceMonthly);
+  const orgVertical = (isAdminFlow ? adminTargetOrg?.industryType : myOrg?.industryType) || null;
+  const activePlans = (plans || [])
+    .filter(p => p.isActive && (!p.vertical || p.vertical === orgVertical))
+    .sort((a, b) => a.priceMonthly - b.priceMonthly);
   const freePlan = activePlans.find(p => p.priceMonthly === 0);
   const hasUsedFreeTrial = myOrg?.hasUsedFreeTrial === true;
 
@@ -361,7 +375,13 @@ export default function ChoosePlan() {
                       <ul className="space-y-2 text-sm">
                         <li className="flex items-start gap-2">
                           <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                          <span>Up to {plan.dogsLimit} pets</span>
+                          <span>{
+                            plan.unitType === 'grooms' ? `${plan.unitLimit} grooms/mo`
+                            : plan.unitType === 'dogs_in_program' ? `${plan.unitLimit} dogs in program`
+                            : plan.unitType === 'dogs_boarded' ? `${plan.unitLimit} dogs boarded/mo`
+                            : plan.dogsLimit != null ? `Up to ${plan.dogsLimit} clients`
+                            : 'Unlimited clients'
+                          }</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />

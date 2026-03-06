@@ -21,7 +21,7 @@ import {
   Sparkles, ExternalLink, LayoutDashboard, Shield,
   ArrowLeft, Heart, Trash2, LogIn, Eye, Upload, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap, Search, Users
+  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
@@ -1015,6 +1015,43 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           </Button>
         </div>
       </div>
+
+      {/* Trial warning banner */}
+      {organization.subscriptionStatus === 'trial' && organization.trialEndsAt && (
+        <div className={`rounded-lg px-4 py-3 flex items-center justify-between gap-3 text-sm ${
+          trialDaysRemaining <= 3 ? 'bg-red-50 border border-red-200 text-red-800'
+          : trialDaysRemaining <= 7 ? 'bg-orange-50 border border-orange-200 text-orange-800'
+          : 'bg-amber-50 border border-amber-200 text-amber-800'
+        }`}>
+          <span className="flex items-center gap-2">
+            <Clock className="h-4 w-4 shrink-0" />
+            {trialDaysRemaining === 0
+              ? 'Your free trial has expired. Upgrade to continue adding clients.'
+              : `${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left in your free trial.`}
+          </span>
+          <Link href="/choose-plan">
+            <Button size="sm" variant="outline" className="shrink-0 whitespace-nowrap">Upgrade Now</Button>
+          </Link>
+        </div>
+      )}
+
+      {/* Capacity warning banner (at 80%+) */}
+      {petLimit != null && petCount >= Math.floor(petLimit * 0.8) && (
+        <div className={`rounded-lg px-4 py-3 flex items-center justify-between gap-3 text-sm ${
+          petCount >= petLimit ? 'bg-red-50 border border-red-200 text-red-800'
+          : 'bg-amber-50 border border-amber-200 text-amber-800'
+        }`}>
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {petCount >= petLimit
+              ? `You've reached your ${petLimit}-client limit. Upgrade your plan to add more.`
+              : `${petCount} of ${petLimit} client slots used — you're approaching your limit.`}
+          </span>
+          <Link href="/choose-plan">
+            <Button size="sm" variant="outline" className="shrink-0 whitespace-nowrap">Upgrade</Button>
+          </Link>
+        </div>
+      )}
 
       {/* Collapsible account details */}
       {showAccountDetails && (

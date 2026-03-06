@@ -80,6 +80,8 @@ export default function BusinessSettings() {
   const { data: plans } = useQuery<SubscriptionPlan[]>({
     queryKey: ["/api/plans"],
   });
+  const orgIndustryType = org?.industryType || null;
+  const filteredPlans = (plans || []).filter(p => p.isActive && (!p.vertical || p.vertical === orgIndustryType));
 
   const { data: myDogs = [] } = useQuery<DogType[]>({
     queryKey: ["/api/my-dogs"],
@@ -531,9 +533,15 @@ export default function BusinessSettings() {
                         <SelectValue placeholder="Choose a plan" />
                       </SelectTrigger>
                       <SelectContent>
-                        {plans?.map(plan => (
+                        {filteredPlans.map(plan => (
                           <SelectItem key={plan.id} value={plan.id.toString()} data-testid={`select-plan-option-${plan.id}`}>
-                            {plan.name} - ${(plan.priceMonthly / 100).toFixed(0)}/mo ({plan.dogsLimit != null ? `${plan.dogsLimit} dogs` : "custom"})
+                            {plan.name} - ${(plan.priceMonthly / 100).toFixed(0)}/mo ({
+                              (plan as any).unitType === 'grooms' ? `${(plan as any).unitLimit} grooms/mo`
+                              : (plan as any).unitType === 'dogs_in_program' ? `${(plan as any).unitLimit} in program`
+                              : (plan as any).unitType === 'dogs_boarded' ? `${(plan as any).unitLimit} boarded/mo`
+                              : plan.dogsLimit != null ? `${plan.dogsLimit} dogs`
+                              : 'unlimited'
+                            })
                           </SelectItem>
                         ))}
                       </SelectContent>
