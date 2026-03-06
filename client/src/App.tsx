@@ -45,6 +45,7 @@ function Router() {
       <Route path="/create" component={Create} />
       <Route path="/gallery" component={Gallery} />
       <Route path="/styles" component={Styles} />
+      <Route path="/pawfile/code/:petCode" component={DogProfile} />
       <Route path="/pawfile/:id" component={DogProfile} />
       <Route path="/settings" component={BusinessSettings} />
       <Route path="/business/:slug" component={BusinessShowcase} />
@@ -57,7 +58,6 @@ function Router() {
       <Route path="/for-boarding">{() => <EditionLanding edition="boarding" />}</Route>
       <Route path="/for-daycares">{() => <EditionLanding edition="daycare" />}</Route>
       <Route path="/portal" component={CustomerPortal} />
-      <Route path="/pawfile/code/:petCode" component={DogProfile} />
       <Route path="/counter/:slug" component={CounterDisplay} />
       <Route component={NotFound} />
     </Switch>
