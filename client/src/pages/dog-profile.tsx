@@ -33,7 +33,7 @@ interface DogWithPortrait extends DogType {
   organizationWebsiteUrl?: string | null;
 }
 
-export default function DogProfile({ isCustomerView = false }: { isCustomerView?: boolean }) {
+export default function DogProfile({ isCustomerView: isCustomerViewProp = false }: { isCustomerView?: boolean }) {
   const params = useParams<{ id: string; petCode: string }>();
   const { user, isAuthenticated, isAdmin } = useAuth();
   const { toast } = useToast();
@@ -41,7 +41,9 @@ export default function DogProfile({ isCustomerView = false }: { isCustomerView?
   const [saving, setSaving] = useState(false);
   const [activePortraitIdx, setActivePortraitIdx] = useState(0);
 
-  const petCode = params.petCode;
+  // Use prop OR URL check — if either says customer view, it's customer view
+  const isCustomerView = isCustomerViewProp || window.location.pathname.startsWith('/pawfile/code/');
+  const petCode = params.petCode || window.location.pathname.split('/pawfile/code/')[1]?.split('/')[0];
   const dogId = params.id;
 
   // Fetch by pet code (public) or by ID (auth)
