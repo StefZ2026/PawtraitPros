@@ -5340,6 +5340,7 @@ function registerPortraitRoutes(app2) {
           isSelected: false
         });
         portraitIds.push(portrait.id);
+        await storage.selectPortraitForGallery(dogId, portrait.id);
         await storage.incrementOrgPortraitsUsed(p.orgId);
       }
       return {
@@ -5816,7 +5817,7 @@ This is a GROUP portrait of ${dogs2.length} ${species}s together. Each reference
       const portrait = await storage.getPortrait(parseInt(portraitId));
       if (!portrait) return res.status(404).json({ error: "Portrait not found" });
       if (!portrait.previousImageUrl) return res.status(400).json({ error: "No previous image to revert to" });
-      const { org, error, status } = await resolveOrgForUser(userId, userEmail, portrait.dogId);
+      const { error, status } = await resolveOrgForUser(userId, userEmail, portrait.dogId);
       if (error) return res.status(status || 400).json({ error });
       await storage.updatePortrait(portrait.id, {
         generatedImageUrl: portrait.previousImageUrl,

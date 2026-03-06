@@ -6,7 +6,7 @@ import { isAuthenticated } from "../auth";
 import { generateImage, editImage, generateGroupPortrait } from "../gemini";
 import { generateShowcaseMockup, generatePawfileMockup } from "../generate-mockups";
 import { isTrialExpired } from "../subscription";
-import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit, generatePetCode, getSameOwnerPets } from "./helpers";
+import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrgForUser, checkDogLimit, generatePetCode } from "./helpers";
 import { uploadToStorage, isDataUri, fetchImageAsBuffer } from "../supabase-storage";
 import { enqueue, registerWorker, type Job } from "../job-queue";
 
@@ -147,6 +147,7 @@ export function registerPortraitRoutes(app: Express): void {
           isSelected: false,
         });
         portraitIds.push(portrait.id);
+        await storage.selectPortraitForGallery(dogId, portrait.id);
         await storage.incrementOrgPortraitsUsed(p.orgId);
       }
 
@@ -730,7 +731,7 @@ export function registerPortraitRoutes(app: Express): void {
       if (!portrait) return res.status(404).json({ error: "Portrait not found" });
       if (!portrait.previousImageUrl) return res.status(400).json({ error: "No previous image to revert to" });
 
-      const { org, error, status } = await resolveOrgForUser(userId, userEmail, portrait.dogId);
+      const { error, status } = await resolveOrgForUser(userId, userEmail, portrait.dogId);
       if (error) return res.status(status || 400).json({ error });
 
       await storage.updatePortrait(portrait.id, {
