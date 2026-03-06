@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dog, Cat, ShoppingBag, Loader2, Heart } from "lucide-react";
+import { Dog, Cat, ShoppingBag, Loader2, Heart, Phone, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Dog as DogType, Portrait } from "@shared/schema";
 
@@ -12,6 +12,8 @@ interface DogWithPortrait extends DogType {
   portraits?: Portrait[];
   organizationName?: string | null;
   organizationLogoUrl?: string | null;
+  organizationContactPhone?: string | null;
+  organizationContactEmail?: string | null;
 }
 
 export default function CustomerPawfile() {
@@ -170,6 +172,33 @@ export default function CustomerPawfile() {
             <p className="text-xs text-center text-gray-400 mt-2">
               Framed prints, mugs, tote bags, and more
             </p>
+          </div>
+        )}
+
+        {/* Contact Us */}
+        {(dog.organizationContactPhone || dog.organizationContactEmail) && (
+          <div className="mt-5 bg-white rounded-2xl border border-amber-100 shadow-sm px-5 py-4">
+            <p className="text-sm font-semibold text-gray-700 mb-3 text-center">Contact Us</p>
+            <div className="flex flex-col gap-2">
+              {dog.organizationContactPhone && (
+                <a
+                  href={`tel:${dog.organizationContactPhone.replace(/\D/g, '')}`}
+                  className="flex items-center gap-3 text-primary font-medium text-sm hover:underline"
+                >
+                  <Phone className="h-4 w-4 shrink-0" />
+                  {dog.organizationContactPhone}
+                </a>
+              )}
+              {dog.organizationContactEmail && (
+                <a
+                  href={`mailto:${dog.organizationContactEmail}`}
+                  className="flex items-center gap-3 text-primary font-medium text-sm hover:underline"
+                >
+                  <Mail className="h-4 w-4 shrink-0" />
+                  {dog.organizationContactEmail}
+                </a>
+              )}
+            </div>
           </div>
         )}
 

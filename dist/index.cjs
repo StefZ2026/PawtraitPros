@@ -4302,7 +4302,7 @@ function registerDogRoutes(app2) {
     try {
       const { petCode } = req.params;
       const result = await pool.query(
-        `SELECT d.*, o.name as organization_name, o.logo_url as organization_logo_url, o.slug as organization_slug
+        `SELECT d.*, o.name as organization_name, o.logo_url as organization_logo_url, o.slug as organization_slug, o.contact_phone as organization_contact_phone, o.contact_email as organization_contact_email
          FROM dogs d
          JOIN organizations o ON d.organization_id = o.id
          WHERE d.pet_code = $1`,
@@ -4349,6 +4349,8 @@ function registerDogRoutes(app2) {
         organizationName: dog.organization_name,
         organizationLogoUrl: dog.organization_logo_url,
         organizationSlug: dog.organization_slug,
+        organizationContactPhone: dog.organization_contact_phone,
+        organizationContactEmail: dog.organization_contact_email,
         portrait: selectedPortrait,
         portraits: mappedPortraits
       });

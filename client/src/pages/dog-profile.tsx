@@ -140,6 +140,8 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
   const businessName = dog?.organizationName;
   const shareTitle = `${dog?.name}'s Pawfile${businessName ? ` from ${businessName}` : ''}`;
   const shareText = `Check out ${dog?.name}'s beautiful portrait${businessName ? ` from ${businessName}` : ''}! A gorgeous ${dog?.breed || (isCat ? "cat" : "dog")}.`;
+  const customerUrl = dog?.petCode ? `${window.location.origin}/pawfile/code/${dog.petCode}` : undefined;
+  const showcaseUrl = (myOrg as any)?.slug ? `${window.location.origin}/business/${(myOrg as any).slug}` : undefined;
 
   // Multiple portraits support
   const allPortraits = dog?.portraits || (dog?.portrait ? [dog.portrait] : []);
@@ -458,8 +460,8 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
             </div>
           )}
 
-          {/* Save/Print — staff only, not customer view */}
-          {!isCustomerView && (
+          {/* Save/Print — staff/owner only, not public */}
+          {canEdit && (
             <div className="flex flex-wrap gap-2 mt-2 print:hidden">
               <Button variant="outline" onClick={handleSavePawfile} disabled={saving} className="gap-2" data-testid="button-save-pawfile">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -472,10 +474,10 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
             </div>
           )}
 
-          {!isCustomerView && (
+          {canEdit && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} />
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} />
             </div>
           )}
         </div>

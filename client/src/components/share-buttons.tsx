@@ -38,9 +38,15 @@ interface ShareButtonsProps {
   captureRef?: RefObject<HTMLDivElement | null>;
   /** Caption context for showcase posts (e.g. business name) */
   showcaseName?: string;
+  /** URL to send to the pet owner via Text/Copy (customer pawfile URL) */
+  ownerUrl?: string;
+  /** Business showcase URL for the social media popup option (/business/{slug}) */
+  showcaseUrl?: string;
 }
 
-export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, portraitImageUrl, orgWebsiteUrl, captureRef, showcaseName }: ShareButtonsProps) {
+type SocialPlatform = 'facebook' | 'x' | 'nextdoor' | 'instagram';
+
+export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, portraitImageUrl, orgWebsiteUrl, captureRef, showcaseName, ownerUrl, showcaseUrl }: ShareButtonsProps) {
   const { toast } = useToast();
   const { session, isAuthenticated } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -52,11 +58,20 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
   const [igPosting, setIgPosting] = useState(false);
   const [igCaption, setIgCaption] = useState("");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+
+  // Social media pre-share popup state
+  const [socialPopupOpen, setSocialPopupOpen] = useState(false);
+  const [socialPlatform, setSocialPlatform] = useState<SocialPlatform | null>(null);
+  const [shareChoice, setShareChoice] = useState<'pet' | 'showcase'>('pet');
+
   const isMobile = useIsMobile();
   const shareUrl = url || window.location.href;
   const encodedUrl = encodeURIComponent(shareUrl);
   const encodedText = encodeURIComponent(text);
-  const smsBody = `${text} ${shareUrl}`;
+
+  // Text/Copy use ownerUrl (pet owner's clean portal), social media keeps shareUrl (staff page)
+  const ownerShareUrl = ownerUrl || shareUrl;
+  const smsBody = `${text} ${ownerShareUrl}`;
   const smsHref = `sms:?body=${encodeURIComponent(smsBody)}`;
 
   // Show Instagram button when we have a dogId OR a captureRef (showcase)
@@ -72,7 +87,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
   });
 
   const handleCopyLink = async () => {
-    await navigator.clipboard.writeText(shareUrl);
+    await navigator.clipboard.writeText(ownerShareUrl);
     setCopied(true);
     toast({ title: "Link Copied!", description: "Paste it anywhere to share." });
     setTimeout(() => setCopied(false), 2000);
@@ -80,6 +95,41 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
 
   const openShare = (href: string) => {
     window.open(href, "_blank", "noopener,noreferrer,width=600,height=500");
+  };
+
+  // Open social media popup before sharing
+  const handleSocialClick = (platform: SocialPlatform) => {
+    setSocialPlatform(platform);
+    setShareChoice('pet');
+    setSocialPopupOpen(true);
+  };
+
+  const executeSocialShare = async () => {
+    if (!socialPlatform) return;
+    setSocialPopupOpen(false);
+
+    const targetUrl = shareChoice === 'showcase' && showcaseUrl ? showcaseUrl : shareUrl;
+    const encodedTarget = encodeURIComponent(targetUrl);
+    const encodedShareText = encodeURIComponent(text);
+
+    if (socialPlatform === 'instagram') {
+      if (shareChoice === 'showcase' && showcaseUrl) {
+        // For showcase on IG, use the captureRef if available
+        await handleIgButtonClick(showcaseUrl);
+      } else {
+        await handleIgButtonClick();
+      }
+      return;
+    }
+
+    const hrefs: Record<SocialPlatform, string> = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedTarget}`,
+      x: `https://x.com/intent/tweet?url=${encodedTarget}&text=${encodedShareText}`,
+      nextdoor: `https://nextdoor.com/sharekit/?source=pawtraitpros&body=${encodedShareText}%20${encodedTarget}`,
+      instagram: '',
+    };
+
+    openShare(hrefs[socialPlatform]);
   };
 
   // Poll for retry delivery status and notify user
@@ -174,7 +224,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     }
   };
 
-  const handleIgButtonClick = async () => {
+  const handleIgButtonClick = async (overrideShareUrl?: string) => {
     if (!captureRef?.current) return;
     // Always capture the full card (pawfile or showcase) — it has all the info
     try {
@@ -186,9 +236,10 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         backgroundColor: "#ffffff",
       });
       setCapturedImage(dataUrl);
+      const targetShareUrl = overrideShareUrl || shareUrl;
       const defaultCaption = dogId
-        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${shareUrl}\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`
-        : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${shareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`;
+        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${targetShareUrl}\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`
+        : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${targetShareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`;
       setIgCaption(defaultCaption);
       setIgOpen(true);
     } catch (err) {
@@ -225,6 +276,13 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     }
   };
 
+  const platformLabel: Record<SocialPlatform, string> = {
+    facebook: 'Facebook',
+    x: 'X',
+    nextdoor: 'Nextdoor',
+    instagram: 'Instagram',
+  };
+
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -233,7 +291,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
             <Button
               size="icon"
               variant="outline"
-              onClick={() => openShare(`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`)}
+              onClick={() => handleSocialClick('facebook')}
               data-testid="button-share-facebook"
             >
               <SiFacebook className="h-4 w-4" />
@@ -247,7 +305,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
               <Button
                 size="icon"
                 variant="outline"
-                onClick={handleIgButtonClick}
+                onClick={() => handleSocialClick('instagram')}
                 data-testid="button-share-instagram"
               >
                 <SiInstagram className="h-4 w-4" />
@@ -261,7 +319,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
             <Button
               size="icon"
               variant="outline"
-              onClick={() => openShare(`https://x.com/intent/tweet?url=${encodedUrl}&text=${encodedText}`)}
+              onClick={() => handleSocialClick('x')}
               data-testid="button-share-x"
             >
               <FaXTwitter className="h-4 w-4" />
@@ -274,7 +332,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
             <Button
               size="icon"
               variant="outline"
-              onClick={() => openShare(`https://nextdoor.com/sharekit/?source=pawtraitpros&body=${encodedText}%20${encodedUrl}`)}
+              onClick={() => handleSocialClick('nextdoor')}
               data-testid="button-share-nextdoor"
             >
               <NextdoorIcon className="h-4 w-4" />
@@ -326,6 +384,52 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
           <TooltipContent>{copied ? "Copied!" : "Copy Link"}</TooltipContent>
         </Tooltip>
       </div>
+
+      {/* Social media pre-share popup */}
+      <Dialog open={socialPopupOpen} onOpenChange={setSocialPopupOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Share on {socialPlatform ? platformLabel[socialPlatform] : ''}</DialogTitle>
+            <DialogDescription>What would you like to share?</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="radio"
+                name="shareChoice"
+                value="pet"
+                checked={shareChoice === 'pet'}
+                onChange={() => setShareChoice('pet')}
+                className="mt-0.5"
+              />
+              <div>
+                <p className="text-sm font-medium">{dogName ? `${dogName}'s portrait` : 'This pet\'s portrait'}</p>
+                <p className="text-xs text-muted-foreground">Share this individual pet's pawfile</p>
+              </div>
+            </label>
+            {showcaseUrl && (
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="radio"
+                  name="shareChoice"
+                  value="showcase"
+                  checked={shareChoice === 'showcase'}
+                  onChange={() => setShareChoice('showcase')}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-medium">Full client showcase</p>
+                  <p className="text-xs text-muted-foreground">Share your showcase of all current clients</p>
+                </div>
+              </label>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setSocialPopupOpen(false)}>Never mind</Button>
+            <Button onClick={executeSocialShare}>Share</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={smsOpen} onOpenChange={(open) => { setSmsOpen(open); if (!open) { setSmsConsent(false); setPhoneNumber(""); } }}>
         <DialogContent className="sm:max-w-md">
