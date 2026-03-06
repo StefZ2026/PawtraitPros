@@ -13,6 +13,7 @@ import Home from "@/pages/home";
 import Create from "@/pages/create";
 import Gallery from "@/pages/gallery";
 import DogProfile from "@/pages/dog-profile";
+import CustomerPawfile from "@/pages/customer-pawfile";
 import Dashboard from "@/pages/dashboard";
 import Styles from "@/pages/styles";
 import Admin from "@/pages/admin";
@@ -45,7 +46,7 @@ function Router() {
       <Route path="/create" component={Create} />
       <Route path="/gallery" component={Gallery} />
       <Route path="/styles" component={Styles} />
-      <Route path="/pawfile/code/:petCode">{() => <DogProfile isCustomerView={true} />}</Route>
+      <Route path="/pawfile/code/:petCode" component={CustomerPawfile} />
       <Route path="/pawfile/:id">{() => <DogProfile isCustomerView={false} />}</Route>
       <Route path="/settings" component={BusinessSettings} />
       <Route path="/business/:slug" component={BusinessShowcase} />
