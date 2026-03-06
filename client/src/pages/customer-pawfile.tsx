@@ -1,6 +1,5 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dog, Cat, ShoppingBag, Loader2, Heart, Phone, Mail } from "lucide-react";
@@ -21,8 +20,6 @@ export default function CustomerPawfile() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const petCode = params.petCode;
-  const [activeIdx, setActiveIdx] = useState(0);
-
   const { data: dog, isLoading, error } = useQuery<DogWithPortrait>({
     queryKey: ["/api/dogs/code", petCode],
     queryFn: async () => {
@@ -55,9 +52,8 @@ export default function CustomerPawfile() {
   });
 
   const isCat = dog?.species === "cat";
-  const allPortraits = dog?.portraits || (dog?.portrait ? [dog.portrait] : []);
-  const activePortrait = allPortraits[activeIdx] || allPortraits[0];
-  const imageUrl = activePortrait?.generatedImageUrl || dog?.originalPhotoUrl;
+  const selectedPortrait = dog?.portrait || dog?.portraits?.[0] || null;
+  const imageUrl = selectedPortrait?.generatedImageUrl || dog?.originalPhotoUrl;
 
   if (isLoading) {
     return (
@@ -122,27 +118,6 @@ export default function CustomerPawfile() {
             </div>
           )}
 
-          {/* Thumbnail switcher when multiple portraits */}
-          {allPortraits.length > 1 && (
-            <div className="px-3 py-2 flex gap-2 overflow-x-auto border-t border-amber-50">
-              {allPortraits.map((p, idx) => (
-                <button
-                  key={p.id}
-                  onClick={() => setActiveIdx(idx)}
-                  className={`w-12 h-12 rounded border-2 overflow-hidden shrink-0 transition-colors ${
-                    idx === activeIdx ? "border-primary" : "border-transparent opacity-50 hover:opacity-80"
-                  }`}
-                >
-                  <img
-                    src={p.generatedImageUrl || dog.originalPhotoUrl || ""}
-                    alt={`Style ${idx + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="px-5 py-4 text-center">
             <h1 className="font-serif text-2xl font-bold text-gray-900">{dog.name}</h1>
             {(dog.breed || dog.age) && (
@@ -154,7 +129,7 @@ export default function CustomerPawfile() {
         </div>
 
         {/* Order CTA */}
-        {activePortrait?.generatedImageUrl && (
+        {selectedPortrait?.generatedImageUrl && (
           <div className="mt-5">
             <Button
               size="lg"

@@ -145,7 +145,10 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
 
   // Multiple portraits support
   const allPortraits = dog?.portraits || (dog?.portrait ? [dog.portrait] : []);
-  const activePortrait = allPortraits[activePortraitIdx] || allPortraits[0];
+  // In customer view, always show the selected portrait — don't let customer browse the gallery
+  const activePortrait = isCustomerView
+    ? (dog?.portrait || allPortraits[0])
+    : (allPortraits[activePortraitIdx] || allPortraits[0]);
 
   const handlePrint = () => {
     window.print();
@@ -310,8 +313,8 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
               </div>
             </div>
 
-            {/* Portrait carousel thumbnails (when multiple portraits) */}
-            {allPortraits.length > 1 && (
+            {/* Portrait carousel thumbnails (staff view only — customer sees only selected portrait) */}
+            {allPortraits.length > 1 && !isCustomerView && (
               <div className="px-3 pb-2 flex gap-2 overflow-x-auto">
                 {allPortraits.map((p, idx) => (
                   <button
