@@ -356,6 +356,38 @@ export async function seedDatabase() {
     console.log('[migration] portraits group_id:', migErr.message);
   }
 
+  // Migration: fix customer_sessions FK constraints to cascade on dog/portrait delete
+  try {
+    await pool.query(`
+      ALTER TABLE customer_sessions
+        DROP CONSTRAINT IF EXISTS customer_sessions_dog_id_fkey,
+        ADD CONSTRAINT customer_sessions_dog_id_fkey
+          FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE;
+    `);
+    await pool.query(`
+      ALTER TABLE customer_sessions
+        DROP CONSTRAINT IF EXISTS customer_sessions_portrait_id_fkey,
+        ADD CONSTRAINT customer_sessions_portrait_id_fkey
+          FOREIGN KEY (portrait_id) REFERENCES portraits(id) ON DELETE CASCADE;
+    `);
+    console.log('[migration] customer_sessions FK cascade ready');
+  } catch (migErr: any) {
+    console.log('[migration] customer_sessions FK:', migErr.message);
+  }
+
+  // Migration: fix batch_photos FK to set null on dog delete
+  try {
+    await pool.query(`
+      ALTER TABLE batch_photos
+        DROP CONSTRAINT IF EXISTS batch_photos_dog_id_fkey,
+        ADD CONSTRAINT batch_photos_dog_id_fkey
+          FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE SET NULL;
+    `);
+    console.log('[migration] batch_photos FK set-null ready');
+  } catch (migErr: any) {
+    console.log('[migration] batch_photos FK:', migErr.message);
+  }
+
   await seedSubscriptionPlans();
 
   // Ensure Stripe products/prices exist for all vertical plans (idempotent)

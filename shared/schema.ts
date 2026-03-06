@@ -164,8 +164,8 @@ export const customerSessions = pgTable("customer_sessions", {
   id: serial("id").primaryKey(),
   token: varchar("token", { length: 8 }).notNull().unique(), // short code for URL
   organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  dogId: integer("dog_id").notNull().references(() => dogs.id),
-  portraitId: integer("portrait_id").notNull().references(() => portraits.id),
+  dogId: integer("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+  portraitId: integer("portrait_id").notNull().references(() => portraits.id, { onDelete: "cascade" }),
   packType: text("pack_type"), // "celebrate" | "fun" | "artistic"
   customerPhone: text("customer_phone"),
   expiresAt: timestamp("expires_at"),
@@ -187,7 +187,7 @@ export const batchPhotos = pgTable("batch_photos", {
   id: serial("id").primaryKey(),
   batchSessionId: integer("batch_session_id").notNull().references(() => batchSessions.id, { onDelete: "cascade" }),
   photoUrl: text("photo_url").notNull(), // base64 data URI
-  dogId: integer("dog_id").references(() => dogs.id), // null until assigned
+  dogId: integer("dog_id").references(() => dogs.id, { onDelete: "set null" }), // null until assigned
   assignedAt: timestamp("assigned_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

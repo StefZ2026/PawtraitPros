@@ -264,8 +264,8 @@ var init_schema = __esm({
       token: (0, import_pg_core2.varchar)("token", { length: 8 }).notNull().unique(),
       // short code for URL
       organizationId: (0, import_pg_core2.integer)("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-      dogId: (0, import_pg_core2.integer)("dog_id").notNull().references(() => dogs.id),
-      portraitId: (0, import_pg_core2.integer)("portrait_id").notNull().references(() => portraits.id),
+      dogId: (0, import_pg_core2.integer)("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+      portraitId: (0, import_pg_core2.integer)("portrait_id").notNull().references(() => portraits.id, { onDelete: "cascade" }),
       packType: (0, import_pg_core2.text)("pack_type"),
       // "celebrate" | "fun" | "artistic"
       customerPhone: (0, import_pg_core2.text)("customer_phone"),
@@ -286,7 +286,7 @@ var init_schema = __esm({
       batchSessionId: (0, import_pg_core2.integer)("batch_session_id").notNull().references(() => batchSessions.id, { onDelete: "cascade" }),
       photoUrl: (0, import_pg_core2.text)("photo_url").notNull(),
       // base64 data URI
-      dogId: (0, import_pg_core2.integer)("dog_id").references(() => dogs.id),
+      dogId: (0, import_pg_core2.integer)("dog_id").references(() => dogs.id, { onDelete: "set null" }),
       // null until assigned
       assignedAt: (0, import_pg_core2.timestamp)("assigned_at"),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
@@ -9646,6 +9646,34 @@ async function seedDatabase() {
     console.log("[migration] portraits group_id column ready");
   } catch (migErr) {
     console.log("[migration] portraits group_id:", migErr.message);
+  }
+  try {
+    await pool.query(`
+      ALTER TABLE customer_sessions
+        DROP CONSTRAINT IF EXISTS customer_sessions_dog_id_fkey,
+        ADD CONSTRAINT customer_sessions_dog_id_fkey
+          FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE CASCADE;
+    `);
+    await pool.query(`
+      ALTER TABLE customer_sessions
+        DROP CONSTRAINT IF EXISTS customer_sessions_portrait_id_fkey,
+        ADD CONSTRAINT customer_sessions_portrait_id_fkey
+          FOREIGN KEY (portrait_id) REFERENCES portraits(id) ON DELETE CASCADE;
+    `);
+    console.log("[migration] customer_sessions FK cascade ready");
+  } catch (migErr) {
+    console.log("[migration] customer_sessions FK:", migErr.message);
+  }
+  try {
+    await pool.query(`
+      ALTER TABLE batch_photos
+        DROP CONSTRAINT IF EXISTS batch_photos_dog_id_fkey,
+        ADD CONSTRAINT batch_photos_dog_id_fkey
+          FOREIGN KEY (dog_id) REFERENCES dogs(id) ON DELETE SET NULL;
+    `);
+    console.log("[migration] batch_photos FK set-null ready");
+  } catch (migErr) {
+    console.log("[migration] batch_photos FK:", migErr.message);
   }
   await seedSubscriptionPlans();
   try {
