@@ -45,8 +45,8 @@ function Router() {
       <Route path="/create" component={Create} />
       <Route path="/gallery" component={Gallery} />
       <Route path="/styles" component={Styles} />
-      <Route path="/pawfile/code/:petCode" component={DogProfile} />
-      <Route path="/pawfile/:id" component={DogProfile} />
+      <Route path="/pawfile/code/:petCode">{() => <DogProfile isCustomerView={true} />}</Route>
+      <Route path="/pawfile/:id">{() => <DogProfile isCustomerView={false} />}</Route>
       <Route path="/settings" component={BusinessSettings} />
       <Route path="/business/:slug" component={BusinessShowcase} />
       <Route path="/privacy" component={Privacy} />

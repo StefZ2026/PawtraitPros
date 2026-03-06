@@ -1,4 +1,4 @@
-import { Link, useParams, useRoute } from "wouter";
+import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -33,17 +33,14 @@ interface DogWithPortrait extends DogType {
   organizationWebsiteUrl?: string | null;
 }
 
-export default function DogProfile() {
+export default function DogProfile({ isCustomerView = false }: { isCustomerView?: boolean }) {
   const params = useParams<{ id: string; petCode: string }>();
-  const [isCodeRoute] = useRoute("/pawfile/code/:petCode");
   const { user, isAuthenticated, isAdmin } = useAuth();
   const { toast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [activePortraitIdx, setActivePortraitIdx] = useState(0);
 
-  // Determine access mode
-  const isCustomerView = !!isCodeRoute;
   const petCode = params.petCode;
   const dogId = params.id;
 
