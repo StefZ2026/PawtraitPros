@@ -1,5 +1,4 @@
 import { GoogleGenAI, Modality } from "@google/genai";
-import sharp from "sharp";
 import { Semaphore } from "./semaphore";
 
 export const ai = new GoogleGenAI({
@@ -73,18 +72,8 @@ Now apply the following artistic style to this exact animal:
 
 `;
 
-async function resizeForGemini(dataUri: string): Promise<{ mimeType: string; data: string }> {
-  const { mimeType, data } = parseBase64(dataUri);
-  const inputBuffer = Buffer.from(data, "base64");
-  const resized = await sharp(inputBuffer)
-    .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 85 })
-    .toBuffer();
-  return { mimeType: "image/jpeg", data: resized.toString("base64") };
-}
-
 async function generateWithImage(prompt: string, sourceImage: string): Promise<string | null> {
-  const { mimeType, data } = await resizeForGemini(sourceImage);
+  const { mimeType, data } = parseBase64(sourceImage);
   const enhancedPrompt = FIDELITY_PREFIX + prompt;
   return geminiSemaphore.run(() =>
     callWithRetry(async () => {
@@ -134,14 +123,12 @@ export async function generateGroupPortrait(
   prompt: string,
   sourceImages: string[]
 ): Promise<string> {
-  const resizedImages = await Promise.all(
-    sourceImages.map(img => resizeForGemini(img))
-  );
+  const parsedImages = sourceImages.map(img => parseBase64(img));
 
   const enhancedPrompt = GROUP_FIDELITY_PREFIX + prompt;
 
   const parts: any[] = [{ text: enhancedPrompt }];
-  for (const { mimeType, data } of resizedImages) {
+  for (const { mimeType, data } of parsedImages) {
     parts.push({ inlineData: { mimeType, data } });
   }
 
