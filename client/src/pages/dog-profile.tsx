@@ -33,6 +33,7 @@ interface DogWithPortrait extends DogType {
   organizationWebsiteUrl?: string | null;
   organizationContactPhone?: string | null;
   organizationContactEmail?: string | null;
+  organizationIndustryType?: string | null;
 }
 
 export default function DogProfile({ isCustomerView: isCustomerViewProp = false }: { isCustomerView?: boolean }) {
@@ -505,7 +506,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
           {canEdit && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} industryType={(myOrg as any)?.industryType} />
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} industryType={dog.organizationIndustryType || (myOrg as any)?.industryType} />
             </div>
           )}
         </div>

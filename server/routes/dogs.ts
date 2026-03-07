@@ -401,6 +401,7 @@ export function registerDogRoutes(app: Express): void {
         organizationWebsiteUrl: org?.websiteUrl || null,
         organizationContactPhone: org?.contactPhone || null,
         organizationContactEmail: org?.contactEmail || null,
+        organizationIndustryType: org?.industryType || null,
         portrait: portrait || undefined,
         portraits: portraitsWithStyles,
       });
