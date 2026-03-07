@@ -21,7 +21,7 @@ import {
   Sparkles, ExternalLink, LayoutDashboard, Shield,
   ArrowLeft, Heart, Trash2, LogIn, Eye, Upload, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle, RefreshCw
+  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle, RefreshCw, Archive, RotateCcw
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
@@ -174,7 +174,20 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/my-organization"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      toast({ title: "Pet removed", description: "The pet has been removed." });
+      toast({ title: "Pet removed", description: "The pet has been permanently removed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const archiveDogMutation = useMutation({
+    mutationFn: async ({ dogId, archive }: { dogId: number; archive: boolean }) => {
+      await apiRequest("PATCH", `/api/dogs/${dogId}`, { isAvailable: !archive });
+    },
+    onSuccess: (_, { archive }) => {
+      queryClient.invalidateQueries({ queryKey: dogsQueryKey });
+      toast({ title: archive ? "Pet archived" : "Pet restored", description: archive ? "Pet moved to archived. Portraits are preserved." : "Pet is back on your active list." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -287,9 +300,12 @@ export default function Dashboard() {
             trialDaysRemaining={trialDaysRemaining}
             isAdmin={isAdmin}
             onDeleteDog={(dogId) => {
-              if (confirm("Are you sure you want to remove this dog?")) {
+              if (confirm("Are you sure? This permanently deletes the pet and all portraits.")) {
                 deleteDogMutation.mutate(dogId);
               }
+            }}
+            onArchiveDog={(dogId, archive) => {
+              archiveDogMutation.mutate({ dogId, archive });
             }}
           />
         ) : null}
@@ -529,13 +545,14 @@ function CreateOrgForm({ form, mutation, onBack, logoData, onLogoChange }: {
   );
 }
 
-function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isAdmin, onDeleteDog }: {
+function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isAdmin, onDeleteDog, onArchiveDog }: {
   organization: Organization | OrgWithStats;
   dogs: DogWithPortrait[];
   dogsLoading: boolean;
   trialDaysRemaining: number;
   isAdmin: boolean;
   onDeleteDog: (dogId: number) => void;
+  onArchiveDog: (dogId: number, archive: boolean) => void;
 }) {
   const { toast } = useToast();
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -544,9 +561,13 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const [generating, setGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // All Pets search + expand
+  // All Pets search + expand + archived
   const [allPetsSearch, setAllPetsSearch] = useState("");
   const [showAllPets, setShowAllPets] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const activeDogs = dogs.filter(d => d.isAvailable !== false);
+  const archivedDogs = dogs.filter(d => d.isAvailable === false);
 
   // Quick-add client form state
   const [newPetName, setNewPetName] = useState("");
@@ -617,19 +638,19 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const selectedPack = packs.find((p: any) => p.type === selectedPackType);
   const [previewPackType, setPreviewPackType] = useState<string | null>(null);
 
-  // Filter dogs to today's clients (checked-in today OR created today)
+  // Filter dogs to today's clients (checked-in today OR created today) — only active
   const todaysDogs = useMemo(() => {
-    return dogs.filter(d => {
+    return activeDogs.filter(d => {
       if ((d as any).checkedInAt === today) return true;
       const created = new Date(d.createdAt).toISOString().split("T")[0];
       return created === today;
     });
-  }, [dogs, today]);
+  }, [activeDogs, today]);
 
-  // All Pets except today (for search/check-in)
+  // All Pets except today (for search/check-in) — only active (not archived)
   const allPetsExceptToday = useMemo(() => {
-    return dogs.filter(d => !todaysDogs.includes(d));
-  }, [dogs, todaysDogs]);
+    return activeDogs.filter(d => !todaysDogs.includes(d));
+  }, [activeDogs, todaysDogs]);
 
   const filteredAllPets = useMemo(() => {
     if (!allPetsSearch.trim()) return allPetsExceptToday;
@@ -1527,15 +1548,27 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     <div className="flex-1" />
                     <Button
                       variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
+                      size="sm"
+                      className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (confirm(`Remove ${dog.name}?`)) onDeleteDog(dog.id);
+                        onArchiveDog(dog.id, true);
                       }}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Archive className="h-3 w-3" /> Archive
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-destructive/50 hover:text-destructive"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (confirm(`Permanently delete ${dog.name} and all portraits?`)) onDeleteDog(dog.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </Card>
@@ -2173,16 +2206,27 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     <p className="text-xs text-muted-foreground truncate">{dog.breed}</p>
                   </div>
                 </Link>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 gap-1 text-xs"
-                  onClick={() => checkInMutation.mutate(dog.id)}
-                  disabled={checkInMutation.isPending}
-                >
-                  <LogIn className="h-3 w-3" />
-                  Check In
-                </Button>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    onClick={() => checkInMutation.mutate(dog.id)}
+                    disabled={checkInMutation.isPending}
+                  >
+                    <LogIn className="h-3 w-3" />
+                    Check In
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    onClick={() => onArchiveDog(dog.id, true)}
+                    title="Archive pet"
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -2206,6 +2250,67 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                   ? "Show less"
                   : `Show all ${filteredAllPets.length} pets`}
               </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Archived Pets */}
+      {archivedDogs.length > 0 && (
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground mb-2"
+            onClick={() => setShowArchived(!showArchived)}
+          >
+            <Archive className="h-4 w-4" />
+            Archived Pets ({archivedDogs.length})
+            {showArchived ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </Button>
+          {showArchived && (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {archivedDogs.map((dog) => (
+                <div key={dog.id} className="flex items-center gap-3 p-2 rounded-lg border border-dashed opacity-70 hover:opacity-100 transition-opacity">
+                  <Link href={`/pawfile/${dog.id}`} className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0">
+                      {dog.portrait?.generatedImageUrl ? (
+                        <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" />
+                      ) : dog.originalPhotoUrl ? (
+                        <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          {dog.species === "cat" ? <Cat className="h-5 w-5 text-muted-foreground/30" /> : <Dog className="h-5 w-5 text-muted-foreground/30" />}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{dog.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{dog.breed}</p>
+                    </div>
+                  </Link>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs"
+                      onClick={() => onArchiveDog(dog.id, false)}
+                    >
+                      <RotateCcw className="h-3 w-3" /> Restore
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive/50 hover:text-destructive"
+                      onClick={() => {
+                        if (confirm(`Permanently delete ${dog.name} and all portraits?`)) onDeleteDog(dog.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
