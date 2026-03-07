@@ -255,7 +255,6 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         quality: 0.95,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
-        filter: (node: Element) => !node.classList?.contains('ig-capture-hide'),
       });
       setCapturedImage(dataUrl);
       const targetShareUrl = overrideShareUrl || ownerUrl || window.location.origin;
