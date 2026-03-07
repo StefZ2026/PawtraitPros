@@ -340,10 +340,11 @@ export default function CustomerOrder() {
               <p className="text-muted-foreground max-w-sm mx-auto">
                 Your order has been placed and will be shipped directly to you. You'll receive tracking info by email.
               </p>
-              <div className="pt-4">
+              <div className="pt-4 space-y-2">
+                <p className="text-sm font-medium text-green-700">Thank you for your order!</p>
                 <Button variant="outline" className="gap-2" asChild>
                   <a href={`/api/portraits/${selectedPortraitId || session.portraitId}/download`} download>
-                    <Download className="h-4 w-4" /> Download Digital Portrait
+                    <Download className="h-4 w-4" /> Download Free Digital Copy
                   </a>
                 </Button>
               </div>
