@@ -66,8 +66,12 @@ const planDefinitions = [
     unitType: "grooms",
     unitLimit: 80,
     monthlyPortraitCredits: 240,
-    overagePriceCents: 800, // $8 per 10 credits
+    overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SQ3LsEHqjVSX",
+    stripePriceId: "price_1T8FVf2LfX3IuyBIe3b7cb0V",
+    stripeProductLiveId: "prod_U6SVxCjDWiNTqs",
+    stripeLivePriceId: "price_1T8FaY2LfX3IuyBIkWibecz6",
   },
   {
     id: 11,
@@ -80,6 +84,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 480,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVjdx0VzVQH4",
+    stripePriceId: "price_1T8Fa92LfX3IuyBIyjODGNkg",
+    stripeProductLiveId: "prod_U6SVbtHmPXW8sz",
+    stripeLivePriceId: "price_1T8FaY2LfX3IuyBIxML1VsAY",
   },
   {
     id: 12,
@@ -92,6 +100,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 720,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVK84H8tj3L8",
+    stripePriceId: "price_1T8FaA2LfX3IuyBIE30w2EFX",
+    stripeProductLiveId: "prod_U6SVRYeHnPx4Rd",
+    stripeLivePriceId: "price_1T8FaZ2LfX3IuyBIAAGqxBxa",
   },
 
   // ── Daycare Plans ──
@@ -106,6 +118,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 200,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SV9chqrq1BI9",
+    stripePriceId: "price_1T8FaB2LfX3IuyBITkTcCNzL",
+    stripeProductLiveId: "prod_U6SVGQIZdAJDhe",
+    stripeLivePriceId: "price_1T8Fab2LfX3IuyBI7zfVDSeR",
   },
   {
     id: 14,
@@ -118,6 +134,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 600,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVNEW2jXuDqh",
+    stripePriceId: "price_1T8FaC2LfX3IuyBIeuMmIJw0",
+    stripeProductLiveId: "prod_U6SVx1MBpzgZ4c",
+    stripeLivePriceId: "price_1T8Fac2LfX3IuyBIvXSns9lP",
   },
   {
     id: 15,
@@ -130,6 +150,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 1200,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVqwlkybkSI2",
+    stripePriceId: "price_1T8FaD2LfX3IuyBIOkvR9esj",
+    stripeProductLiveId: "prod_U6SVnv6eAVPaC7",
+    stripeLivePriceId: "price_1T8Fad2LfX3IuyBIHXz8x2Sf",
   },
 
   // ── Boarding Plans ──
@@ -144,6 +168,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 350,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVUeYVvnIiwL",
+    stripePriceId: "price_1T8FaE2LfX3IuyBIH930NTlS",
+    stripeProductLiveId: "prod_U6SV2qQWtxQbpR",
+    stripeLivePriceId: "price_1T8Faf2LfX3IuyBIwi35BwMN",
   },
   {
     id: 17,
@@ -156,6 +184,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 1500,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVGkX4EPIjie",
+    stripePriceId: "price_1T8FaG2LfX3IuyBISzdsiedV",
+    stripeProductLiveId: "prod_U6SVgxvPoMvUht",
+    stripeLivePriceId: "price_1T8Fag2LfX3IuyBIm0AlKuXv",
   },
   {
     id: 18,
@@ -168,6 +200,10 @@ const planDefinitions = [
     monthlyPortraitCredits: 3500,
     overagePriceCents: 800,
     trialDays: 30,
+    stripeProductId: "prod_U6SVkyBzP4FQao",
+    stripePriceId: "price_1T8FaI2LfX3IuyBIMf7NMbd0",
+    stripeProductLiveId: "prod_U6SVTdnSDoJUzY",
+    stripeLivePriceId: "price_1T8Fai2LfX3IuyBI3anV63Ku",
   },
 ];
 
