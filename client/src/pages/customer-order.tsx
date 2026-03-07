@@ -509,13 +509,6 @@ export default function CustomerOrder() {
                 />
               </div>
 
-              {/* Digital download — always free, with business logo watermark */}
-              <Button variant="outline" className="gap-2" asChild>
-                <a href={`/api/portraits/${selectedPortraitId || session.portraitId}/download`} download>
-                  <Download className="h-4 w-4" /> Download Free Digital Copy
-                </a>
-              </Button>
-
               {/* Alternate portraits */}
               {session.alternatePortraits.length > 0 && (
                 <div>

@@ -71,7 +71,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
 
   // Text/Copy use ownerUrl (pet owner's clean portal), social media keeps shareUrl (staff page)
   const ownerShareUrl = ownerUrl || shareUrl;
-  const smsBody = `${text} ${ownerShareUrl}`;
+  const smsBody = `${text} Tap the link to view and order a keepsake! ${ownerShareUrl}`;
   const smsHref = `sms:?body=${encodeURIComponent(smsBody)}`;
 
   // Show Instagram button when we have a dogId OR a captureRef (showcase)
@@ -169,6 +169,19 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     }
     setSending(true);
     const targetPhone = phoneNumber;
+
+    // Capture the full branded card (includes org logo) if available; fall back to raw portrait URL
+    let imageToSend: string | undefined = portraitImageUrl;
+    if (captureRef?.current) {
+      try {
+        toast({ title: "Preparing image...", description: "Adding branding to portrait." });
+        const { toPng } = await import("html-to-image");
+        imageToSend = await toPng(captureRef.current, { quality: 0.95, pixelRatio: 2, backgroundColor: "#ffffff" });
+      } catch {
+        // fall back to portrait URL
+      }
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 25000);
@@ -179,7 +192,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ to: phoneNumber, message: smsBody, mediaUrl: portraitImageUrl || undefined }),
+        body: JSON.stringify({ to: phoneNumber, message: smsBody, mediaUrl: imageToSend || undefined }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
