@@ -45,7 +45,7 @@ export default function SmsOptIn() {
                   <div className="space-y-3 mb-4">
                     <label className="flex items-start gap-2 text-sm text-muted-foreground">
                       <input type="checkbox" disabled className="mt-0.5 rounded border-gray-300" />
-                      <span>By providing this phone number, you agree to receive SMS messages from Pawtrait Pros. Message frequency may vary. Standard message and data rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.</span>
+                      <span>By providing your phone number and clicking the checkbox below you agree to receive SMS notifications from Pawtrait Pros. Message frequency may vary. Standard Message and Data Rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.</span>
                     </label>
                     <label className="flex items-start gap-2 text-sm text-muted-foreground">
                       <input type="checkbox" disabled className="mt-0.5 rounded border-gray-300" />

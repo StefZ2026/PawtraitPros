@@ -473,7 +473,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
           </div>
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground leading-relaxed">
-              By providing your phone number, you agree to receive SMS notifications from Pawtrait Pros. Message frequency may vary. Standard Message and Data Rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.
+              By providing your phone number and clicking the checkbox below you agree to receive SMS notifications from Pawtrait Pros. Message frequency may vary. Standard Message and Data Rates may apply. Reply STOP to opt out. Reply HELP for help. We will not share mobile information with third parties for promotional or marketing purposes.
             </p>
             <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer">
               <input
