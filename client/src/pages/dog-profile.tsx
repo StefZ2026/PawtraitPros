@@ -31,6 +31,8 @@ interface DogWithPortrait extends DogType {
   organizationName?: string | null;
   organizationLogoUrl?: string | null;
   organizationWebsiteUrl?: string | null;
+  organizationContactPhone?: string | null;
+  organizationContactEmail?: string | null;
 }
 
 export default function DogProfile({ isCustomerView: isCustomerViewProp = false }: { isCustomerView?: boolean }) {
@@ -315,7 +317,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
 
             {/* Portrait carousel thumbnails (staff view only — customer sees only selected portrait) */}
             {allPortraits.length > 1 && !isCustomerView && (
-              <div className="px-3 pb-2 flex gap-2 overflow-x-auto">
+              <div className="px-3 pb-2 flex gap-2 overflow-x-auto ig-capture-hide">
                 {allPortraits.map((p, idx) => (
                   <button
                     key={p.id}
@@ -353,9 +355,32 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
               </div>
             )}
 
+            {/* Org Contact Us — always shown, included in Instagram image */}
+            {(dog.organizationContactPhone || dog.organizationContactEmail) && (
+              <div className="px-6 pb-3 border-t border-primary/10 pt-3">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 text-center tracking-wide uppercase">Contact Us</p>
+                <div className="flex flex-col gap-1.5 items-center">
+                  {dog.organizationContactPhone && (
+                    <a href={`tel:${dog.organizationContactPhone.replace(/\D/g, '')}`}
+                       className="flex items-center gap-2 text-primary text-sm hover:underline">
+                      <Phone className="h-3.5 w-3.5 shrink-0" />
+                      {dog.organizationContactPhone}
+                    </a>
+                  )}
+                  {dog.organizationContactEmail && (
+                    <a href={`mailto:${dog.organizationContactEmail}`}
+                       className="flex items-center gap-2 text-primary text-sm hover:underline">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      {dog.organizationContactEmail}
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Owner contact info (staff view only) */}
             {canEdit && (dog.ownerEmail || dog.ownerPhone) && (
-              <div className="px-6 pb-3 flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
+              <div className="px-6 pb-3 flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground ig-capture-hide">
                 {dog.ownerPhone && (
                   <a href={`tel:${dog.ownerPhone}`} className="inline-flex items-center gap-1 hover:text-primary transition-colors">
                     <Phone className="h-3.5 w-3.5" />
@@ -373,7 +398,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
 
             {/* Pet code badge */}
             {dog.petCode && (
-              <div className="px-6 pb-4 text-center">
+              <div className="px-6 pb-4 text-center ig-capture-hide">
                 <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary px-4 py-1.5 rounded-full text-sm font-medium font-mono">
                   {dog.petCode}
                 </div>
@@ -480,7 +505,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
           {canEdit && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} />
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} industryType={(myOrg as any)?.industryType} />
             </div>
           )}
         </div>

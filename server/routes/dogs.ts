@@ -399,6 +399,8 @@ export function registerDogRoutes(app: Express): void {
         organizationName: org?.name || null,
         organizationLogoUrl: org?.logoUrl || null,
         organizationWebsiteUrl: org?.websiteUrl || null,
+        organizationContactPhone: org?.contactPhone || null,
+        organizationContactEmail: org?.contactEmail || null,
         portrait: portrait || undefined,
         portraits: portraitsWithStyles,
       });

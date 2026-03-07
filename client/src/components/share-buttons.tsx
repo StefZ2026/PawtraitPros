@@ -42,11 +42,13 @@ interface ShareButtonsProps {
   ownerUrl?: string;
   /** Business showcase URL for the social media popup option (/business/{slug}) */
   showcaseUrl?: string;
+  /** Org industry type — controls hashtags ("groomer" | "boarding" | "daycare") */
+  industryType?: string;
 }
 
 type SocialPlatform = 'facebook' | 'x' | 'nextdoor' | 'instagram';
 
-export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, portraitImageUrl, orgWebsiteUrl, captureRef, showcaseName, ownerUrl, showcaseUrl }: ShareButtonsProps) {
+export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId, portraitImageUrl, orgWebsiteUrl, captureRef, showcaseName, ownerUrl, showcaseUrl, industryType }: ShareButtonsProps) {
   const { toast } = useToast();
   const { session, isAuthenticated } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -239,6 +241,10 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     }
   };
 
+  const industryTag = industryType === 'daycare' ? '#petdaycare'
+    : industryType === 'boarding' ? '#petboarding'
+    : '#petgrooming';
+
   const handleIgButtonClick = async (overrideShareUrl?: string) => {
     if (!captureRef?.current) return;
     // Always capture the full card (pawfile or showcase) — it has all the info
@@ -249,12 +255,13 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         quality: 0.95,
         pixelRatio: 2,
         backgroundColor: "#ffffff",
+        filter: (node: Element) => !node.classList?.contains('ig-capture-hide'),
       });
       setCapturedImage(dataUrl);
       const targetShareUrl = overrideShareUrl || ownerUrl || shareUrl;
       const defaultCaption = dogId
-        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${targetShareUrl}\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`
-        : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${targetShareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`;
+        ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${targetShareUrl}\n\n#pawtraitpros #petportrait #petprofessional ${industryTag}`
+        : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${targetShareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional ${industryTag}`;
       setIgCaption(defaultCaption);
       setIgOpen(true);
     } catch (err) {
