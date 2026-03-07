@@ -680,7 +680,8 @@ export function registerInstagramRoutes(app: Express): void {
         imageToPost = portrait.generatedImageUrl;
         const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
         const host = (req.headers['x-forwarded-host'] as string) || (req.headers['host'] as string) || 'pawtraitpros.com';
-        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}View their full portrait at ${proto}://${host}/pawfile/${dog.id}\n\n#petportrait #pawtraitpros`;
+        const dogUrl = dog.petCode ? `${proto}://${host}/pawfile/code/${dog.petCode}` : `${proto}://${host}/pawfile/${dog.id}`;
+        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ''}View their full portrait at ${dogUrl}\n\n#petportrait #pawtraitpros`;
       } else {
         return res.status(400).json({ error: "dogId or image+orgId is required" });
       }
