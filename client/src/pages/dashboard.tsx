@@ -21,7 +21,7 @@ import {
   Sparkles, ExternalLink, LayoutDashboard, Shield,
   ArrowLeft, Heart, Trash2, LogIn, Eye, Upload, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle
+  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
@@ -1104,7 +1104,18 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             </div>
             <div className="flex items-center gap-2">
               {selectedPackType && (
-                <Badge className="capitalize">{selectedPackType} Pack</Badge>
+                <>
+                  <Badge className="capitalize">{selectedPackType} Pack</Badge>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
+                    const orgQuery = isAdmin ? `&orgId=${organization.id}` : "";
+                    apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${packSpecies}${orgQuery}`).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
+                    });
+                  }}>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Change Pack
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -1156,14 +1167,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="text-sm text-muted-foreground">Styles in this pack:</span>
-                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => {
-                  const orgQuery = isAdmin ? `&orgId=${organization.id}` : "";
-                  apiRequest("DELETE", `/api/daily-pack?date=${today}&species=${packSpecies}${orgQuery}`).then(() => {
-                    queryClient.invalidateQueries({ queryKey: ["/api/daily-pack"] });
-                  });
-                }}>
-                  Change
-                </Button>
               </div>
               {selectedPack?.styles && (
                 <div className="flex gap-2 overflow-x-auto pb-2">

@@ -31,7 +31,7 @@ function isRetryableError(err: any): boolean {
 }
 
 async function callWithRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn();
@@ -91,7 +91,7 @@ async function generateWithImage(prompt: string, sourceImage: string): Promise<s
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
-        config: { responseModalities: [Modality.TEXT, Modality.IMAGE], imageConfig: { imageSize: "2K" } },
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
       });
       return extractImageFromResponse(response);
     }, "generateWithImage")
@@ -152,7 +152,6 @@ export async function generateGroupPortrait(
         contents: [{ role: "user", parts }],
         config: {
           responseModalities: [Modality.TEXT, Modality.IMAGE],
-          imageConfig: { imageSize: "2K" },
         },
       });
       return extractImageFromResponse(response);
