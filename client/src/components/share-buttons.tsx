@@ -258,7 +258,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         filter: (node: Element) => !node.classList?.contains('ig-capture-hide'),
       });
       setCapturedImage(dataUrl);
-      const targetShareUrl = overrideShareUrl || ownerUrl || shareUrl;
+      const targetShareUrl = overrideShareUrl || ownerUrl || window.location.origin;
       const defaultCaption = dogId
         ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${targetShareUrl}\n\n#pawtraitpros #petportrait #petprofessional ${industryTag}`
         : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${targetShareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional ${industryTag}`;
