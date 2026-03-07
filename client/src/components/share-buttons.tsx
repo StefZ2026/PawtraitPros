@@ -110,7 +110,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     if (!socialPlatform) return;
     setSocialPopupOpen(false);
 
-    const targetUrl = shareChoice === 'showcase' && showcaseUrl ? showcaseUrl : shareUrl;
+    const targetUrl = shareChoice === 'showcase' && showcaseUrl ? showcaseUrl : (ownerUrl || shareUrl);
     const encodedTarget = encodeURIComponent(targetUrl);
     const encodedShareText = encodeURIComponent(text);
 
