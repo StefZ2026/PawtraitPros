@@ -71,7 +71,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
 
   // Text/Copy use ownerUrl (pet owner's clean portal), social media keeps shareUrl (staff page)
   const ownerShareUrl = ownerUrl || shareUrl;
-  const smsBody = `${text} Tap the link to view and order a keepsake! ${ownerShareUrl}`;
+  const smsBody = `${text} Tap the link below to view and order a keepsake! ${ownerShareUrl}`;
   const smsHref = `sms:?body=${encodeURIComponent(smsBody)}`;
 
   // Show Instagram button when we have a dogId OR a captureRef (showcase)
