@@ -41,6 +41,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
   const { user, isAuthenticated, isAdmin } = useAuth();
   const { toast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
+  const igCaptureRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [activePortraitIdx, setActivePortraitIdx] = useState(0);
 
@@ -506,9 +507,63 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
           {canEdit && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
-              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={cardRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} industryType={dog.organizationIndustryType || (myOrg as any)?.industryType} />
+              <ShareButtons title={shareTitle} text={shareText} dogId={dog.id} dogName={dog.name} dogBreed={dog.breed || undefined} orgId={dog.organizationId} portraitImageUrl={imageUrl || undefined} orgWebsiteUrl={dog.organizationWebsiteUrl || undefined} captureRef={igCaptureRef} ownerUrl={customerUrl} showcaseUrl={showcaseUrl} industryType={dog.organizationIndustryType || (myOrg as any)?.industryType} />
             </div>
           )}
+
+          {/* Hidden clean card for social media capture — mirrors Pals' clean card structure */}
+          <div style={{ position: 'absolute', left: '-9999px', top: 0, width: '480px' }} aria-hidden="true">
+            <div ref={igCaptureRef} className="bg-white rounded-lg overflow-hidden border-[3px] border-primary/20">
+              {dog.organizationLogoUrl ? (
+                <div className="flex items-center justify-center py-5 px-6 border-b border-primary/10">
+                  <img src={dog.organizationLogoUrl} alt={dog.organizationName || "Business"} className="max-h-16 max-w-[200px] object-contain" crossOrigin="anonymous" />
+                </div>
+              ) : dog.organizationName ? (
+                <div className="flex items-center justify-center py-4 px-6 border-b border-primary/10">
+                  <h2 className="font-serif text-lg font-semibold text-primary tracking-wide">{dog.organizationName}</h2>
+                </div>
+              ) : null}
+              <div className="p-3">
+                <div className="border-2 border-primary/10 rounded-md overflow-hidden">
+                  {imageUrl ? (
+                    <img src={imageUrl} alt={`${dog.name} portrait`} className="w-full aspect-square object-cover" crossOrigin="anonymous" />
+                  ) : (
+                    <div className="w-full aspect-square bg-gradient-to-br from-primary/10 to-accent/10" />
+                  )}
+                </div>
+              </div>
+              <div className="px-6 pb-2 pt-1 text-center">
+                <h1 className="font-serif text-3xl font-bold text-foreground">{dog.name}</h1>
+                {(dog.breed || dog.age) && (
+                  <div className="flex items-center justify-center gap-3 mt-1 text-muted-foreground text-sm">
+                    {dog.breed && <span>{dog.breed}</span>}
+                    {dog.breed && dog.age && <span className="text-primary/30">|</span>}
+                    {dog.age && <span>{dog.age}</span>}
+                  </div>
+                )}
+              </div>
+              {(dog.organizationContactPhone || dog.organizationContactEmail) && (
+                <div className="px-6 pb-3 border-t border-primary/10 pt-3">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 text-center tracking-wide uppercase">Contact Us</p>
+                  <div className="flex flex-col gap-1.5 items-center">
+                    {dog.organizationContactPhone && (
+                      <span className="flex items-center gap-2 text-primary text-sm">
+                        <Phone className="h-3.5 w-3.5 shrink-0" />{dog.organizationContactPhone}
+                      </span>
+                    )}
+                    {dog.organizationContactEmail && (
+                      <span className="flex items-center gap-2 text-primary text-sm">
+                        <Mail className="h-3.5 w-3.5 shrink-0" />{dog.organizationContactEmail}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="border-t border-primary/10 py-2.5 px-6 flex items-center justify-center gap-2">
+                <span className="text-xs text-muted-foreground/70 font-serif tracking-wider">Pawtrait Pros</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
