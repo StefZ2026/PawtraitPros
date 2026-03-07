@@ -2226,6 +2226,17 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                   >
                     <Archive className="h-3.5 w-3.5" />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive/50 hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Permanently delete ${dog.name} and all portraits?`)) onDeleteDog(dog.id);
+                    }}
+                    title="Delete pet permanently"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             ))}
