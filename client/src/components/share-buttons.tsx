@@ -170,15 +170,17 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
     setSending(true);
     const targetPhone = phoneNumber;
 
-    // Capture the full branded card (includes org logo) if available; fall back to raw portrait URL
-    let imageToSend: string | undefined = portraitImageUrl;
+    // Capture the full branded card (includes org logo)
+    let imageToSend: string | undefined;
     if (captureRef?.current) {
       try {
         toast({ title: "Preparing image...", description: "Adding branding to portrait." });
         const { toPng } = await import("html-to-image");
         imageToSend = await toPng(captureRef.current, { quality: 0.95, pixelRatio: 2, backgroundColor: "#ffffff" });
-      } catch {
-        // fall back to portrait URL
+      } catch (err: any) {
+        setSending(false);
+        toast({ title: "Failed to prepare image", description: err?.message || "Could not capture the portrait card.", variant: "destructive" });
+        return;
       }
     }
 
