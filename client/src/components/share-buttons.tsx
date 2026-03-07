@@ -251,7 +251,7 @@ export function ShareButtons({ url, title, text, dogId, dogName, dogBreed, orgId
         backgroundColor: "#ffffff",
       });
       setCapturedImage(dataUrl);
-      const targetShareUrl = overrideShareUrl || shareUrl;
+      const targetShareUrl = overrideShareUrl || ownerUrl || shareUrl;
       const defaultCaption = dogId
         ? `Meet ${dogName || 'this adorable pet'}! ${dogBreed ? `A beautiful ${dogBreed}. ` : ''}Check out their portrait at ${targetShareUrl}\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`
         : `Check out the beautiful pet portraits at ${showcaseName || 'our business'}! Visit ${targetShareUrl} to learn more.\n\n#pawtraitpros #petportrait #petprofessional #petgrooming`;
