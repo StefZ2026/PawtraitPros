@@ -4,46 +4,28 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { sendSms, formatPhoneNumber, isSmsConfigured } from "./sms";
-import { ADMIN_EMAIL, publicExpensiveRateLimiter } from "./helpers";
+import { resolveOrg, publicExpensiveRateLimiter } from "./helpers";
 
 export function registerCustomerSessionRoutes(app: Express): void {
 
   app.post("/api/customer-session", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
+      const userEmail = req.user.claims.email;
       const { dogId, portraitId, packType, customerPhone, orgId: bodyOrgId } = req.body;
 
       if (!dogId || !portraitId) {
         return res.status(400).json({ error: "dogId and portraitId are required" });
       }
 
-      // Resolve org: explicit orgId > owner lookup > dog's org (admin fallback)
-      let orgId: number | null = null;
-      if (isAdminUser && bodyOrgId) {
-        orgId = parseInt(bodyOrgId);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
+      // Resolve org: explicit orgId > dog's org > user's own org
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: bodyOrgId, dogId });
+      if (!org) return res.status(status || 404).json({ error });
+      const orgId = org.id;
 
-      // Verify the dog and portrait belong to this org
       const dog = await storage.getDog(parseInt(dogId));
-      if (!dog) {
-        return res.status(404).json({ error: "Dog not found" });
-      }
-
-      // If org not resolved yet (admin without orgId), fall back to dog's org
-      if (!orgId && isAdminUser && dog.organizationId) {
-        orgId = dog.organizationId;
-      }
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-
-      if (dog.organizationId !== orgId) {
-        return res.status(400).json({ error: "Dog not found or doesn't belong to your organization" });
+      if (!dog || dog.organizationId !== orgId) {
+        return res.status(400).json({ error: "Dog not found or doesn't belong to this organization" });
       }
 
       // Generate unique 8-char token

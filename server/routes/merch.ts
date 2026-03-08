@@ -6,7 +6,7 @@ import { getStripeClient } from "../stripeClient";
 import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, getFrameColors } from "../printful-config";
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "../printful";
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from "./email";
-import { ADMIN_EMAIL, publicExpensiveRateLimiter } from "./helpers";
+import { ADMIN_EMAIL, publicExpensiveRateLimiter, resolveOrg } from "./helpers";
 import { getGelatoProduct as getGelatoProductConfig, getAllGelatoProducts, sortOccasionsForDisplay, getOccasion } from "../gelato-config";
 import { generateFlatCardArtwork, generateFlatCardBack, generateFoldedOutsideArtwork, generateFoldedInsideArtwork, bufferToDataUri } from "../card-artwork";
 import { uploadToStorage, fetchImageAsBuffer } from "../supabase-storage";
@@ -528,15 +528,10 @@ export function registerMerchRoutes(app: Express): void {
         return res.status(404).json({ error: "Order not found" });
       }
 
-      // Verify user owns this order's organization
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      if (userEmail !== ADMIN_EMAIL) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || orderResult.rows[0].organization_id !== org.id) {
-          return res.status(403).json({ error: "Not authorized to view this order" });
-        }
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, userEmail, { orgId: orderResult.rows[0].organization_id });
+      if (!org) return res.status(orgSt || 403).json({ error: orgErr });
 
       const itemsResult = await pool.query(
         `SELECT * FROM merch_order_items WHERE order_id = $1`,
@@ -560,22 +555,11 @@ export function registerMerchRoutes(app: Express): void {
   app.get("/api/merch/orders", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
+      const userEmail = req.user.claims.email;
 
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId as string) : null;
-      let orgId: number | null = null;
-
-      if (isAdminUser && orgIdParam) {
-        orgId = orgIdParam;
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr });
+      const orgId = org.id;
 
       const ordersResult = await pool.query(
         `SELECT mo.*,

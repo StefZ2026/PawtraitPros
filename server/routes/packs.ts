@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { getPacks } from "@shared/pack-config";
-import { ADMIN_EMAIL } from "./helpers";
+import { resolveOrg } from "./helpers";
 
 export function registerPackRoutes(app: Express): void {
   app.get("/api/portrait-styles", async (req: Request, res: Response) => {
@@ -54,19 +54,10 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId as string | undefined;
 
-      let orgId: number | null = null;
-
-      if (isAdmin && orgIdParam) {
-        orgId = parseInt(orgIdParam);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-
-      if (!orgId) return res.json(null);
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.json(null);
+      const orgId = org.id;
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
       const species = (req.query.species as string) || "dog";
@@ -90,15 +81,9 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === ADMIN_EMAIL;
 
-      let org;
-      if (isAdmin && req.query.orgId) {
-        org = await storage.getOrganization(parseInt(req.query.orgId as string));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(status || 404).json({ error });
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
       const species = (req.query.species as string) || "dog";
@@ -119,15 +104,9 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === ADMIN_EMAIL;
 
-      let org;
-      if (isAdmin && req.body.organizationId) {
-        org = await storage.getOrganization(parseInt(req.body.organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.body.organizationId || req.body.orgId });
+      if (!org) return res.status(status || 404).json({ error });
 
       const { packType, date, species } = req.body;
       if (!packType || !["celebrate", "fun", "artistic"].includes(packType)) {

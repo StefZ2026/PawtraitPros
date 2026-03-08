@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
 import { stripeService } from "../stripeService";
 import { getStripePublishableKey, getStripeClient, getPriceId } from "../stripeClient";
-import { ADMIN_EMAIL, MAX_ADDITIONAL_SLOTS, validateAndCleanStripeData } from "./helpers";
+import { ADMIN_EMAIL, MAX_ADDITIONAL_SLOTS, validateAndCleanStripeData, resolveOrg } from "./helpers";
 
 /** Get the correct Stripe price ID for a plan based on test/live mode */
 function getEffectivePlanPrice(plan: any, testMode: boolean): string | null {
@@ -55,20 +55,13 @@ export function registerPlansBillingRoutes(app: Express): void {
       }
 
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
 
       if (!orgId) {
         return res.status(400).json({ error: "Organization ID is required. Please try again from your dashboard." });
       }
 
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
-
-      if (!callerIsAdmin && org.ownerId !== userId) {
-        return res.status(403).json({ error: "You don't have access to this organization" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr });
 
       // If org already has Stripe data from a different mode, clean it first
       // org.stripeTestMode is not in Drizzle schema — treat undefined as test mode
@@ -146,9 +139,9 @@ export function registerPlansBillingRoutes(app: Express): void {
         return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
 
-      // Ownership check: only admin or org owner can confirm checkout
-      const callerIsAdmin = req.user.claims.email === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
+      // Ownership check
+      const callerEmail = req.user.claims.email;
+      if (org.ownerId !== userId && callerEmail !== ADMIN_EMAIL) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -214,27 +207,10 @@ export function registerPlansBillingRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
       const { orgId: bodyOrgId } = req.body || {};
 
-      let org;
-      if (bodyOrgId) {
-        if (!callerIsAdmin) {
-          const ownerOrg = await storage.getOrganizationByOwner(userId);
-          if (!ownerOrg || ownerOrg.id !== parseInt(bodyOrgId)) {
-            return res.status(403).json({ error: "Access denied" });
-          }
-        }
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-
-      if (!org) {
-        return res.status(400).json({ error: "No billing account found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr || "No billing account found" });
 
       const stripeState = await validateAndCleanStripeData(org.id);
       if (!stripeState.customerId) {
@@ -261,24 +237,9 @@ export function registerPlansBillingRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      const reqOrgId = req.query.orgId ? parseInt(req.query.orgId as string) : null;
 
-      let org;
-      if (reqOrgId) {
-        org = await storage.getOrganization(reqOrgId);
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr || "Organization not found" });
 
       let renewalDate: string | null = null;
       let pendingPlanName: string | null = null;
@@ -336,8 +297,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       }
 
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
+      if (org.ownerId !== userId && callerEmail !== ADMIN_EMAIL) {
         return res.status(403).json({ error: "Access denied" });
       }
 
@@ -380,22 +340,15 @@ export function registerPlansBillingRoutes(app: Express): void {
   app.post("/api/stripe/cancel-plan-change", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
+      const callerEmail = req.user.claims.email;
       const { orgId } = req.body;
 
       if (!orgId) {
         return res.status(400).json({ error: "Organization ID is required" });
       }
 
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
-
-      const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr });
 
       if (!org.pendingPlanId) {
         return res.status(400).json({ error: "No pending plan change to cancel" });
@@ -425,23 +378,9 @@ export function registerPlansBillingRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      const reqOrgId = req.query.orgId ? parseInt(req.query.orgId as string) : null;
 
-      let org;
-      if (reqOrgId) {
-        org = await storage.getOrganization(reqOrgId);
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(404).json({ error: "No organization found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr || "No organization found" });
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       res.json({
         currentSlots: org.additionalPetSlots || 0,
@@ -460,27 +399,14 @@ export function registerPlansBillingRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
       const { quantity, orgId: bodyOrgId } = req.body;
 
       if (typeof quantity !== "number" || quantity < 0 || quantity > 5 || !Number.isInteger(quantity)) {
         return res.status(400).json({ error: "Quantity must be an integer between 0 and 5" });
       }
 
-      let org;
-      if (bodyOrgId) {
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(404).json({ error: "No organization found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr || "No organization found" });
 
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       if (!plan || plan.priceMonthly === 0) {

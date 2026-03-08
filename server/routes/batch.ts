@@ -4,7 +4,7 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { getPacks } from "@shared/pack-config";
 import { deliverPortraitToOwner } from "./delivery";
-import { ADMIN_EMAIL, sanitizeForPrompt } from "./helpers";
+import { ADMIN_EMAIL, sanitizeForPrompt, resolveOrg } from "./helpers";
 import { enqueue } from "../job-queue";
 
 export function registerBatchRoutes(app: Express): void {
@@ -14,7 +14,6 @@ export function registerBatchRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email || "";
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const { dogIds, packType, styleId, organizationId } = req.body;
       if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
@@ -24,14 +23,8 @@ export function registerBatchRoutes(app: Express): void {
         return res.status(400).json({ error: "Invalid packType" });
       }
 
-      // Resolve org
-      let org;
-      if (userIsAdmin && organizationId) {
-        org = await storage.getOrganization(parseInt(organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
+      if (!org) return res.status(status || 404).json({ error });
 
       const allStyles = await storage.getAllPortraitStyles();
 
@@ -132,20 +125,14 @@ export function registerBatchRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email || "";
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const { dogIds, organizationId } = req.body;
       if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
         return res.status(400).json({ error: "dogIds array is required" });
       }
 
-      let org;
-      if (userIsAdmin && organizationId) {
-        org = await storage.getOrganization(parseInt(organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
+      if (!org) return res.status(status || 404).json({ error });
 
       const results: Array<{ dogId: number; sent: boolean; method?: string; error?: string }> = [];
 
@@ -177,20 +164,12 @@ export function registerBatchRoutes(app: Express): void {
   app.post("/api/batch/start", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
+      const userEmail = req.user.claims.email;
       const { orgId: bodyOrgId } = req.body;
 
-      let orgId: number | null = null;
-      if (isAdminUser && bodyOrgId) {
-        orgId = parseInt(bodyOrgId);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(status || 404).json({ error });
+      const orgId = org.id;
 
       const result = await pool.query(
         `INSERT INTO batch_sessions (organization_id, staff_user_id, status, photo_count)
@@ -233,12 +212,10 @@ export function registerBatchRoutes(app: Express): void {
 
       const batch = batchResult.rows[0];
 
-      // Verify user owns this batch's organization
-      if (batch.owner_id !== userId) {
-        const userEmail = req.user.claims.email;
-        if (userEmail !== process.env.ADMIN_EMAIL) {
-          return res.status(403).json({ error: "Not authorized to access this batch" });
-        }
+      // Verify user can access this batch's organization
+      const userEmail = req.user.claims.email;
+      if (batch.owner_id !== userId && userEmail !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Not authorized to access this batch" });
       }
 
       if (batch.status !== 'uploading' && batch.status !== 'assigning') {

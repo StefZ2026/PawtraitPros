@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
-import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter, getSameOwnerPets, DOG_ALLOWED_FIELDS } from "./helpers";
+import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter, getSameOwnerPets, DOG_ALLOWED_FIELDS, resolveOrg } from "./helpers";
 import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
@@ -336,11 +336,10 @@ export function registerDogRoutes(app: Express): void {
   app.get("/api/my-dogs", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
-      const org = await storage.getOrganizationByOwner(userId);
+      const userEmail = req.user.claims.email;
 
-      if (!org) {
-        return res.json([]);
-      }
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.json([]);
 
       const orgDogs = await storage.getDogsByOrganization(org.id);
 
@@ -415,24 +414,10 @@ export function registerDogRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
-      let orgId: number;
-
-      let org;
-      if (userIsAdmin && req.body.organizationId) {
-        orgId = req.body.organizationId;
-        org = await storage.getOrganization(orgId);
-        if (!org) {
-          return res.status(400).json({ error: "Organization not found" });
-        }
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-        if (!org) {
-          return res.status(400).json({ error: "You need to create an organization first" });
-        }
-        orgId = org.id;
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.body.organizationId });
+      if (!org) return res.status(status || 400).json({ error });
+      const orgId = org.id;
 
       if (!org.planId || org.subscriptionStatus === "inactive") {
         return res.status(403).json({ error: "Please select a plan before adding pets" });
@@ -493,19 +478,15 @@ export function registerDogRoutes(app: Express): void {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const dog = await storage.getDog(id);
       if (!dog) {
         return res.status(404).json({ error: "Pet not found" });
       }
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized to edit this dog" });
-        }
-      }
+      // Verify user can access this dog's org
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
 
       const { selectedPortraitId, ...rawData } = req.body;
 
@@ -555,17 +536,12 @@ export function registerDogRoutes(app: Express): void {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const dog = await storage.getDog(id);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
 
       const date = req.body.date || new Date().toISOString().split("T")[0];
       await storage.updateDog(id, { checkedInAt: date } as any);
@@ -582,14 +558,9 @@ export function registerDogRoutes(app: Express): void {
       const orgId = parseInt(req.params.orgId);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || org.id !== orgId) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId });
+      if (!org) return res.status(status || 403).json({ error });
 
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
       const allDogs = await storage.getDogsByOrganization(orgId);
@@ -640,19 +611,14 @@ export function registerDogRoutes(app: Express): void {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const dog = await storage.getDog(id);
       if (!dog) {
         return res.status(404).json({ error: "Pet not found" });
       }
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized to delete this dog" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
 
       await storage.deleteDog(id);
       res.status(204).send();
@@ -703,17 +669,12 @@ export function registerDogRoutes(app: Express): void {
       const dogId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const dog = await storage.getDog(dogId);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
 
       const visitDate = req.query.date as string | undefined;
       const photos = await storage.getVisitPhotos(dogId, visitDate);
@@ -730,21 +691,12 @@ export function registerDogRoutes(app: Express): void {
       const dogId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       const dog = await storage.getDog(dogId);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
 
-      let org;
-      if (userIsAdmin) {
-        org = await storage.getOrganization(dog.organizationId);
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
 
       const { photo, caption } = req.body;
       if (!photo) return res.status(400).json({ error: "Photo data is required" });
@@ -794,7 +746,6 @@ export function registerDogRoutes(app: Express): void {
       const photoId = parseInt(req.params.photoId);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
 
       // Verify the photo exists and belongs to this dog
       const photos = await storage.getVisitPhotos(dogId);
@@ -803,12 +754,8 @@ export function registerDogRoutes(app: Express): void {
         return res.status(404).json({ error: "Photo not found" });
       }
 
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || photo.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
 
       await storage.deleteVisitPhoto(photoId);
       res.status(204).send();

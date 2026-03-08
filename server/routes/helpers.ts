@@ -273,32 +273,48 @@ export function toPublicOrg(org: any) {
   };
 }
 
-export async function resolveOrgForUser(userId: string, userEmail: string, dogId?: number): Promise<{ org: any; error?: string; status?: number }> {
-  const userIsAdmin = userEmail === ADMIN_EMAIL;
+/**
+ * Universal org resolution. Same logic for everyone — admin is just a permission level.
+ * Priority: explicit orgId > entity's org (dogId) > user's owned org.
+ * Admin only affects the access check, never the resolution logic.
+ */
+export async function resolveOrg(
+  userId: string,
+  userEmail: string,
+  opts: { orgId?: number | string | null; dogId?: number | string | null } = {}
+): Promise<{ org: any; error?: string; status?: number }> {
+  const canAccess = (org: any) => org.ownerId === userId || userEmail === ADMIN_EMAIL;
 
-  if (dogId) {
-    const dog = await storage.getDog(dogId);
-    if (!dog || !dog.organizationId) {
-      return { org: null, error: "Pet not found", status: 404 };
-    }
-    const org = await storage.getOrganization(dog.organizationId);
-    if (!org) {
-      return { org: null, error: "Organization not found", status: 404 };
-    }
-    if (userIsAdmin || org.ownerId === userId) {
-      return { org };
-    }
-    return { org: null, error: "Not authorized to access this dog", status: 403 };
-  }
-
-  const org = await storage.getOrganizationByOwner(userId);
-  if (org) {
+  // 1. Explicit orgId
+  if (opts.orgId) {
+    const id = typeof opts.orgId === "string" ? parseInt(opts.orgId) : opts.orgId;
+    if (isNaN(id)) return { org: null, error: "Invalid organization ID", status: 400 };
+    const org = await storage.getOrganization(id);
+    if (!org) return { org: null, error: "Organization not found", status: 404 };
+    if (!canAccess(org)) return { org: null, error: "Not authorized to access this organization", status: 403 };
     return { org };
   }
 
-  if (userIsAdmin) {
-    return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific business.", status: 400 };
+  // 2. Resolve from entity (dog)
+  if (opts.dogId) {
+    const dogIdNum = typeof opts.dogId === "string" ? parseInt(opts.dogId) : opts.dogId;
+    if (isNaN(dogIdNum)) return { org: null, error: "Invalid pet ID", status: 400 };
+    const dog = await storage.getDog(dogIdNum);
+    if (!dog || !dog.organizationId) return { org: null, error: "Pet not found", status: 404 };
+    const org = await storage.getOrganization(dog.organizationId);
+    if (!org) return { org: null, error: "Organization not found", status: 404 };
+    if (!canAccess(org)) return { org: null, error: "Not authorized to access this pet's organization", status: 403 };
+    return { org };
   }
 
-  return { org: null, error: "You need to create an organization first", status: 400 };
+  // 3. User's own org
+  const org = await storage.getOrganizationByOwner(userId);
+  if (org) return { org };
+
+  return { org: null, error: "No organization found. Please specify an organization.", status: 400 };
+}
+
+// Legacy wrapper — kept for any remaining callers during migration
+export async function resolveOrgForUser(userId: string, userEmail: string, dogId?: number): Promise<{ org: any; error?: string; status?: number }> {
+  return resolveOrg(userId, userEmail, dogId ? { dogId } : {});
 }
