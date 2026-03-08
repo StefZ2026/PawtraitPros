@@ -32,34 +32,42 @@ export function registerOrganizationRoutes(app: Express): void {
 
   // Create organization for current user
   app.post("/api/my-organization", isAuthenticated, async (req: any, res: Response) => {
-    try {
-      const userId = req.user.claims.sub;
+    const MAX_RETRIES = 2;
+    const userId = req.user.claims.sub;
 
-      // Check if user already has an org
-      const existingOrg = await storage.getOrganizationByOwner(userId);
-      if (existingOrg) {
-        return res.status(400).json({ error: "You already have an organization" });
+    // Check if user already has an org
+    const existingOrg = await storage.getOrganizationByOwner(userId);
+    if (existingOrg) {
+      return res.status(400).json({ error: "You already have an organization" });
+    }
+
+    const { name, description, websiteUrl, logoUrl } = req.body;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const slug = await generateUniqueSlug(name);
+
+        const org = await storage.createOrganization({
+          name,
+          slug,
+          description,
+          websiteUrl,
+          logoUrl: logoUrl || null,
+          ownerId: userId,
+          subscriptionStatus: "inactive",
+          portraitsUsedThisMonth: 0,
+        });
+
+        return res.status(201).json(org);
+      } catch (error) {
+        const err = error as any;
+        console.error(`[org] Create org attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, err?.message, err?.code, err?.detail, err?.constraint);
+        if (attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        return res.status(500).json({ error: err?.message || "Failed to create organization" });
       }
-
-      const { name, description, websiteUrl, logoUrl } = req.body;
-      const slug = await generateUniqueSlug(name);
-
-      const org = await storage.createOrganization({
-        name,
-        slug,
-        description,
-        websiteUrl,
-        logoUrl: logoUrl || null,
-        ownerId: userId,
-        subscriptionStatus: "inactive",
-        portraitsUsedThisMonth: 0,
-      });
-
-      res.status(201).json(org);
-    } catch (error) {
-      const err = error as any;
-      console.error("Error creating organization:", err?.message, err?.code, err?.detail, err?.constraint);
-      res.status(500).json({ error: err?.message || "Failed to create organization" });
     }
   });
 

@@ -127,6 +127,8 @@ export default function Admin() {
       const res = await apiRequest("POST", "/api/admin/organizations", data);
       return res.json();
     },
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * (attempt + 1), 3000),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
@@ -138,7 +140,7 @@ export default function Admin() {
       }
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error creating business", description: "Please try again. If this keeps happening, refresh the page.", variant: "destructive" });
     },
   });
 

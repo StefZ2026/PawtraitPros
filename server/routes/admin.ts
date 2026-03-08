@@ -13,30 +13,37 @@ export function registerAdminRoutes(app: Express): void {
 
   // Admin routes
   app.post("/api/admin/organizations", isAuthenticated, isAdmin, async (req: any, res: Response) => {
-    try {
-      const { name, description, websiteUrl } = req.body;
+    const MAX_RETRIES = 2;
+    const { name, description, websiteUrl } = req.body;
 
-      if (!name) {
-        return res.status(400).json({ error: "Organization name is required" });
+    if (!name) {
+      return res.status(400).json({ error: "Organization name is required" });
+    }
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const slug = await generateUniqueSlug(name);
+
+        const org = await storage.createOrganization({
+          name,
+          slug,
+          description: description || "",
+          websiteUrl: websiteUrl || "",
+          ownerId: null,
+          subscriptionStatus: "inactive",
+          portraitsUsedThisMonth: 0,
+        });
+
+        return res.status(201).json(org);
+      } catch (error) {
+        const err = error as any;
+        console.error(`[admin] Create org attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, err?.message, err?.code, err?.detail, err?.constraint);
+        if (attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        return res.status(500).json({ error: err?.message || "Failed to create organization" });
       }
-
-      const slug = await generateUniqueSlug(name);
-
-      const org = await storage.createOrganization({
-        name,
-        slug,
-        description: description || "",
-        websiteUrl: websiteUrl || "",
-        ownerId: null,
-        subscriptionStatus: "inactive",
-        portraitsUsedThisMonth: 0,
-      });
-
-      res.status(201).json(org);
-    } catch (error) {
-      const err = error as any;
-      console.error("Error creating organization (admin):", err?.message, err?.code, err?.detail, err?.constraint);
-      res.status(500).json({ error: err?.message || "Failed to create organization" });
     }
   });
 
