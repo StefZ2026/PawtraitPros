@@ -195,17 +195,20 @@ export default function Dashboard() {
   });
 
   const activeOrg = isAdmin ? (selectedOrgId ? allOrgs.find(o => o.id === selectedOrgId) : null) : myOrganization;
+  const needsIndustryType = activeOrg && !(activeOrg as any).industryType;
   const needsPlanSelection = activeOrg && !activeOrg.planId && activeOrg.subscriptionStatus === "inactive";
   const hasBaseline = activeOrg?.name && activeOrg?.speciesHandled && activeOrg?.planId;
   const needsOnboarding = activeOrg && activeOrg.planId && !activeOrg.onboardingCompleted && !hasBaseline;
 
   useEffect(() => {
-    if (needsPlanSelection && isAuthenticated && activeOrg) {
+    if (needsIndustryType && isAuthenticated && activeOrg) {
+      navigate(isAdmin ? `/onboarding/${activeOrg.id}` : "/onboarding");
+    } else if (needsPlanSelection && isAuthenticated && activeOrg) {
       navigate(`/choose-plan/${activeOrg.id}`);
     } else if (needsOnboarding && isAuthenticated && activeOrg) {
       navigate(isAdmin ? `/onboarding/${activeOrg.id}` : "/onboarding");
     }
-  }, [needsPlanSelection, needsOnboarding, isAuthenticated, activeOrg, navigate]);
+  }, [needsIndustryType, needsPlanSelection, needsOnboarding, isAuthenticated, activeOrg, navigate]);
 
   if (authLoading) {
     return (

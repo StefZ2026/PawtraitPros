@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams, Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -80,7 +80,17 @@ export default function ChoosePlan() {
   const isExistingSubscriber = subInfo?.hasStripeSubscription || (subInfo?.subscriptionStatus === "active");
   const currentPlanId = subInfo?.currentPlanId || myOrg?.planId;
 
-  const orgVertical = (isAdminFlow ? adminTargetOrg?.industryType : myOrg?.industryType) || null;
+  const org = isAdminFlow ? adminTargetOrg : myOrg;
+  const orgVertical = org?.industryType || null;
+
+  // If org is loaded but has no industry type, redirect to onboarding to set it first
+  useEffect(() => {
+    if (org && !org.industryType) {
+      const target = isAdminFlow && orgId ? `/onboarding/${orgId}` : "/onboarding";
+      navigate(target);
+    }
+  }, [org, isAdminFlow, orgId, navigate]);
+
   const activePlans = (plans || [])
     .filter(p => p.isActive && (!p.vertical || p.vertical === orgVertical))
     .sort((a, b) => a.priceMonthly - b.priceMonthly);
