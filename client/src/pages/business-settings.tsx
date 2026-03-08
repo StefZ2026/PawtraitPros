@@ -326,6 +326,12 @@ export default function BusinessSettings() {
             Pawtrait Pros
           </Link>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="gap-1" asChild>
+              <Link href={isAdminView ? `/dashboard?org=${org.id}` : "/dashboard"}>
+                <PawPrint className="h-3.5 w-3.5" />
+                Pups
+              </Link>
+            </Button>
             {isAdmin && (
               <Button variant="outline" size="sm" className="gap-1" data-testid="button-back-to-admin" asChild>
                 <Link href="/admin">

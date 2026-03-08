@@ -239,6 +239,14 @@ export default function Dashboard() {
             <Button variant="ghost" size="sm" data-testid="link-gallery-dashboard" asChild>
               <Link href="/gallery">Gallery</Link>
             </Button>
+            {isAuthenticated && selectedOrg && (
+              <Button variant="ghost" size="sm" className="gap-1" asChild>
+                <Link href={isAdmin ? `/admin/business/${selectedOrg.id}` : "/settings"}>
+                  <Settings className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Settings</span>
+                </Link>
+              </Button>
+            )}
             {isAdmin && selectedOrgId && (
               <Button variant="outline" size="sm" className="gap-1" data-testid="button-back-to-admin" asChild>
                 <Link href="/admin">
