@@ -7,6 +7,17 @@ import { uploadToStorage, isDataUri } from "../supabase-storage";
 
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
+export const ORG_ALLOWED_FIELDS = [
+  "name", "description", "websiteUrl", "logoUrl",
+  "contactName", "contactEmail", "contactPhone",
+  "socialFacebook", "socialInstagram", "socialTwitter", "socialNextdoor",
+  "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
+  "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
+  "notes", "isActive", "planId", "speciesHandled", "onboardingCompleted",
+  "industryType", "captureMode", "deliveryMode", "notificationMode",
+  "subscriptionStatus", "stripeCustomerId", "stripeSubscriptionId", "stripeTestMode", "billingCycleStart",
+];
+
 export function sanitizeForPrompt(input: string): string {
   return input
     .replace(/[^\w\s\-'.,:;!?()]/g, '')
