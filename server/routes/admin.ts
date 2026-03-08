@@ -295,6 +295,7 @@ export function registerAdminRoutes(app: Express): void {
         "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
         "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
         "notes", "isActive", "planId", "speciesHandled", "onboardingCompleted",
+        "industryType", "captureMode", "deliveryMode", "notificationMode",
         "subscriptionStatus", "stripeCustomerId", "stripeSubscriptionId", "stripeTestMode", "billingCycleStart"
       ];
       const updates: Record<string, any> = {};
