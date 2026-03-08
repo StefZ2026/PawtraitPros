@@ -19,6 +19,7 @@ export function registerCustomerSessionRoutes(app: Express): void {
         return res.status(400).json({ error: "dogId and portraitId are required" });
       }
 
+      // Resolve org: explicit orgId > owner lookup > dog's org (admin fallback)
       let orgId: number | null = null;
       if (isAdminUser && bodyOrgId) {
         orgId = parseInt(bodyOrgId);
@@ -26,13 +27,22 @@ export function registerCustomerSessionRoutes(app: Express): void {
         const org = await storage.getOrganizationByOwner(userId);
         if (org) orgId = org.id;
       }
+
+      // Verify the dog and portrait belong to this org
+      const dog = await storage.getDog(parseInt(dogId));
+      if (!dog) {
+        return res.status(404).json({ error: "Dog not found" });
+      }
+
+      // If org not resolved yet (admin without orgId), fall back to dog's org
+      if (!orgId && isAdminUser && dog.organizationId) {
+        orgId = dog.organizationId;
+      }
       if (!orgId) {
         return res.status(404).json({ error: "Organization not found" });
       }
 
-      // Verify the dog and portrait belong to this org
-      const dog = await storage.getDog(parseInt(dogId));
-      if (!dog || dog.organizationId !== orgId) {
+      if (dog.organizationId !== orgId) {
         return res.status(400).json({ error: "Dog not found or doesn't belong to your organization" });
       }
 
