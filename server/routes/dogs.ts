@@ -457,8 +457,13 @@ export function registerDogRoutes(app: Express): void {
       // (daycares/boarders may not have it at check-in time)
 
       // Auto-set checkedInAt to today on creation
+      const today = new Date().toISOString().split("T")[0];
       if (!dogData.checkedInAt) {
-        dogData.checkedInAt = new Date().toISOString().split("T")[0];
+        dogData.checkedInAt = today;
+      }
+      // For groomers: checked in = queued for portrait (same-day workflow)
+      if (org.industryType === "groomer") {
+        dogData.portraitQueueDate = today;
       }
 
       const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
@@ -565,12 +570,65 @@ export function registerDogRoutes(app: Express): void {
       const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
       if (!org) return res.status(status || 403).json({ error });
 
-      // Set to sentinel date so created-today dogs are also excluded from today's list
-      await storage.updateDog(id, { checkedInAt: "1970-01-01" } as any);
-      res.json({ success: true, checkedInAt: "1970-01-01" });
+      const today = new Date().toISOString().split("T")[0];
+      // Auto-queue occasional daycare dogs for portrait on checkout
+      const autoQueued = (dog as any).visitFrequency === "occasional";
+      await storage.updateDog(id, {
+        checkedInAt: null,
+        ...(autoQueued ? { portraitQueueDate: today } : {}),
+      } as any);
+      res.json({ success: true, checkedInAt: null, autoQueued });
     } catch (error) {
       console.error("Error checking out pet:", error);
       res.status(500).json({ error: "Failed to check out pet" });
+    }
+  });
+
+  // Add a pet to today's portrait queue (must be checked in first)
+  app.post("/api/dogs/:id/queue-portrait", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+
+      const today = new Date().toISOString().split("T")[0];
+      // Must be checked in to enter portrait queue
+      if ((dog as any).checkedInAt !== today) {
+        return res.status(400).json({ error: "Pet must be checked in before adding to portrait queue" });
+      }
+
+      await storage.updateDog(id, { portraitQueueDate: today } as any);
+      res.json({ success: true, portraitQueueDate: today });
+    } catch (error) {
+      console.error("Error queuing pet for portrait:", error);
+      res.status(500).json({ error: "Failed to queue pet for portrait" });
+    }
+  });
+
+  // Remove a pet from today's portrait queue
+  app.post("/api/dogs/:id/dequeue-portrait", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+
+      await storage.updateDog(id, { portraitQueueDate: null } as any);
+      res.json({ success: true, portraitQueueDate: null });
+    } catch (error) {
+      console.error("Error dequeuing pet from portrait:", error);
+      res.status(500).json({ error: "Failed to dequeue pet from portrait" });
     }
   });
 

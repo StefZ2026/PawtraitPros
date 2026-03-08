@@ -649,23 +649,30 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   const selectedPack = packs.find((p: any) => p.type === selectedPackType);
   const [previewPackType, setPreviewPackType] = useState<string | null>(null);
 
-  // Filter dogs to today's clients (checked-in today OR created today) — only active
-  const todaysDogs = useMemo(() => {
+  // Portrait Queue: dogs queued for portrait generation today
+  const portraitQueueDogs = useMemo(() => {
+    return activeDogs.filter(d => (d as any).portraitQueueDate === today);
+  }, [activeDogs, today]);
+
+  // Checked In: dogs physically present today but NOT in portrait queue
+  const checkedInDogs = useMemo(() => {
     return activeDogs.filter(d => {
       const checkedIn = (d as any).checkedInAt;
-      // Explicitly checked in today
-      if (checkedIn === today) return true;
-      // Explicitly checked out (has a non-today checkedInAt) — exclude even if created today
-      if (checkedIn && checkedIn !== today) return false;
-      // No checkedInAt — show if created today
-      const created = new Date(d.createdAt).toISOString().split("T")[0];
-      return created === today;
+      if (checkedIn !== today) return false;
+      // Exclude dogs already in portrait queue
+      return (d as any).portraitQueueDate !== today;
     });
   }, [activeDogs, today]);
 
-  // All Pets except today (for search/check-in) — only active (not archived)
+  // Keep todaysDogs as union for backward compat (visit photos, etc.)
+  const todaysDogs = useMemo(() => {
+    return [...portraitQueueDogs, ...checkedInDogs];
+  }, [portraitQueueDogs, checkedInDogs]);
+
+  // All Pets: not checked in today (for search/check-in)
   const allPetsExceptToday = useMemo(() => {
-    return activeDogs.filter(d => !todaysDogs.includes(d));
+    const todaySet = new Set(todaysDogs.map(d => d.id));
+    return activeDogs.filter(d => !todaySet.has(d.id));
   }, [activeDogs, todaysDogs]);
 
   const filteredAllPets = useMemo(() => {
@@ -683,8 +690,8 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Pet selection for batch generation
   const [selectedPetIds, setSelectedPetIds] = useState<Set<number>>(new Set());
 
-  const readyForGeneration = todaysDogs.filter(d => d.originalPhotoUrl && !d.portrait?.generatedImageUrl);
-  const generatedToday = todaysDogs.filter(d => d.portrait?.generatedImageUrl);
+  const readyForGeneration = portraitQueueDogs.filter(d => d.originalPhotoUrl && !d.portrait?.generatedImageUrl);
+  const generatedToday = portraitQueueDogs.filter(d => d.portrait?.generatedImageUrl);
 
   // Owner grouping: group today's dogs by normalized ownerEmail or ownerPhone
   const ownerGroups = useMemo(() => {
@@ -791,6 +798,36 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
     },
   });
 
+  // Add pet to portrait queue
+  const queuePortraitMutation = useMutation({
+    mutationFn: async (dogId: number) => {
+      return apiRequest("POST", `/api/dogs/${dogId}/queue-portrait`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+      toast({ title: "Queued", description: "Pet added to portrait queue." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Remove pet from portrait queue
+  const dequeuePortraitMutation = useMutation({
+    mutationFn: async (dogId: number) => {
+      return apiRequest("POST", `/api/dogs/${dogId}/dequeue-portrait`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+      toast({ title: "Removed", description: "Pet removed from portrait queue." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Visit photos for today's dogs
   const { data: visitPhotosMap = {} } = useQuery<Record<number, any[]>>({
     queryKey: ["/api/visit-photos-today", organization.id, today],
@@ -886,7 +923,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       // Daycare-specific fields
       if (industryType === "daycare") {
         body.visitFrequency = newPetVisitFrequency;
-        body.updatePreference = newPetVisitFrequency === "occasional" ? null : newPetUpdatePreference;
       }
       // Boarding-specific fields
       if (industryType === "boarding" && newPetStayNights) {
@@ -907,7 +943,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       setNewPetVisitFrequency("daily");
       setNewPetUpdatePreference("weekly");
       setNewPetStayNights("");
-      toast({ title: "Client added!", description: `${newPetName} has been added to today's list.` });
+      toast({ title: "Client added!", description: `${newPetName} has been checked in.` });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1246,13 +1282,13 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         </CardContent>
       </Card>
 
-      {/* SECTION 2: Today's Clients */}
+      {/* SECTION 2: Portrait Queue */}
       <div>
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Camera className="h-5 w-5 text-primary" />
-            Today's Clients
-            <Badge variant="secondary">{todaysDogs.length}</Badge>
+            <Sparkles className="h-5 w-5 text-primary" />
+            Portrait Queue
+            <Badge variant="secondary">{portraitQueueDogs.length}</Badge>
           </h2>
           <div className="flex items-center gap-2">
             {hasPlan && !atPetLimit && (
@@ -1311,54 +1347,29 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     <Input placeholder="owner@email.com" value={newPetOwnerEmail} onChange={(e) => setNewPetOwnerEmail(e.target.value)} />
                     <p className="text-xs text-muted-foreground mt-1">Optional — needed for delivery later.</p>
                   </div>
-                  {/* Daycare-specific: visit frequency + update preference */}
+                  {/* Daycare-specific: visit frequency */}
                   {industryType === "daycare" && (
-                    <>
-                      <div>
-                        <label className="text-sm font-medium mb-1 block">How often do they visit?</label>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {[
-                            { value: "daily", label: "Daily" },
-                            { value: "several_weekly", label: "Several/wk" },
-                            { value: "weekly", label: "Weekly" },
-                            { value: "occasional", label: "Occasional" },
-                          ].map((opt) => (
-                            <Button
-                              key={opt.value}
-                              variant={newPetVisitFrequency === opt.value ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => setNewPetVisitFrequency(opt.value)}
-                            >
-                              {opt.label}
-                            </Button>
-                          ))}
-                        </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">How often do they visit?</label>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {[
+                          { value: "daily", label: "Daily" },
+                          { value: "several_weekly", label: "Several/wk" },
+                          { value: "weekly", label: "Weekly" },
+                          { value: "occasional", label: "Occasional" },
+                        ].map((opt) => (
+                          <Button
+                            key={opt.value}
+                            variant={newPetVisitFrequency === opt.value ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setNewPetVisitFrequency(opt.value)}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
                       </div>
-                      {newPetVisitFrequency !== "occasional" && (
-                        <div>
-                          <label className="text-sm font-medium mb-1 block">Portrait update frequency</label>
-                          <div className="flex gap-2">
-                            <Button
-                              variant={newPetUpdatePreference === "weekly" ? "default" : "outline"}
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => setNewPetUpdatePreference("weekly")}
-                            >
-                              Weekly
-                            </Button>
-                            <Button
-                              variant={newPetUpdatePreference === "biweekly" ? "default" : "outline"}
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => setNewPetUpdatePreference("biweekly")}
-                            >
-                              Biweekly
-                            </Button>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">How often the owner receives a new portrait.</p>
-                        </div>
-                      )}
-                    </>
+                      <p className="text-xs text-muted-foreground mt-1">Occasional visitors get a portrait on check-out.</p>
+                    </div>
                   )}
                   {/* Boarding-specific: number of nights */}
                   {industryType === "boarding" && (
@@ -1433,12 +1444,12 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-48" />)}
           </div>
-        ) : todaysDogs.length === 0 ? (
+        ) : portraitQueueDogs.length === 0 ? (
           <Card className="py-8">
             <CardContent className="text-center">
-              <Camera className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
-              <h3 className="font-medium mb-1">No clients yet today</h3>
-              <p className="text-sm text-muted-foreground mb-4">Add your first client to get started</p>
+              <Sparkles className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+              <h3 className="font-medium mb-1">Portrait queue is empty</h3>
+              <p className="text-sm text-muted-foreground mb-4">Check in pets below, then add them to the queue</p>
               {hasPlan && !atPetLimit && (
                 <Button className="gap-2" onClick={() => setShowAddClient(true)}>
                   <Plus className="h-4 w-4" />
@@ -1449,7 +1460,7 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
           </Card>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {todaysDogs.map((dog) => (
+            {portraitQueueDogs.map((dog) => (
               <Link key={dog.id} href={`/pawfile/${dog.id}`}>
                 <Card className="overflow-hidden group">
                   <div className="aspect-square relative bg-muted">
@@ -1464,11 +1475,11 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                     )}
                     <button
                       className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/50 hover:bg-red-500 flex items-center justify-center shadow transition-colors z-10"
-                      title="Remove from today's clients"
+                      title="Remove from portrait queue"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        checkOutMutation.mutate(dog.id);
+                        dequeuePortraitMutation.mutate(dog.id);
                       }}
                     >
                       <X className="h-4 w-4 text-white" />
@@ -2190,6 +2201,63 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
 
           </CardContent>
         </Card>
+      )}
+
+      {/* SECTION 3: Checked In (physically present, not in portrait queue) */}
+      {checkedInDogs.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <LogIn className="h-5 w-5 text-amber-500" />
+              Checked In
+              <Badge variant="secondary">{checkedInDogs.length}</Badge>
+            </h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {checkedInDogs.map((dog) => (
+              <div key={dog.id} className="flex items-center gap-3 p-2 rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 hover:bg-amber-100/50 dark:hover:bg-amber-950/40 transition-colors">
+                <Link href={`/pawfile/${dog.id}`} className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-12 h-12 rounded-lg bg-muted overflow-hidden shrink-0">
+                    {dog.portrait?.generatedImageUrl ? (
+                      <img src={dog.portrait.generatedImageUrl} alt={dog.name} className="w-full h-full object-cover" />
+                    ) : dog.originalPhotoUrl ? (
+                      <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        {dog.species === "cat" ? <Cat className="h-5 w-5 text-muted-foreground/30" /> : <Dog className="h-5 w-5 text-muted-foreground/30" />}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{dog.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{dog.breed}</p>
+                  </div>
+                </Link>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-xs border-primary/50 text-primary hover:bg-primary/10"
+                    onClick={() => queuePortraitMutation.mutate(dog.id)}
+                    disabled={queuePortraitMutation.isPending}
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Queue
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-xs text-muted-foreground"
+                    onClick={() => checkOutMutation.mutate(dog.id)}
+                    disabled={checkOutMutation.isPending}
+                  >
+                    <LogOut className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* All Pets — searchable, expandable */}

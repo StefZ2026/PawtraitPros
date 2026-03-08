@@ -57,6 +57,7 @@ export const organizations = pgTable("organizations", {
   captureMode: text("capture_mode"), // "hero" | "batch" — hero=single photo, batch=multi-upload
   deliveryMode: text("delivery_mode").default("receipt"), // "receipt" | "receipt_sms" | "receipt_sms_pod"
   notificationMode: text("notification_mode").default("both"), // "sms" | "email" | "both" — how customers are notified at departure
+  portraitCadence: text("portrait_cadence"), // "weekly" | "biweekly" — org-wide default for daycare portrait rotation (null = weekly)
   speciesHandled: text("species_handled"), // dogs, cats, both — must be explicitly chosen during onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
@@ -94,6 +95,7 @@ export const dogs = pgTable("dogs", {
   visitFrequency: text("visit_frequency"), // "daily" | "several_weekly" | "weekly" | "occasional" (daycare)
   updatePreference: text("update_preference"), // "weekly" | "biweekly" | null (daycare — how often owner gets portrait updates)
   stayNights: integer("stay_nights"), // number of nights for boarding stay
+  portraitQueueDate: text("portrait_queue_date"), // YYYY-MM-DD — when set to today, dog is in today's portrait queue. Null = not queued.
   nextPortraitDate: text("next_portrait_date"), // YYYY-MM-DD — when this dog is next due for auto-rotation
   lastPortraitStyleId: integer("last_portrait_style_id"), // track last style used for never-repeat logic
   isAvailable: boolean("is_available").default(true).notNull(),

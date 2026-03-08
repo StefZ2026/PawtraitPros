@@ -14,7 +14,7 @@ export const ORG_ALLOWED_FIELDS = [
   "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
   "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
   "notes", "isActive", "planId", "speciesHandled", "onboardingCompleted",
-  "industryType", "captureMode", "deliveryMode", "notificationMode",
+  "industryType", "captureMode", "deliveryMode", "notificationMode", "portraitCadence",
   "subscriptionStatus", "stripeCustomerId", "stripeSubscriptionId", "stripeTestMode", "billingCycleStart",
 ];
 
@@ -22,6 +22,7 @@ export const DOG_ALLOWED_FIELDS = [
   "name", "species", "breed", "age", "description",
   "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable",
   "adoptionUrl", "originalPhotoUrl", "externalId", "externalSource", "tags",
+  "portraitQueueDate", "visitFrequency", "stayNights",
 ];
 
 export function sanitizeForPrompt(input: string): string {

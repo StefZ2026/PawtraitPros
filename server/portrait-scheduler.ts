@@ -50,6 +50,13 @@ async function processPortraitRotation() {
 
       for (const dog of orgDogs) {
         try {
+          // Dog must be checked in today to enter portrait queue
+          const checkedIn = (dog as any).checkedInAt;
+          if (checkedIn !== today) {
+            console.log(`[scheduler] ${dog.name}: due but not checked in today (checkedInAt=${checkedIn}), skipping`);
+            continue;
+          }
+
           const species = (dog.species || 'dog') as 'dog' | 'cat';
 
           // Get today's pack selection for this org + species
@@ -60,7 +67,7 @@ async function processPortraitRotation() {
 
           if (packResult.rows.length === 0) {
             // No pack selected for today — advance date so dog doesn't get stuck
-            const nextDate = calculateNextPortraitDate(dog, today);
+            const nextDate = calculateNextPortraitDate(dog, today, org);
             await storage.advanceNextPortraitDate(dog.id, nextDate);
             console.log(`[scheduler] ${dog.name}: no daily pack selected for org ${orgId}, bumped to ${nextDate}`);
             continue;
@@ -78,7 +85,7 @@ async function processPortraitRotation() {
           const stylePool = availableStyleIds.length > 0 ? availableStyleIds : pack.styleIds;
 
           if (stylePool.length === 0) {
-            const nextDate = calculateNextPortraitDate(dog, today);
+            const nextDate = calculateNextPortraitDate(dog, today, org);
             await storage.advanceNextPortraitDate(dog.id, nextDate);
             console.log(`[scheduler] ${dog.name}: no styles available, bumped to ${nextDate}`);
             continue;
@@ -128,8 +135,11 @@ async function processPortraitRotation() {
           });
           await storage.incrementOrgPortraitsUsed(orgId);
 
-          // Advance next portrait date
-          const nextDate = calculateNextPortraitDate(dog, today);
+          // Mark dog as in today's portrait queue
+          await storage.updateDog(dog.id, { portraitQueueDate: today } as any);
+
+          // Advance next portrait date (use org cadence for daycares)
+          const nextDate = calculateNextPortraitDate(dog, today, org);
           await storage.advanceNextPortraitDate(dog.id, nextDate);
 
           // Deliver to owner (delivery.ts handles petCode generation if needed)
@@ -154,7 +164,7 @@ async function processPortraitRotation() {
  * Calculate the next portrait date for a dog based on its vertical settings.
  * Returns null when all scheduled portraits are done (e.g. boarding stay complete).
  */
-function calculateNextPortraitDate(dog: any, currentDate: string): string | null {
+function calculateNextPortraitDate(dog: any, currentDate: string, org?: any): string | null {
   // Boarding: calculate from stay schedule
   if (dog.stayNights) {
     // Use checkedInAt first, then createdAt, then fall back to estimating from current date
@@ -170,7 +180,7 @@ function calculateNextPortraitDate(dog: any, currentDate: string): string | null
     } else {
       // Last resort: can't determine check-in, treat as daycare fallback
       console.warn(`[scheduler] Boarding dog ${dog.name} (${dog.id}) has no checkedInAt or createdAt — using daycare fallback`);
-      const preference = dog.updatePreference || 'weekly';
+      const preference = org?.portraitCadence || 'weekly';
       const daysToAdd = preference === 'biweekly' ? 14 : 7;
       const next = new Date(currentDate);
       next.setDate(next.getDate() + daysToAdd);
@@ -184,8 +194,8 @@ function calculateNextPortraitDate(dog: any, currentDate: string): string | null
     return nextDate || null; // null = all boarding portraits done
   }
 
-  // Daycare: based on updatePreference (weekly or biweekly)
-  const preference = dog.updatePreference || 'weekly';
+  // Daycare: based on org-level portraitCadence (falls back to weekly)
+  const preference = org?.portraitCadence || 'weekly';
   const daysToAdd = preference === 'biweekly' ? 14 : 7;
   const next = new Date(currentDate);
   next.setDate(next.getDate() + daysToAdd);

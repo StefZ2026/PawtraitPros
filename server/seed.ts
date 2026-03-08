@@ -313,7 +313,12 @@ export async function seedDatabase() {
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS stay_nights INTEGER'); // boarding stay length
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS next_portrait_date TEXT'); // YYYY-MM-DD auto-rotation
         await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS last_portrait_style_id INTEGER'); // never-repeat tracking
+        await pool.query('ALTER TABLE dogs ADD COLUMN IF NOT EXISTS portrait_queue_date TEXT'); // YYYY-MM-DD — in today's portrait queue
         console.log('[migration] Dog vertical fields ready');
+
+        // Organizations — portrait cadence for daycare auto-rotation
+        await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS portrait_cadence TEXT'); // weekly | biweekly
+        console.log('[migration] Organization portrait cadence ready');
 
         // Subscription plans — vertical-specific columns
         await pool.query('ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS vertical TEXT');

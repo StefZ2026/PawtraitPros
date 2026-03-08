@@ -848,6 +848,51 @@ export default function BusinessSettings() {
             </CardContent>
           </Card>
 
+          {/* Portrait Cadence (daycare only) */}
+          {orgIndustryType === "daycare" && (
+            <Card data-testid="section-portrait-cadence">
+              <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-5 w-5 text-primary" />
+                  <div>
+                    <CardTitle className="text-base">Portrait Schedule</CardTitle>
+                    <CardDescription>How often regular clients receive updated portraits</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[
+                    { value: "weekly", label: "Weekly", description: "New portrait every 7 days for regulars" },
+                    { value: "biweekly", label: "Biweekly", description: "New portrait every 14 days for regulars" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left transition-all ${
+                        (org as any).portraitCadence === opt.value || (!((org as any).portraitCadence) && opt.value === "weekly")
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                      onClick={() => {
+                        updateMutation.mutate({ portraitCadence: opt.value } as any);
+                      }}
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{opt.label}</p>
+                        <p className="text-xs text-muted-foreground">{opt.description}</p>
+                      </div>
+                      {((org as any).portraitCadence === opt.value || (!((org as any).portraitCadence) && opt.value === "weekly")) && (
+                        <Check className="h-4 w-4 text-primary" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">Occasional visitors get a portrait on check-out instead.</p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Social Media */}
           <Card data-testid="section-social">
             <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
