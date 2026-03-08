@@ -652,7 +652,12 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
   // Filter dogs to today's clients (checked-in today OR created today) — only active
   const todaysDogs = useMemo(() => {
     return activeDogs.filter(d => {
-      if ((d as any).checkedInAt === today) return true;
+      const checkedIn = (d as any).checkedInAt;
+      // Explicitly checked in today
+      if (checkedIn === today) return true;
+      // Explicitly checked out (has a non-today checkedInAt) — exclude even if created today
+      if (checkedIn && checkedIn !== today) return false;
+      // No checkedInAt — show if created today
       const created = new Date(d.createdAt).toISOString().split("T")[0];
       return created === today;
     });
@@ -765,6 +770,21 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
       queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
       toast({ title: "Checked in!", description: "Pet added to today's list." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // Check out a pet (remove from today's clients)
+  const checkOutMutation = useMutation({
+    mutationFn: async (dogId: number) => {
+      return apiRequest("POST", `/api/dogs/${dogId}/check-out`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/my-dogs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/organizations"] });
+      toast({ title: "Checked out", description: "Pet removed from today's list." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -1442,6 +1462,17 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                         {dog.species === "cat" ? <Cat className="h-12 w-12 text-muted-foreground/30" /> : <Dog className="h-12 w-12 text-muted-foreground/30" />}
                       </div>
                     )}
+                    <button
+                      className="absolute top-2 left-2 w-7 h-7 rounded-full bg-black/50 hover:bg-red-500 flex items-center justify-center shadow transition-colors z-10"
+                      title="Remove from today's clients"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        checkOutMutation.mutate(dog.id);
+                      }}
+                    >
+                      <X className="h-4 w-4 text-white" />
+                    </button>
                     <div className="absolute top-2 right-2">
                       {dog.portrait?.generatedImageUrl ? (
                         <div className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center shadow">

@@ -552,6 +552,28 @@ export function registerDogRoutes(app: Express): void {
     }
   });
 
+  // Check out a pet (remove from today's clients)
+  app.post("/api/dogs/:id/check-out", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+
+      // Set to sentinel date so created-today dogs are also excluded from today's list
+      await storage.updateDog(id, { checkedInAt: "1970-01-01" } as any);
+      res.json({ success: true, checkedInAt: "1970-01-01" });
+    } catch (error) {
+      console.error("Error checking out pet:", error);
+      res.status(500).json({ error: "Failed to check out pet" });
+    }
+  });
+
   // Same-owner check-in suggestions
   app.get("/api/organizations/:orgId/same-owner-suggestions", isAuthenticated, async (req: any, res: Response) => {
     try {
