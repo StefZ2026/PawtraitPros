@@ -34,8 +34,9 @@ export function registerAdminRoutes(app: Express): void {
 
       res.status(201).json(org);
     } catch (error) {
-      console.error("Error creating organization (admin):", error);
-      res.status(500).json({ error: "Failed to create organization" });
+      const err = error as any;
+      console.error("Error creating organization (admin):", err?.message, err?.code, err?.detail, err?.constraint);
+      res.status(500).json({ error: err?.message || "Failed to create organization" });
     }
   });
 
