@@ -7,7 +7,7 @@ import { canStartFreeTrial, markFreeTrialUsed } from "../subscription";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
 import type { InsertOrganization } from "@shared/schema";
-import { ADMIN_EMAIL, isAdmin, generateUniqueSlug, computePetLimitInfo, checkDogLimit, createDogWithPortrait, ORG_ALLOWED_FIELDS } from "./helpers";
+import { ADMIN_EMAIL, isAdmin, generateUniqueSlug, computePetLimitInfo, checkDogLimit, createDogWithPortrait, ORG_ALLOWED_FIELDS, DOG_ALLOWED_FIELDS } from "./helpers";
 
 export function registerAdminRoutes(app: Express): void {
 
@@ -183,7 +183,11 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(403).json({ error: limitError });
       }
 
-      const { originalPhotoUrl, generatedPortraitUrl, styleId, ...dogData } = req.body;
+      const { originalPhotoUrl, generatedPortraitUrl, styleId, ...rawData } = req.body;
+      const dogData: Record<string, any> = {};
+      for (const key of DOG_ALLOWED_FIELDS) {
+        if (rawData[key] !== undefined) dogData[key] = rawData[key];
+      }
 
       if (dogData.name && containsInappropriateLanguage(dogData.name)) {
         return res.status(400).json({ error: "Please choose a family-friendly name" });
@@ -294,6 +298,10 @@ export function registerAdminRoutes(app: Express): void {
         if (req.body[field] !== undefined) {
           updates[field] = req.body[field];
         }
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.json(org);
       }
 
       if (updates.planId !== undefined) {

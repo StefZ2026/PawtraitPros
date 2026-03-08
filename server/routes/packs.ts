@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { getPacks } from "@shared/pack-config";
+import { ADMIN_EMAIL } from "./helpers";
 
 export function registerPackRoutes(app: Express): void {
   app.get("/api/portrait-styles", async (req: Request, res: Response) => {
@@ -53,7 +54,7 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+      const isAdmin = userEmail === ADMIN_EMAIL;
       const orgIdParam = req.query.orgId as string | undefined;
 
       let orgId: number | null = null;
@@ -89,7 +90,7 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+      const isAdmin = userEmail === ADMIN_EMAIL;
 
       let org;
       if (isAdmin && req.query.orgId) {
@@ -118,7 +119,7 @@ export function registerPackRoutes(app: Express): void {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
-      const isAdmin = userEmail === process.env.ADMIN_EMAIL;
+      const isAdmin = userEmail === ADMIN_EMAIL;
 
       let org;
       if (isAdmin && req.body.organizationId) {

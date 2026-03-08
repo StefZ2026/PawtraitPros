@@ -5,7 +5,7 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
-import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter, getSameOwnerPets } from "./helpers";
+import { ADMIN_EMAIL, checkDogLimit, generatePetCode, createDogWithPortrait, sanitizeForPrompt, publicExpensiveRateLimiter, getSameOwnerPets, DOG_ALLOWED_FIELDS } from "./helpers";
 import { getPacks } from "@shared/pack-config";
 import { generateImage } from "../gemini";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
@@ -446,7 +446,7 @@ export function registerDogRoutes(app: Express): void {
       const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...rawData } = req.body;
 
       // Whitelist allowed fields to prevent injection of arbitrary data
-      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "externalId", "externalSource", "tags"];
+      const allowedFields = DOG_ALLOWED_FIELDS;
       const dogData: Record<string, any> = {};
       for (const key of allowedFields) {
         if (rawData[key] !== undefined) dogData[key] = rawData[key];
@@ -510,10 +510,14 @@ export function registerDogRoutes(app: Express): void {
       const { selectedPortraitId, ...rawData } = req.body;
 
       // Whitelist allowed fields to prevent injection of arbitrary data
-      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "originalPhotoUrl", "tags"];
+      const allowedFields = DOG_ALLOWED_FIELDS;
       const dogData: Record<string, any> = {};
       for (const key of allowedFields) {
         if (rawData[key] !== undefined) dogData[key] = rawData[key];
+      }
+
+      if (Object.keys(dogData).length === 0 && !selectedPortraitId) {
+        return res.json(dog);
       }
 
       if (dogData.name && containsInappropriateLanguage(dogData.name)) {
@@ -531,7 +535,7 @@ export function registerDogRoutes(app: Express): void {
         }
       }
 
-      const updatedDog = await storage.updateDog(id, dogData);
+      const updatedDog = Object.keys(dogData).length > 0 ? await storage.updateDog(id, dogData) : dog;
 
       if (selectedPortraitId) {
         await storage.selectPortraitForGallery(id, selectedPortraitId);

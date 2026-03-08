@@ -18,6 +18,12 @@ export const ORG_ALLOWED_FIELDS = [
   "subscriptionStatus", "stripeCustomerId", "stripeSubscriptionId", "stripeTestMode", "billingCycleStart",
 ];
 
+export const DOG_ALLOWED_FIELDS = [
+  "name", "species", "breed", "age", "description",
+  "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable",
+  "adoptionUrl", "originalPhotoUrl", "externalId", "externalSource", "tags",
+];
+
 export function sanitizeForPrompt(input: string): string {
   return input
     .replace(/[^\w\s\-'.,:;!?()]/g, '')
