@@ -298,7 +298,10 @@ export default function Onboarding() {
     enabled: isAuthenticated,
   });
 
-  const activePlans = (plans || []).filter(p => p.isActive).sort((a, b) => a.priceMonthly - b.priceMonthly);
+  const orgVertical = (org as any)?.industryType || null;
+  const activePlans = (plans || [])
+    .filter(p => p.isActive && (!p.vertical || p.vertical === orgVertical))
+    .sort((a, b) => a.priceMonthly - b.priceMonthly);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
