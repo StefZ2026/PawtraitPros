@@ -97,12 +97,14 @@ function getHtmlTemplate(): string {
     ? path.resolve(currentDir, 'public', 'index.html')
     : path.resolve(currentDir, '..', 'client', 'index.html');
 
+  console.log("[og-meta] getHtmlTemplate isProd:", isProd, "path:", templatePath, "exists:", fs.existsSync(templatePath));
   return fs.readFileSync(templatePath, 'utf-8');
 }
 
 export function setupOgMetaRoutes(app: Express) {
   app.get('/business/:slug', async (req: Request, res: Response, next: NextFunction) => {
     const ua = req.headers['user-agent'];
+    console.log("[og-meta] /business/:slug hit, UA:", ua?.substring(0, 50), "isCrawler:", isCrawler(ua));
     if (!isCrawler(ua)) return next();
 
     try {
@@ -184,6 +186,7 @@ export function setupOgMetaRoutes(app: Express) {
   app.get('/pawfile/code/:petCode', async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { petCode } = req.params;
+      console.log("[og-meta] /pawfile/code/:petCode hit, petCode =", petCode);
       if (!petCode) return next();
 
       const result = await pool.query(
@@ -219,8 +222,8 @@ export function setupOgMetaRoutes(app: Express) {
       });
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (error) {
-      console.error("OG meta error for pawfile/code:", error);
+    } catch (error: any) {
+      console.error("OG meta error for pawfile/code:", error?.message || error);
       next();
     }
   });
