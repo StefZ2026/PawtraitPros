@@ -122,11 +122,7 @@ export default function BusinessShowcase() {
   const dogsWithPortraits = filteredPets.filter(d => d.portrait?.generatedImageUrl);
   const dogsWithoutPortraits = filteredPets.filter(d => !d.portrait?.generatedImageUrl);
 
-  const showcaseHeadline = speciesFilter === "dog"
-    ? "Dog Portraits"
-    : speciesFilter === "cat"
-    ? "Cat Portraits"
-    : "Pet Portraits";
+  const showcaseHeadline = "Current Guests";
 
   return (
     <div className="min-h-screen bg-muted/50 dark:bg-background">
@@ -334,7 +330,7 @@ export default function BusinessShowcase() {
               {(business.contactEmail || business.contactPhone) && (
                 <div className="text-center" data-testid="section-contact-footer">
                   <p className="text-sm font-serif font-semibold text-foreground mb-1">
-                    For more information about any of these pets
+                    Contact us to learn more
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-muted-foreground">
                     {business.contactEmail && (

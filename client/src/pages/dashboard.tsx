@@ -1303,6 +1303,11 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
                 <ExternalLink className="h-3 w-3" />
               </Link>
             </Button>
+            {organization.slug && (
+              <Button variant="ghost" size="sm" className="gap-1" asChild>
+                <Link href={`/business/${organization.slug}`}><Eye className="h-3.5 w-3.5" /> Showcase</Link>
+              </Button>
+            )}
           </div>
         </div>
 
@@ -2265,13 +2270,6 @@ function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaining, isA
         <div>
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-lg font-semibold">All Pets ({allPetsExceptToday.length})</h2>
-            <div className="flex gap-2">
-              {organization.slug && (
-                <Button variant="ghost" size="sm" className="gap-1" asChild>
-                  <Link href={`/business/${organization.slug}`}><Eye className="h-3.5 w-3.5" /> Showcase</Link>
-                </Button>
-              )}
-            </div>
           </div>
 
           {/* Search bar */}
