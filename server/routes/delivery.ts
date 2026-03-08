@@ -17,6 +17,7 @@ export interface DeliveryResult {
 export async function deliverPortraitToOwner(
   dog: Dog,
   org: Organization,
+  messageTemplate?: string,
 ): Promise<DeliveryResult> {
   if (!dog.ownerPhone && !dog.ownerEmail) {
     return { sent: false, error: "No owner contact info" };
@@ -31,13 +32,12 @@ export async function deliverPortraitToOwner(
 
   const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
   const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
-  const notifMode = (org as any).notificationMode || "both";
+  const notifMode = org.notificationMode || "both";
   const methods: string[] = [];
   let sent = false;
 
-  // Get the latest portrait for this dog
-  const portraits = await storage.getPortraitsByDog(dog.id);
-  const latestPortrait = portraits.length > 0 ? portraits[0] : null; // ordered desc by createdAt
+  // Get the active (selected) portrait for this dog, falling back to newest
+  const latestPortrait = await storage.getSelectedPortraitByDog(dog.id) || null;
   const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith('https://')
     ? latestPortrait.generatedImageUrl
     : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : undefined;
@@ -50,7 +50,12 @@ export async function deliverPortraitToOwner(
   // SMS delivery
   if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
     try {
-      const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
+      const smsBody = messageTemplate
+        ? messageTemplate
+            .replace(/\{dogName\}/g, dog.name)
+            .replace(/\{orgName\}/g, org.name)
+            .replace(/\{link\}/g, pawfileUrl)
+        : `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
       const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
       if (smsResult.success) {
         methods.push("sms");

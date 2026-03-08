@@ -1,9 +1,25 @@
+// Shared middleware and utilities — auth checks, rate limiting, org resolution
 import type { Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import { storage } from "../storage";
 import { getStripeClient } from "../stripeClient";
 import { isTrialExpired } from "../subscription";
 import { uploadToStorage, isDataUri } from "../supabase-storage";
+
+/**
+ * Typed request for authenticated routes.
+ * Auth middleware adds `user` to req — optional here so Express accepts the handler type,
+ * but always present on routes behind `isAuthenticated`.
+ */
+export interface AuthRequest extends Request {
+  user?: {
+    claims: {
+      sub: string;
+      email: string;
+    };
+    access_token?: string;
+  };
+}
 
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 
@@ -14,8 +30,9 @@ export const ORG_ALLOWED_FIELDS = [
   "locationStreet", "locationCity", "locationState", "locationZip", "locationCountry",
   "billingStreet", "billingCity", "billingState", "billingZip", "billingCountry",
   "notes", "isActive", "planId", "speciesHandled", "onboardingCompleted",
-  "industryType", "captureMode", "deliveryMode", "notificationMode", "portraitCadence",
+  "industryType", "captureMode", "deliveryMode", "notificationMode", "smsSendMethod", "portraitCadence",
   "subscriptionStatus", "stripeCustomerId", "stripeSubscriptionId", "stripeTestMode", "billingCycleStart",
+  "referredByOrgId",
 ];
 
 export const DOG_ALLOWED_FIELDS = [
@@ -37,7 +54,7 @@ export const aiRateLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a minute before generating more portraits." },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: any) => req.user?.claims?.sub || "anonymous",
+  keyGenerator: (req: Request) => (req as any).user?.claims?.sub || "anonymous",
   validate: { xForwardedForHeader: false },
 });
 
@@ -315,7 +332,3 @@ export async function resolveOrg(
   return { org: null, error: "No organization found. Please specify an organization.", status: 400 };
 }
 
-// Legacy wrapper — kept for any remaining callers during migration
-export async function resolveOrgForUser(userId: string, userEmail: string, dogId?: number): Promise<{ org: any; error?: string; status?: number }> {
-  return resolveOrg(userId, userEmail, dogId ? { dogId } : {});
-}

@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
+import { pool } from "./db";
 
 const currentDir = typeof __dirname !== 'undefined'
   ? __dirname
@@ -138,10 +139,8 @@ export function setupOgMetaRoutes(app: Express) {
     }
   });
 
+  // Serve OG to all user agents for pawfile routes (iMessage/RCS use regular Safari UA)
   app.get('/pawfile/:id', async (req: Request, res: Response, next: NextFunction) => {
-    const ua = req.headers['user-agent'];
-    if (!isCrawler(ua)) return next();
-
     try {
       const id = parseInt(req.params.id as string);
       if (isNaN(id)) return next();
@@ -150,9 +149,12 @@ export function setupOgMetaRoutes(app: Express) {
       if (!dog) return next();
 
       const org = dog.organizationId ? await storage.getOrganization(dog.organizationId) : null;
+      const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
 
       const baseUrl = getBaseUrl(req);
-      const ogImageUrl = `${baseUrl}/api/pawfile/${id}/og-image`;
+      const ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
+        ? selectedPortrait.generatedImageUrl
+        : `${baseUrl}/api/pawfile/${id}/og-image`;
 
       const breedStr = dog.breed ? `${dog.breed} ` : '';
       const ageStr = dog.age ? `, ${dog.age}` : '';
@@ -174,6 +176,51 @@ export function setupOgMetaRoutes(app: Express) {
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (error) {
       console.error("OG meta error for pawfile:", error);
+      next();
+    }
+  });
+
+  // Pawfile by pet code — the URL customers actually receive
+  app.get('/pawfile/code/:petCode', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { petCode } = req.params;
+      if (!petCode) return next();
+
+      const result = await pool.query(
+        `SELECT d.id, d.name, d.breed, d.age, d.species, d.description, d.organization_id
+         FROM dogs d WHERE d.pet_code = $1`,
+        [(petCode as string).toUpperCase()]
+      );
+      if (result.rows.length === 0) return next();
+
+      const row = result.rows[0];
+      const org = row.organization_id ? await storage.getOrganization(row.organization_id) : null;
+      const selectedPortrait = await storage.getSelectedPortraitByDog(row.id);
+
+      const baseUrl = getBaseUrl(req);
+      const ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
+        ? selectedPortrait.generatedImageUrl
+        : `${baseUrl}/api/pawfile/${row.id}/og-image`;
+
+      const breedStr = row.breed ? `${row.breed} ` : '';
+      const ageStr = row.age ? `, ${row.age}` : '';
+      const orgStr = org ? ` at ${org.name}` : '';
+      const speciesLabel = row.species === 'cat' ? 'Cat' : 'Dog';
+
+      const title = `${row.name}'s Portrait${orgStr} | ${SITE_NAME}`;
+      const description = `Meet ${row.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgStr}. View ${row.name}'s stunning portrait!`;
+
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, {
+        title,
+        description,
+        imageUrl: ogImageUrl,
+        url: `${baseUrl}/pawfile/code/${petCode}`,
+      });
+
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (error) {
+      console.error("OG meta error for pawfile/code:", error);
       next();
     }
   });

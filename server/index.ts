@@ -1,5 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import crypto from "crypto";
 import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -7,6 +6,7 @@ import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { WebhookHandlers } from './webhookHandlers';
 import { setupOgMetaRoutes } from "./og-meta";
+import { setupWebSocket } from "./websocket";
 
 const app = express();
 
@@ -27,198 +27,29 @@ app.use(helmet({
 app.disable("x-powered-by");
 const httpServer = createServer(app);
 
-// Register Gelato webhook route BEFORE express.json() - raw body for order status updates
-app.post(
-  '/api/webhooks/gelato',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    try {
-      // Verify Gelato webhook signature if secret is configured
-      const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
-      if (gelatoSecret) {
-        const signature = req.headers['x-gelato-hmac-sha256'] as string;
-        if (!signature) {
-          console.warn('[gelato-webhook] Missing signature header — rejecting');
-          return res.status(401).json({ error: 'Missing webhook signature' });
-        }
-        const expected = crypto.createHmac('sha256', gelatoSecret).update(req.body).digest('hex');
-        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-          console.warn('[gelato-webhook] Invalid signature — rejecting');
-          return res.status(401).json({ error: 'Invalid webhook signature' });
-        }
-      }
+// Initialize WebSocket server (attaches to existing HTTP server)
+setupWebSocket(httpServer);
 
-      const body = JSON.parse(req.body.toString());
-      const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
-      console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
-
-      if (event !== 'order_status_updated' && event !== 'order_item_status_updated') {
-        return res.status(200).json({ received: true });
-      }
-
-      if (!orderReferenceId) {
-        return res.status(200).json({ received: true });
-      }
-
-      const { pool } = await import('./db');
-
-      // orderReferenceId maps to our merch_orders.id (prefixed with "gelato-")
-      const merchOrderId = orderReferenceId.startsWith('gelato-')
-        ? parseInt(orderReferenceId.replace('gelato-', ''))
-        : null;
-
-      if (!merchOrderId || isNaN(merchOrderId)) {
-        return res.status(200).json({ received: true });
-      }
-
-      // Map Gelato fulfillment status to our app status
-      let appStatus: string | null = null;
-      switch (fulfillmentStatus) {
-        case 'shipped':
-        case 'in_transit':
-          appStatus = 'shipped';
-          break;
-        case 'delivered':
-          appStatus = 'delivered';
-          break;
-        case 'failed':
-        case 'returned':
-          appStatus = 'failed';
-          break;
-        case 'canceled':
-          appStatus = 'canceled';
-          break;
-        case 'in_production':
-        case 'printed':
-          appStatus = 'fulfilled';
-          break;
-      }
-
-      const updateFields = ['printful_status = $1']; // reuse printful_status column for Gelato status
-      const updateValues: any[] = [fulfillmentStatus];
-      let paramIdx = 2;
-
-      if (appStatus) {
-        updateFields.push(`status = $${paramIdx}`);
-        updateValues.push(appStatus);
-        paramIdx++;
-      }
-
-      if (orderId) {
-        updateFields.push(`printful_order_id = $${paramIdx}`);
-        updateValues.push(orderId); // Gelato UUID
-        paramIdx++;
-      }
-
-      updateValues.push(merchOrderId);
-      await pool.query(
-        `UPDATE merch_orders SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
-        updateValues
-      );
-
-      // Extract tracking info if shipped
-      if (fulfillmentStatus === 'shipped' && items?.[0]?.fulfillments?.[0]?.trackingUrl) {
-        const tracking = items[0].fulfillments[0];
-        console.log(`[gelato-webhook] Tracking for order ${merchOrderId}: ${tracking.trackingUrl}`);
-      }
-
-      console.log(`[gelato-webhook] Updated merch_order ${merchOrderId}: ${fulfillmentStatus} → ${appStatus || 'unchanged'}`);
-      res.status(200).json({ received: true });
-    } catch (error: any) {
-      console.error('[gelato-webhook] Error:', error.message);
-      res.status(200).json({ received: true }); // Always ack
-    }
+// Webhook routes MUST be registered BEFORE express.json() — raw body needed for signature verification
+app.post('/api/webhooks/gelato', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const result = await WebhookHandlers.processGelatoWebhook(req.body, req.headers['x-gelato-hmac-sha256'] as string);
+    res.status(result.status).json(result.body);
+  } catch (error: any) {
+    console.error('[gelato-webhook] Error:', error.message);
+    res.status(200).json({ received: true });
   }
-);
+});
 
-// Register Printful webhook route BEFORE express.json() - raw body needed for signature verification
-app.post(
-  '/api/webhooks/printful',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    try {
-      // Verify Printful webhook signature if secret is configured
-      const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
-      if (printfulSecret) {
-        const signature = req.headers['x-printful-signature'] as string;
-        if (!signature) {
-          console.warn('[printful-webhook] Missing signature header — rejecting');
-          return res.status(401).json({ error: 'Missing webhook signature' });
-        }
-        const expected = crypto.createHmac('sha256', printfulSecret).update(req.body).digest('hex');
-        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-          console.warn('[printful-webhook] Invalid signature — rejecting');
-          return res.status(401).json({ error: 'Invalid webhook signature' });
-        }
-      }
-
-      const body = JSON.parse(req.body.toString());
-      const { type, data } = body;
-      console.log(`[printful-webhook] Received event: ${type}`);
-
-      if (!data?.order?.external_id) {
-        return res.status(200).json({ received: true }); // ack but ignore
-      }
-
-      const merchOrderId = parseInt(data.order.external_id);
-      if (isNaN(merchOrderId)) {
-        return res.status(200).json({ received: true });
-      }
-
-      // Import pool inline to avoid circular deps
-      const { pool } = await import('./db');
-
-      const printfulStatus = data.order.status || type;
-      let appStatus: string | null = null;
-
-      switch (type) {
-        case 'package_shipped':
-          appStatus = 'shipped';
-          break;
-        case 'order_failed':
-          appStatus = 'failed';
-          break;
-        case 'order_canceled':
-          appStatus = 'canceled';
-          break;
-        case 'order_created':
-          appStatus = 'submitted';
-          break;
-        case 'order_updated':
-          // Only update printful_status, not app status
-          break;
-      }
-
-      const updateFields = ['printful_status = $1'];
-      const updateValues: any[] = [printfulStatus];
-      let paramIdx = 2;
-
-      if (appStatus) {
-        updateFields.push(`status = $${paramIdx}`);
-        updateValues.push(appStatus);
-        paramIdx++;
-      }
-
-      if (data.order.id) {
-        updateFields.push(`printful_order_id = $${paramIdx}`);
-        updateValues.push(String(data.order.id));
-        paramIdx++;
-      }
-
-      updateValues.push(merchOrderId);
-      await pool.query(
-        `UPDATE merch_orders SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
-        updateValues
-      );
-
-      console.log(`[printful-webhook] Updated merch_order ${merchOrderId}: ${type} → ${appStatus || 'status unchanged'}`);
-      res.status(200).json({ received: true });
-    } catch (error: any) {
-      console.error('[printful-webhook] Error:', error.message);
-      res.status(200).json({ received: true }); // Always ack to prevent retries
-    }
+app.post('/api/webhooks/printful', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const result = await WebhookHandlers.processPrintfulWebhook(req.body, req.headers['x-printful-signature'] as string);
+    res.status(result.status).json(result.body);
+  } catch (error: any) {
+    console.error('[printful-webhook] Error:', error.message);
+    res.status(200).json({ received: true });
   }
-);
+});
 
 // Register Stripe webhook route BEFORE express.json() - critical for raw body
 app.post(

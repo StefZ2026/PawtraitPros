@@ -57,6 +57,7 @@ export const organizations = pgTable("organizations", {
   captureMode: text("capture_mode"), // "hero" | "batch" — hero=single photo, batch=multi-upload
   deliveryMode: text("delivery_mode").default("receipt"), // "receipt" | "receipt_sms" | "receipt_sms_pod"
   notificationMode: text("notification_mode").default("both"), // "sms" | "email" | "both" — how customers are notified at departure
+  smsSendMethod: text("sms_send_method").default("platform"), // "platform" (Telnyx) | "native" (BGD's phone via companion app)
   portraitCadence: text("portrait_cadence"), // "weekly" | "biweekly" — org-wide default for daycare portrait rotation (null = weekly)
   speciesHandled: text("species_handled"), // dogs, cats, both — must be explicitly chosen during onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
@@ -65,8 +66,7 @@ export const organizations = pgTable("organizations", {
   planId: integer("plan_id").references(() => subscriptionPlans.id),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
-  // stripeTestMode is managed via raw SQL (added by migration in seed.ts)
-  // Read via storage.getOrganization which adds it, defaults to false (live mode)
+  stripeTestMode: boolean("stripe_test_mode").default(false).notNull(),
   subscriptionStatus: text("subscription_status").default("trial"), // trial, active, past_due, canceled
   trialEndsAt: timestamp("trial_ends_at"),
   hasUsedFreeTrial: boolean("has_used_free_trial").default(false).notNull(),
@@ -74,6 +74,8 @@ export const organizations = pgTable("organizations", {
   additionalPetSlots: integer("additional_pet_slots").default(0).notNull(),
   pendingPlanId: integer("pending_plan_id"),
   billingCycleStart: timestamp("billing_cycle_start"),
+  referredByOrgId: integer("referred_by_org_id"), // which org referred this customer (nullable)
+  referralStartDate: timestamp("referral_start_date"), // when referral window started (first subscription payment)
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -217,6 +219,35 @@ export const visitPhotos = pgTable("visit_photos", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// Referral commissions — tracks 5% commission on referred org's subscription payments
+export const referralCommissions = pgTable("referral_commissions", {
+  id: serial("id").primaryKey(),
+  referrerOrgId: integer("referrer_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  referredOrgId: integer("referred_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  stripeInvoiceId: text("stripe_invoice_id").notNull(),
+  invoiceAmountCents: integer("invoice_amount_cents").notNull(),
+  commissionCents: integer("commission_cents").notNull(),
+  creditApplied: boolean("credit_applied").default(false).notNull(),
+  creditAppliedAt: timestamp("credit_applied_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// SMS send queue — messages waiting to be sent natively from BGD's phone
+export const smsQueue = pgTable("sms_queue", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  dogId: integer("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+  recipientPhone: text("recipient_phone").notNull(),
+  messageBody: text("message_body").notNull(),
+  imageUrl: text("image_url"), // portrait image (Supabase Storage HTTPS URL)
+  pawfileUrl: text("pawfile_url"), // link to pet's pawfile page
+  status: text("status").default("pending").notNull(), // pending | claimed | sent | failed
+  claimedAt: timestamp("claimed_at"),
+  sentAt: timestamp("sent_at"),
+  error: text("error"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 // Insert schemas
 export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
   id: true,
@@ -277,6 +308,16 @@ export const insertVisitPhotoSchema = createInsertSchema(visitPhotos).omit({
   createdAt: true,
 });
 
+export const insertReferralCommissionSchema = createInsertSchema(referralCommissions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSmsQueueSchema = createInsertSchema(smsQueue).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
@@ -313,3 +354,9 @@ export type InsertDailyPackSelection = z.infer<typeof insertDailyPackSelectionSc
 
 export type VisitPhoto = typeof visitPhotos.$inferSelect;
 export type InsertVisitPhoto = z.infer<typeof insertVisitPhotoSchema>;
+
+export type ReferralCommission = typeof referralCommissions.$inferSelect;
+export type InsertReferralCommission = z.infer<typeof insertReferralCommissionSchema>;
+
+export type SmsQueueItem = typeof smsQueue.$inferSelect;
+export type InsertSmsQueueItem = z.infer<typeof insertSmsQueueSchema>;

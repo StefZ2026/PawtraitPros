@@ -27,7 +27,7 @@ import { NextdoorIcon } from "@/components/nextdoor-icon";
 import { LogoCropDialog } from "@/components/logo-crop-dialog";
 import type { Organization, SubscriptionPlan, Dog as DogType } from "@shared/schema";
 
-const IG_PREFIX = import.meta.env.VITE_INSTAGRAM_PROVIDER === 'native' ? '/api/instagram-native' : '/api/instagram';
+const IG_PREFIX = '/api/instagram-native';
 
 interface OrgDetail extends Organization {
   dogCount?: number;
@@ -845,6 +845,57 @@ export default function BusinessSettings() {
                   </button>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* SMS Send Method */}
+          <Card data-testid="section-sms-method">
+            <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-primary" />
+                <div>
+                  <CardTitle className="text-base">SMS Send Method</CardTitle>
+                  <CardDescription>How text messages are sent to customers</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  { value: "platform", label: "Pawtrait Pros Number", description: "Send from our dedicated business number", icon: <Globe className="h-5 w-5" /> },
+                  { value: "native", label: "Send from My Phone", description: "Messages go from your personal number via companion app", icon: <Smartphone className="h-5 w-5" /> },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left transition-all ${
+                      (org as any).smsSendMethod === opt.value || (!((org as any).smsSendMethod) && opt.value === "platform")
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/50"
+                    }`}
+                    onClick={() => {
+                      updateMutation.mutate({ smsSendMethod: opt.value } as any);
+                    }}
+                    data-testid={`button-sms-method-${opt.value}`}
+                  >
+                    <span className="text-primary">{opt.icon}</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{opt.label}</p>
+                      <p className="text-xs text-muted-foreground">{opt.description}</p>
+                    </div>
+                    {((org as any).smsSendMethod === opt.value || (!((org as any).smsSendMethod) && opt.value === "platform")) && (
+                      <Check className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              {(org as any).smsSendMethod === "native" && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-xs text-amber-800">
+                    <strong>Companion app required.</strong> Download the Pawtrait Send app on your phone to enable native sending. Messages will queue until your phone is connected.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
