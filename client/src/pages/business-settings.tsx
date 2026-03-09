@@ -863,7 +863,7 @@ export default function BusinessSettings() {
               <div className="space-y-3">
                 {[
                   { value: "platform", label: "Pawtrait Pros Number", description: "Send from our dedicated business number", icon: <Globe className="h-5 w-5" /> },
-                  { value: "native", label: "Send from My Phone", description: "Messages go from your personal number via companion app", icon: <Smartphone className="h-5 w-5" /> },
+                  { value: "native", label: "Send from My Phone", description: "Messages sent from your personal number via Send Queue", icon: <Smartphone className="h-5 w-5" /> },
                 ].map((opt) => (
                   <button
                     key={opt.value}
@@ -890,9 +890,11 @@ export default function BusinessSettings() {
                 ))}
               </div>
               {(org as any).smsSendMethod === "native" && (
-                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-xs text-amber-800">
-                    <strong>Companion app required.</strong> Download the Pawtrait Send app on your phone to enable native sending. Messages will queue until your phone is connected.
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-800">
+                    <strong>How it works:</strong> When you deliver portraits, messages queue up. Open{" "}
+                    <a href="/send-queue" className="underline font-semibold">pawtraitpros.com/send-queue</a>{" "}
+                    on your phone to send each message from your number.
                   </p>
                 </div>
               )}

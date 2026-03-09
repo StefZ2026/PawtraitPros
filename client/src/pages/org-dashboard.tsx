@@ -1538,7 +1538,7 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
                                   ) : result.method.includes("sms") ? (
                                     <><strong>SMS</strong> sent to {ownerLabel}</>
                                   ) : result.method === "queued_native" ? (
-                                    <><strong>Queued</strong> — open companion app to send to {ownerLabel}</>
+                                    <><strong>Queued</strong> — <a href="/send-queue" className="underline text-primary">open Send Queue</a> on your phone to send to {ownerLabel}</>
                                   ) : (
                                     <>Link created for {ownerLabel}</>
                                   )}
@@ -1682,7 +1682,7 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
                                 if (data.totalQueued > 0) {
                                   toast({
                                     title: "Queued for Your Phone",
-                                    description: `${data.totalQueued} message${data.totalQueued !== 1 ? "s" : ""} ready — open the companion app to send from your number.`,
+                                    description: `${data.totalQueued} message${data.totalQueued !== 1 ? "s" : ""} ready — open Send Queue on your phone to send from your number.`,
                                   });
                                 }
                               } else {

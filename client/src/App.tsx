@@ -30,6 +30,7 @@ import BatchUpload from "@/pages/batch-upload";
 import EditionLanding from "@/pages/edition-landing";
 import CustomerPortal from "@/pages/customer-portal";
 import CounterDisplay from "@/pages/counter-display";
+import SendQueue from "@/pages/send-queue";
 
 function Router() {
   return (
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/for-boarding">{() => <EditionLanding edition="boarding" />}</Route>
       <Route path="/for-daycares">{() => <EditionLanding edition="daycare" />}</Route>
       <Route path="/portal" component={CustomerPortal} />
+      <Route path="/send-queue" component={SendQueue} />
       <Route path="/counter/:slug" component={CounterDisplay} />
       <Route component={NotFound} />
     </Switch>

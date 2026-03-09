@@ -123,7 +123,8 @@ export function registerSmsQueueRoutes(app: Express): void {
       if (!org) return res.status(status || 404).json({ error });
 
       const result = await pool.query(
-        `SELECT sq.id, sq.dog_id, sq.status, sq.sent_at, sq.error, d.name as dog_name
+        `SELECT sq.id, sq.dog_id, sq.recipient_phone, sq.message_body, sq.image_url,
+                sq.pawfile_url, sq.status, sq.sent_at, sq.error, d.name as dog_name
          FROM sms_queue sq
          JOIN dogs d ON d.id = sq.dog_id
          WHERE sq.organization_id = $1
