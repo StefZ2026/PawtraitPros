@@ -186,21 +186,17 @@ function PhoneConnectionCard({ org }: { org: any }) {
 
                 {activeTab === "iphone" ? (
                   <div className="space-y-2 text-sm">
-                    <p className="font-medium">iOS Shortcut Setup</p>
-                    <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground">
-                      <li>Open the <strong className="text-foreground">Shortcuts</strong> app on your iPhone</li>
-                      <li>Tap <strong className="text-foreground">+</strong> to create a new Shortcut</li>
-                      <li>Add action: <strong className="text-foreground">Get Contents of URL</strong>
-                        <br /><span className="text-xs ml-4">URL: <code className="bg-muted px-1">https://pawtraitpros.com/api/sms-queue/fetch</code></span>
-                        <br /><span className="text-xs ml-4">Header: <code className="bg-muted px-1">Authorization: Bearer [your token]</code></span>
-                      </li>
-                      <li>Add action: <strong className="text-foreground">Repeat with Each</strong> item in Messages</li>
-                      <li>Inside the loop, add: <strong className="text-foreground">Send Message</strong> to Repeat Item's recipient_phone with body message_body</li>
-                      <li>After the loop: <strong className="text-foreground">Get Contents of URL</strong> (POST) to report results back</li>
-                      <li>Go to <strong className="text-foreground">Automation</strong> tab → Create Personal Automation</li>
-                      <li>Choose a trigger (e.g., Time of Day) → select your Shortcut</li>
-                      <li>Toggle <strong className="text-foreground">OFF "Ask Before Running"</strong> for fully automatic sending</li>
-                    </ol>
+                    <p className="font-medium">iPhone — Coming Soon</p>
+                    <div className="text-muted-foreground space-y-2">
+                      <p>
+                        Apple does not allow apps to send text messages without your confirmation for each message.
+                        We're working on the best possible iPhone experience — stay tuned!
+                      </p>
+                      <p>
+                        In the meantime, if you have access to an Android phone (even a spare),
+                        you can use it as a dedicated sending device with <strong className="text-foreground">fully automatic</strong> delivery.
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-2 text-sm">

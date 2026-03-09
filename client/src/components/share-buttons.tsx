@@ -12,7 +12,7 @@ import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
 import { useAuth } from "@/hooks/use-auth";
 
-const IG_PREFIX = import.meta.env.VITE_INSTAGRAM_PROVIDER === 'native' ? '/api/instagram-native' : '/api/instagram';
+const IG_PREFIX = '/api/instagram-native';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);

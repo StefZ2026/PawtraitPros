@@ -1,0 +1,10 @@
+#!/bin/sh
+# Gradle wrapper script — downloads gradle if needed
+exec gradle wrapper --gradle-version 8.10.2 2>/dev/null || {
+  echo "Downloading Gradle wrapper..."
+  mkdir -p gradle/wrapper
+  curl -sL "https://services.gradle.org/distributions/gradle-8.10.2-bin.zip" -o /tmp/gradle.zip
+  unzip -q /tmp/gradle.zip -d /tmp
+  /tmp/gradle-8.10.2/bin/gradle wrapper --gradle-version 8.10.2
+  ./gradlew "$@"
+}
