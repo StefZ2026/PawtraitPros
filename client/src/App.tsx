@@ -31,6 +31,7 @@ import EditionLanding from "@/pages/edition-landing";
 import CustomerPortal from "@/pages/customer-portal";
 import CounterDisplay from "@/pages/counter-display";
 import SendQueue from "@/pages/send-queue";
+import SetupPhone from "@/pages/setup-phone";
 
 function Router() {
   return (
@@ -62,6 +63,7 @@ function Router() {
       <Route path="/portal" component={CustomerPortal} />
       <Route path="/send-queue" component={SendQueue} />
       <Route path="/counter/:slug" component={CounterDisplay} />
+      <Route path="/setup-phone" component={SetupPhone} />
       <Route component={NotFound} />
     </Switch>
   );

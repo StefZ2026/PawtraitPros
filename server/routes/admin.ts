@@ -8,6 +8,8 @@ import { canStartFreeTrial, markFreeTrialUsed } from "../subscription";
 import { containsInappropriateLanguage } from "@shared/content-filter";
 import { isValidBreed } from "../breeds";
 import type { InsertOrganization } from "@shared/schema";
+import crypto from "crypto";
+import { pool } from "../db";
 import { ADMIN_EMAIL, isAdmin, generateUniqueSlug, computePetLimitInfo, checkDogLimit, createDogWithPortrait, ORG_ALLOWED_FIELDS, DOG_ALLOWED_FIELDS } from "./helpers";
 
 export function registerAdminRoutes(app: Express): void {
@@ -582,6 +584,42 @@ export function registerAdminRoutes(app: Express): void {
     } catch (error) {
       console.error("Error recalculating credits:", error);
       res.status(500).json({ error: "Failed to recalculate credits" });
+    }
+  });
+
+  // Generate a send token for any org (admin use — for texting setup links to BGDs)
+  app.post("/api/admin/organizations/:id/generate-send-token", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id as string);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      // If org already has a token, return it (don't regenerate unless requested)
+      if (org.sendToken && !req.body.regenerate) {
+        return res.json({ sendToken: org.sendToken, orgName: org.name });
+      }
+
+      const token = crypto.randomBytes(24).toString("hex");
+      await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, orgId]);
+
+      res.json({ sendToken: token, orgName: org.name });
+    } catch (error: any) {
+      console.error("Error generating send token for org:", error.message);
+      res.status(500).json({ error: "Failed to generate token" });
+    }
+  });
+
+  // Get send token for an org (admin use — to show setup link)
+  app.get("/api/admin/organizations/:id/send-token", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id as string);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      res.json({ sendToken: org.sendToken || null, orgName: org.name });
+    } catch (error: any) {
+      console.error("Error fetching send token:", error.message);
+      res.status(500).json({ error: "Failed to fetch token" });
     }
   });
 

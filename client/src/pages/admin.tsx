@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
   AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
-  Scissors, Sun, Handshake
+  Scissors, Sun, Handshake, Smartphone, Copy, Check
 } from "lucide-react";
 import {
   Select,
@@ -92,6 +92,10 @@ export default function Admin() {
   const { toast } = useToast();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [currentView, setCurrentView] = useState<AdminView>("dashboard");
+  const [phoneSetupOrg, setPhoneSetupOrg] = useState<{ id: number; name: string } | null>(null);
+  const [phoneSetupToken, setPhoneSetupToken] = useState<string | null>(null);
+  const [phoneSetupLoading, setPhoneSetupLoading] = useState(false);
+  const [phoneSetupCopied, setPhoneSetupCopied] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -178,6 +182,42 @@ export default function Admin() {
       toast({ title: "Error creating business", description: "Please try again. If this keeps happening, refresh the page.", variant: "destructive" });
     },
   });
+
+  const handlePhoneSetup = async (orgId: number, orgName: string) => {
+    setPhoneSetupOrg({ id: orgId, name: orgName });
+    setPhoneSetupToken(null);
+    setPhoneSetupLoading(true);
+    setPhoneSetupCopied(false);
+    try {
+      const res = await apiRequest("POST", `/api/admin/organizations/${orgId}/generate-send-token`);
+      const data = await res.json();
+      setPhoneSetupToken(data.sendToken);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to generate token", variant: "destructive" });
+      setPhoneSetupOrg(null);
+    } finally {
+      setPhoneSetupLoading(false);
+    }
+  };
+
+  const getSetupLink = () => {
+    if (!phoneSetupToken) return "";
+    const base = window.location.origin;
+    return `${base}/setup-phone?token=${phoneSetupToken}`;
+  };
+
+  const handleCopySetupLink = async () => {
+    const link = getSetupLink();
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setPhoneSetupCopied(true);
+      setTimeout(() => setPhoneSetupCopied(false), 3000);
+      toast({ title: "Link copied!", description: "Text this link to the business owner." });
+    } catch {
+      toast({ title: "Copy failed", description: "Please select and copy the link manually.", variant: "destructive" });
+    }
+  };
 
   if (authLoading) {
     return (
@@ -801,6 +841,15 @@ export default function Admin() {
                             <Button
                               variant="ghost"
                               size="icon"
+                              title="Phone Setup Link"
+                              onClick={() => handlePhoneSetup(org.id, org.name)}
+                              data-testid={`button-phone-${org.id}`}
+                            >
+                              <Smartphone className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
                                 if (confirm(`Are you sure you want to delete "${org.name}"? This cannot be undone.`)) {
@@ -823,6 +872,54 @@ export default function Admin() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Phone Setup Modal */}
+      {phoneSetupOrg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPhoneSetupOrg(null)}>
+          <div className="bg-background rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Phone Setup — {phoneSetupOrg.name}</h3>
+              <Button variant="ghost" size="icon" onClick={() => setPhoneSetupOrg(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {phoneSetupLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Generating setup link...</div>
+            ) : phoneSetupToken ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Copy this link and text it to the business owner. They tap it on their Android phone to download the app and connect.
+                </p>
+
+                <div className="bg-muted rounded-lg p-3 flex items-center gap-2">
+                  <code className="text-xs flex-1 break-all select-all">{getSetupLink()}</code>
+                  <Button size="sm" variant="outline" onClick={handleCopySetupLink} className="shrink-0">
+                    {phoneSetupCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+
+                <div className="bg-muted rounded-lg p-3 text-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getSetupLink())}`}
+                    alt="QR Code"
+                    className="mx-auto"
+                    width={200}
+                    height={200}
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">Or scan this QR code from a computer screen</p>
+                </div>
+
+                <Button className="w-full" onClick={handleCopySetupLink}>
+                  {phoneSetupCopied ? "Copied!" : "Copy Setup Link"}
+                </Button>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-destructive">Failed to generate link. Try again.</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
