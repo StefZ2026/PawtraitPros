@@ -449,6 +449,28 @@ export async function seedDatabase() {
     console.log('[migration] batch_photos FK:', migErr.message);
   }
 
+  // Migration: SMS queue table + send_token on organizations (for Pawtrait Send companion app)
+  try {
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS send_token TEXT');
+    await pool.query(`CREATE TABLE IF NOT EXISTS sms_queue (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      dog_id INTEGER NOT NULL REFERENCES dogs(id) ON DELETE CASCADE,
+      recipient_phone TEXT NOT NULL,
+      message_body TEXT NOT NULL,
+      image_url TEXT,
+      pawfile_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claimed_at TIMESTAMP,
+      sent_at TIMESTAMP,
+      error TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    console.log('[migration] sms_queue table + send_token ready');
+  } catch (migErr: any) {
+    console.log('[migration] sms_queue:', migErr.message);
+  }
+
   await seedSubscriptionPlans();
 
   // Ensure Stripe products/prices exist for all vertical plans (idempotent)
