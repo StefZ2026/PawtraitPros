@@ -848,56 +848,25 @@ export default function BusinessSettings() {
             </CardContent>
           </Card>
 
-          {/* SMS Send Method */}
+          {/* Send Queue Info */}
           <Card data-testid="section-sms-method">
             <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
               <div className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-primary" />
                 <div>
-                  <CardTitle className="text-base">SMS Send Method</CardTitle>
-                  <CardDescription>How text messages are sent to customers</CardDescription>
+                  <CardTitle className="text-base">Text Message Delivery</CardTitle>
+                  <CardDescription>Messages are sent from your phone number</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {[
-                  { value: "platform", label: "Pawtrait Pros Number", description: "Send from our dedicated business number", icon: <Globe className="h-5 w-5" /> },
-                  { value: "native", label: "Send from My Phone", description: "Messages sent from your personal number via Send Queue", icon: <Smartphone className="h-5 w-5" /> },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`flex items-center gap-3 w-full p-3 rounded-lg border text-left transition-all ${
-                      (org as any).smsSendMethod === opt.value || (!((org as any).smsSendMethod) && opt.value === "platform")
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:bg-muted/50"
-                    }`}
-                    onClick={() => {
-                      updateMutation.mutate({ smsSendMethod: opt.value } as any);
-                    }}
-                    data-testid={`button-sms-method-${opt.value}`}
-                  >
-                    <span className="text-primary">{opt.icon}</span>
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{opt.label}</p>
-                      <p className="text-xs text-muted-foreground">{opt.description}</p>
-                    </div>
-                    {((org as any).smsSendMethod === opt.value || (!((org as any).smsSendMethod) && opt.value === "platform")) && (
-                      <Check className="h-4 w-4 text-primary" />
-                    )}
-                  </button>
-                ))}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>How it works:</strong> When you deliver portraits, messages queue up. Open{" "}
+                  <a href="/send-queue" className="underline font-semibold">pawtraitpros.com/send-queue</a>{" "}
+                  on your phone to send each message from your number — your clients see texts coming from YOU, not a random number.
+                </p>
               </div>
-              {(org as any).smsSendMethod === "native" && (
-                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-xs text-blue-800">
-                    <strong>How it works:</strong> When you deliver portraits, messages queue up. Open{" "}
-                    <a href="/send-queue" className="underline font-semibold">pawtraitpros.com/send-queue</a>{" "}
-                    on your phone to send each message from your number.
-                  </p>
-                </div>
-              )}
             </CardContent>
           </Card>
 

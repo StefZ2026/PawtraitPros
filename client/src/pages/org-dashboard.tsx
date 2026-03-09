@@ -1666,27 +1666,23 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
                             });
                             const data = await res.json();
                             if (res.ok) {
-                              if (data.method === "native") {
-                                // Messages queued for companion app — show queued status
-                                const nativeResults = (data.queued || []).map((q: any) => ({
-                                  dogId: q.dogId,
-                                  sent: true,
-                                  method: "queued_native",
-                                }));
-                                const nativeErrors = (data.errors || []).map((e: any) => ({
-                                  dogId: e.dogId,
-                                  sent: false,
-                                  error: e.error,
-                                }));
-                                setDeliveryResults([...nativeResults, ...nativeErrors]);
-                                if (data.totalQueued > 0) {
-                                  toast({
-                                    title: "Queued for Your Phone",
-                                    description: `${data.totalQueued} message${data.totalQueued !== 1 ? "s" : ""} ready — open Send Queue on your phone to send from your number.`,
-                                  });
-                                }
-                              } else {
-                                setDeliveryResults(data.results || []);
+                              // Messages queued — BGD sends from their phone via /send-queue
+                              const nativeResults = (data.queued || []).map((q: any) => ({
+                                dogId: q.dogId,
+                                sent: true,
+                                method: "queued_native",
+                              }));
+                              const nativeErrors = (data.errors || []).map((e: any) => ({
+                                dogId: e.dogId,
+                                sent: false,
+                                error: e.error,
+                              }));
+                              setDeliveryResults([...nativeResults, ...nativeErrors]);
+                              if (data.totalQueued > 0) {
+                                toast({
+                                  title: "Ready to Send",
+                                  description: `${data.totalQueued} message${data.totalQueued !== 1 ? "s" : ""} queued — open Send Queue on your phone to send from your number.`,
+                                });
                               }
                             } else {
                               toast({ title: "Error", description: data.error || "Delivery failed", variant: "destructive" });

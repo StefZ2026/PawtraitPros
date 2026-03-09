@@ -122,7 +122,7 @@ export function registerBatchRoutes(app: Express): void {
   });
 
   // --- BATCH DELIVERY (send pawfile links to pet owners) ---
-  // Routes to either Telnyx (platform) or sms_queue (native/BGD's phone) based on org setting
+  // Always queues to sms_queue — BGD sends from their own phone via /send-queue
   app.post("/api/deliver-batch", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -136,38 +136,13 @@ export function registerBatchRoutes(app: Express): void {
       const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
       if (!org) return res.status(status || 404).json({ error });
 
-      // Check if org uses native send (BGD's phone) or platform (Telnyx)
-      const useNativeSend = org.smsSendMethod === "native";
-
-      if (useNativeSend) {
-        // Route to sms_queue — companion app on BGD's phone will send these
-        const { enqueueNativeSms } = await import("./sms-queue-helper");
-        const result = await enqueueNativeSms(org, dogIds, messageTemplate);
-        return res.json({
-          method: "native",
-          ...result,
-        });
-      }
-
-      // Platform send (Telnyx) — existing behavior
-      const results: Array<{ dogId: number; sent: boolean; method?: string; error?: string }> = [];
-
-      for (const dogId of dogIds) {
-        try {
-          const dog = await storage.getDog(dogId);
-          if (!dog || dog.organizationId !== org.id) {
-            results.push({ dogId, sent: false, error: "Dog not found" });
-            continue;
-          }
-
-          const result = await deliverPortraitToOwner(dog, org, messageTemplate);
-          results.push({ dogId, ...result });
-        } catch (err: any) {
-          results.push({ dogId, sent: false, error: err.message });
-        }
-      }
-
-      res.json({ method: "platform", results, totalSent: results.filter(r => r.sent).length });
+      // Always use native send — BGD sends from their own phone number
+      const { enqueueNativeSms } = await import("./sms-queue-helper");
+      const result = await enqueueNativeSms(org, dogIds, messageTemplate);
+      return res.json({
+        method: "native",
+        ...result,
+      });
     } catch (error: any) {
       console.error("Error in batch delivery:", error.message);
       res.status(500).json({ error: "Batch delivery failed" });
