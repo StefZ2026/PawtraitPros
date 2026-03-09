@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, ActivityIndicator, StyleSheet, Linking } from "react-native";
+import PhoneConnectScreen from "./src/screens/PhoneConnectScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SendQueueScreen from "./src/screens/SendQueueScreen";
 import { getSession } from "./src/services/auth";
@@ -9,62 +10,65 @@ const API_URL = __DEV__
   ? "http://localhost:5000"
   : "https://pawtraitpros.com";
 
-async function handleDeepLinkToken(url: string): Promise<boolean> {
-  try {
-    // Parse pawtraitsend://connect?token=xxx
-    const match = url.match(/[?&]token=([a-f0-9]+)/i);
-    if (!match) return false;
-
-    const token = match[1];
-    if (token.length < 32) return false;
-
-    // Verify the token works
-    const res = await fetch(`${API_URL}/api/sms-queue/fetch`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return false;
-
-    // Token is valid — save it
-    await setSendToken(token);
-    return true;
-  } catch {
-    return false;
-  }
-}
+type Screen = "loading" | "phone" | "token" | "queue";
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null); // null = loading
+  const [screen, setScreen] = useState<Screen>("loading");
 
   useEffect(() => {
     (async () => {
       // 1. Check if app was opened via deep link with a token
-      const initialUrl = await Linking.getInitialURL();
-      if (initialUrl && initialUrl.includes("token=")) {
-        const connected = await handleDeepLinkToken(initialUrl);
-        if (connected) {
-          setIsLoggedIn(true);
-          return;
+      try {
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl) {
+          const match = initialUrl.match(/[?&]token=([a-f0-9]+)/i);
+          if (match && match[1].length >= 32) {
+            const token = match[1];
+            const res = await fetch(`${API_URL}/api/sms-queue/fetch`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              await setSendToken(token);
+              setScreen("queue");
+              return;
+            }
+          }
         }
-      }
+      } catch {}
 
       // 2. Check for existing stored sendToken
       const sendToken = await getSendToken();
       if (sendToken) {
-        setIsLoggedIn(true);
+        setScreen("queue");
         return;
       }
 
       // 3. Check for Supabase session
       const session = await getSession();
-      setIsLoggedIn(!!session);
+      if (session) {
+        setScreen("queue");
+        return;
+      }
+
+      // 4. First launch — show phone connect screen
+      setScreen("phone");
     })();
 
     // Listen for deep links while app is running
     const sub = Linking.addEventListener("url", async ({ url }) => {
-      if (url && url.includes("token=")) {
-        const connected = await handleDeepLinkToken(url);
-        if (connected) {
-          setIsLoggedIn(true);
+      if (url) {
+        const match = url.match(/[?&]token=([a-f0-9]+)/i);
+        if (match && match[1].length >= 32) {
+          const token = match[1];
+          try {
+            const res = await fetch(`${API_URL}/api/sms-queue/fetch`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              await setSendToken(token);
+              setScreen("queue");
+            }
+          } catch {}
         }
       }
     });
@@ -72,7 +76,7 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  if (isLoggedIn === null) {
+  if (screen === "loading") {
     return (
       <View style={styles.loading}>
         <ActivityIndicator size="large" color="#7c5832" />
@@ -80,11 +84,20 @@ export default function App() {
     );
   }
 
-  if (!isLoggedIn) {
-    return <LoginScreen onLoginSuccess={() => setIsLoggedIn(true)} />;
+  if (screen === "phone") {
+    return (
+      <PhoneConnectScreen
+        onConnected={() => setScreen("queue")}
+        onUseToken={() => setScreen("token")}
+      />
+    );
   }
 
-  return <SendQueueScreen onLogout={() => setIsLoggedIn(false)} />;
+  if (screen === "token") {
+    return <LoginScreen onLoginSuccess={() => setScreen("queue")} />;
+  }
+
+  return <SendQueueScreen onLogout={() => setScreen("phone")} />;
 }
 
 const styles = StyleSheet.create({

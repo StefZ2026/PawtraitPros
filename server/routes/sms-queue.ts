@@ -276,6 +276,67 @@ export function registerSmsQueueRoutes(app: Express): void {
     }
   });
 
+  // Connect by phone number (companion app first-launch flow)
+  const connectAttempts = new Map<string, { count: number; resetAt: number }>();
+
+  app.post("/api/sms-queue/connect-by-phone", async (req: any, res: Response) => {
+    try {
+      // Rate limit: 5 attempts per IP per hour
+      const clientIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
+      const now = Date.now();
+      const limit = connectAttempts.get(clientIp);
+      if (limit && limit.resetAt > now && limit.count >= 5) {
+        return res.status(429).json({ error: "Too many attempts. Try again later." });
+      }
+      if (!limit || limit.resetAt <= now) {
+        connectAttempts.set(clientIp, { count: 1, resetAt: now + 3600000 });
+      } else {
+        limit.count++;
+      }
+
+      const { phone } = req.body;
+      if (!phone || typeof phone !== "string") {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+
+      // Normalize: strip everything except digits, ensure 10 or 11 digits with +1 prefix
+      const digits = phone.replace(/\D/g, "");
+      let normalized: string;
+      if (digits.length === 10) {
+        normalized = `+1${digits}`;
+      } else if (digits.length === 11 && digits.startsWith("1")) {
+        normalized = `+${digits}`;
+      } else {
+        return res.status(400).json({ error: "Please enter a valid 10-digit US phone number." });
+      }
+
+      // Also try common stored formats
+      const formats = [
+        normalized,                                    // +14045551234
+        digits.length === 11 ? digits : `1${digits}`, // 14045551234
+        digits.length === 10 ? digits : digits.slice(1), // 4045551234
+      ];
+
+      const result = await pool.query(
+        `SELECT send_token, name, id FROM organizations
+         WHERE send_token IS NOT NULL
+           AND (contact_phone = $1 OR contact_phone = $2 OR contact_phone = $3)
+         LIMIT 1`,
+        formats
+      );
+
+      if (result.rows.length === 0) {
+        return res.json({ token: null, error: "We couldn't find a business with that number. Double-check and try again." });
+      }
+
+      const org = result.rows[0];
+      res.json({ token: org.send_token, orgName: org.name });
+    } catch (error: any) {
+      console.error("Error in connect-by-phone:", error.message);
+      res.status(500).json({ error: "Something went wrong. Please try again." });
+    }
+  });
+
   // Cleanup: expire stale queue items older than 24 hours
   app.delete("/api/sms-queue/cleanup", isAuthenticated, async (req: any, res: Response) => {
     try {

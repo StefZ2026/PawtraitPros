@@ -2,75 +2,90 @@ import { useState, useEffect } from "react";
 
 const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/public/portraits/pawtrait-send-v8.apk";
 
+function getOS(): "android" | "ios" | "other" {
+  const ua = navigator.userAgent.toLowerCase();
+  if (/android/.test(ua)) return "android";
+  if (/iphone|ipad|ipod/.test(ua)) return "ios";
+  return "other";
+}
+
 export default function SetupPhone() {
-  const [token, setToken] = useState<string | null>(null);
-  const [step, setStep] = useState<"download" | "open">("download");
+  const [os] = useState(getOS);
+  const [downloading, setDownloading] = useState(false);
 
+  // Auto-start download on Android
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-    if (t) setToken(t);
-  }, []);
+    if (os === "android") {
+      const timer = setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = APK_URL;
+        a.download = "PawtraitSend.apk";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setDownloading(true);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [os]);
 
-  if (!token) {
+  if (os === "ios") {
     return (
       <div style={styles.container}>
         <div style={styles.card}>
-          <h1 style={styles.title}>Setup Link Invalid</h1>
+          <h1 style={styles.title}>Pawtrait Send</h1>
           <p style={styles.subtitle}>
-            This link is missing a connection token. Please ask your Pawtrait Pros admin to send you a new setup link.
+            iPhone version is coming soon! In the meantime, portrait texts will send from the Pawtrait Pros number.
           </p>
         </div>
       </div>
     );
   }
 
-  const deepLink = `pawtraitsend://connect?token=${token}`;
+  if (os === "other") {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <h1 style={styles.title}>Pawtrait Send</h1>
+          <p style={styles.subtitle}>
+            Open this link on your Android phone to download the app.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>Pawtrait Send</h1>
-        <p style={styles.subtitle}>Send portrait texts from your own phone number</p>
 
-        {step === "download" ? (
-          <>
-            <div style={styles.stepBadge}>Step 1 of 2</div>
-            <p style={styles.instruction}>
-              Tap the button below to download the Pawtrait Send app.
-            </p>
-            <a href={APK_URL} style={styles.button} download>
-              Download Pawtrait Send
-            </a>
-            <p style={styles.note}>
-              After the download finishes, tap the file in your notifications to install it.
-              If prompted, allow "Install from unknown sources."
-            </p>
-            <button
-              onClick={() => setStep("open")}
-              style={styles.nextButton}
-            >
-              I've installed the app — Next
-            </button>
-          </>
+        {!downloading ? (
+          <p style={styles.subtitle}>Starting download...</p>
         ) : (
           <>
-            <div style={styles.stepBadge}>Step 2 of 2</div>
-            <p style={styles.instruction}>
-              Tap the button below to open the app. It will connect automatically — no typing or pasting needed.
+            <p style={styles.subtitle}>
+              Your download has started!
             </p>
-            <a href={deepLink} style={styles.button}>
-              Open Pawtrait Send
+
+            <div style={styles.steps}>
+              <p style={styles.step}>
+                <strong>1.</strong> Tap the downloaded file to install
+              </p>
+              <p style={styles.hint}>
+                Look for it at the bottom of your screen or swipe down from the top
+              </p>
+              <p style={styles.step}>
+                <strong>2.</strong> If you see "Install blocked" — tap <strong>Settings</strong>, turn on <strong>Allow from this source</strong>, then go back
+              </p>
+              <p style={styles.step}>
+                <strong>3.</strong> After installing, tap <strong>Open</strong> and enter your phone number
+              </p>
+            </div>
+
+            <a href={APK_URL} download="PawtraitSend.apk" style={styles.retryLink}>
+              Download didn't start? Tap here.
             </a>
-            <p style={styles.note}>
-              Once connected, portrait texts will send from your phone automatically when queued from the dashboard.
-            </p>
-            <button
-              onClick={() => setStep("download")}
-              style={styles.backLink}
-            >
-              Back to Step 1
-            </button>
           </>
         )}
       </div>
@@ -101,67 +116,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 28,
     fontWeight: 700,
     color: "#1a1a1a",
-    marginBottom: 4,
+    marginBottom: 8,
     marginTop: 0,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 24,
-  },
-  stepBadge: {
-    display: "inline-block",
-    backgroundColor: "#7c5832",
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: 700,
-    padding: "4px 12px",
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  instruction: {
     fontSize: 16,
-    color: "#333",
+    color: "#666",
     lineHeight: 1.5,
     marginBottom: 20,
   },
-  button: {
-    display: "block",
-    backgroundColor: "#7c5832",
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: 700,
-    padding: "16px 24px",
-    borderRadius: 12,
-    textDecoration: "none",
-    marginBottom: 16,
+  steps: {
+    textAlign: "left" as const,
+    marginBottom: 20,
   },
-  nextButton: {
-    display: "block",
-    width: "100%",
-    backgroundColor: "#22c55e",
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: 600,
-    padding: "14px 24px",
-    borderRadius: 10,
-    border: "none",
-    cursor: "pointer",
-    marginTop: 12,
-  },
-  note: {
-    fontSize: 13,
-    color: "#888",
-    lineHeight: 1.5,
+  step: {
+    fontSize: 15,
+    color: "#333",
+    lineHeight: 1.6,
     marginBottom: 8,
   },
-  backLink: {
-    background: "none",
-    border: "none",
-    color: "#7c5832",
+  hint: {
+    fontSize: 13,
+    color: "#999",
+    marginTop: -4,
+    marginBottom: 12,
+    paddingLeft: 20,
+  },
+  retryLink: {
+    display: "block",
     fontSize: 14,
-    cursor: "pointer",
+    color: "#7c5832",
     textDecoration: "underline",
-    marginTop: 8,
   },
 };

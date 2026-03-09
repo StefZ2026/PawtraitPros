@@ -201,21 +201,25 @@ export default function Admin() {
   };
 
   const getSetupLink = () => {
-    if (!phoneSetupToken) return "";
     const base = window.location.origin;
-    return `${base}/setup-phone?token=${phoneSetupToken}`;
+    return `${base}/setup-phone`;
   };
 
-  const handleCopySetupLink = async () => {
-    const link = getSetupLink();
-    if (!link) return;
+  const getTextMessage = () => {
+    if (!phoneSetupOrg) return "";
+    return `Hi ${phoneSetupOrg.name}! Download the Pawtrait Send app to send portrait texts from your phone: ${getSetupLink()}`;
+  };
+
+  const handleCopyMessage = async () => {
+    const msg = getTextMessage();
+    if (!msg) return;
     try {
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(msg);
       setPhoneSetupCopied(true);
       setTimeout(() => setPhoneSetupCopied(false), 3000);
-      toast({ title: "Link copied!", description: "Text this link to the business owner." });
+      toast({ title: "Message copied!", description: "Paste it into a text to the business owner." });
     } catch {
-      toast({ title: "Copy failed", description: "Please select and copy the link manually.", variant: "destructive" });
+      toast({ title: "Copy failed", description: "Please select and copy the message manually.", variant: "destructive" });
     }
   };
 
@@ -885,37 +889,27 @@ export default function Admin() {
             </div>
 
             {phoneSetupLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Generating setup link...</div>
+              <div className="text-center py-8 text-muted-foreground">Setting up...</div>
             ) : phoneSetupToken ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Copy this link and text it to the business owner. They tap it on their Android phone to download the app and connect.
+                  Text this message to {phoneSetupOrg?.name}. They download the app, open it, and enter their phone number to connect.
                 </p>
 
-                <div className="bg-muted rounded-lg p-3 flex items-center gap-2">
-                  <code className="text-xs flex-1 break-all select-all">{getSetupLink()}</code>
-                  <Button size="sm" variant="outline" onClick={handleCopySetupLink} className="shrink-0">
-                    {phoneSetupCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                  </Button>
+                <div className="bg-muted rounded-lg p-4">
+                  <p className="text-sm select-all">{getTextMessage()}</p>
                 </div>
 
-                <div className="bg-muted rounded-lg p-3 text-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getSetupLink())}`}
-                    alt="QR Code"
-                    className="mx-auto"
-                    width={200}
-                    height={200}
-                  />
-                  <p className="text-xs text-muted-foreground mt-2">Or scan this QR code from a computer screen</p>
-                </div>
-
-                <Button className="w-full" onClick={handleCopySetupLink}>
-                  {phoneSetupCopied ? "Copied!" : "Copy Setup Link"}
+                <Button className="w-full gap-2" onClick={handleCopyMessage}>
+                  {phoneSetupCopied ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Message</>}
                 </Button>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Make sure {phoneSetupOrg?.name}'s phone number is saved in their business settings so the app can find them.
+                </p>
               </div>
             ) : (
-              <div className="text-center py-8 text-destructive">Failed to generate link. Try again.</div>
+              <div className="text-center py-8 text-destructive">Failed to set up. Try again.</div>
             )}
           </div>
         </div>
