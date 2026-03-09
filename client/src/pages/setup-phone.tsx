@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/public/portraits/pawtrait-send-v7.apk";
+const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/public/portraits/pawtrait-send-v8.apk";
 
 export default function SetupPhone() {
   const [token, setToken] = useState<string | null>(null);
