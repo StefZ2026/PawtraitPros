@@ -17,12 +17,17 @@ import {
   ShoppingBag,
   Palette,
   Sparkles,
+  Send,
+  MessageSquare,
+  Check,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ShareButtons } from "@/components/share-buttons";
 import { AdminFloatingButton } from "@/components/admin-button";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthHeaders } from "@/lib/queryClient";
 import type { Dog as DogType, Portrait, Organization } from "@shared/schema";
 
 interface DogWithPortrait extends DogType {
@@ -34,6 +39,91 @@ interface DogWithPortrait extends DogType {
   organizationContactPhone?: string | null;
   organizationContactEmail?: string | null;
   organizationIndustryType?: string | null;
+}
+
+function TextOwnerButton({ dog, orgName }: { dog: DogWithPortrait; orgName: string }) {
+  const { toast } = useToast();
+  const [expanded, setExpanded] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [customize, setCustomize] = useState(false);
+  const defaultMsg = `Hi from ${orgName}! We created a portrait of ${dog.name} and it's ready for you. View it and order a keepsake: {link}`;
+  const [message, setMessage] = useState(defaultMsg);
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/sms-queue/enqueue", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dogIds: [dog.id],
+          organizationId: dog.organizationId,
+          messageTemplate: message,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.totalQueued > 0) {
+        setSent(true);
+        toast({ title: "Message queued", description: "Your phone will send it automatically." });
+      } else if (data.errors?.length > 0) {
+        toast({ title: "Error", description: data.errors[0].error, variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="mt-2 print:hidden p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-sm text-green-700">
+        <Check className="h-4 w-4" />
+        Message queued — your phone will send it to {dog.name}'s owner automatically.
+      </div>
+    );
+  }
+
+  if (!expanded) {
+    return (
+      <div className="mt-2 print:hidden">
+        <Button variant="default" size="sm" className="gap-2" onClick={() => setExpanded(true)}>
+          <MessageSquare className="h-4 w-4" />
+          Text Owner
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 print:hidden p-3 border rounded-lg space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Text {dog.name}'s Owner</span>
+        <button className="text-xs text-primary" onClick={() => setCustomize(!customize)}>
+          {customize ? "Use Standard" : "Customize"}
+        </button>
+      </div>
+      {customize ? (
+        <Textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={3}
+          className="text-sm"
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground bg-muted p-2 rounded">{defaultMsg.replace("{link}", "pawtraitpros.com/pawfile/...")}</p>
+      )}
+      <div className="flex gap-2">
+        <Button size="sm" onClick={handleSend} disabled={sending} className="gap-1.5">
+          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Send
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setExpanded(false)}>Cancel</Button>
+      </div>
+    </div>
+  );
 }
 
 export default function DogProfile({ isCustomerView: isCustomerViewProp = false }: { isCustomerView?: boolean }) {
@@ -504,6 +594,11 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
             </div>
           )}
 
+          {/* Text Owner — queue a message to send from BGD's phone */}
+          {canEdit && dog.ownerPhone && imageUrl && (
+            <TextOwnerButton dog={dog} orgName={(myOrg as any)?.name || dog.organizationName || ""} />
+          )}
+
           {canEdit && (
             <div className="mt-3 print:hidden">
               <p className="text-sm text-muted-foreground mb-2">Share {dog.name}'s pawfile:</p>
@@ -511,7 +606,7 @@ export default function DogProfile({ isCustomerView: isCustomerViewProp = false 
             </div>
           )}
 
-          {/* Hidden clean card for social media capture — mirrors Pals' clean card structure */}
+          {/* Hidden clean card for social media capture */}
           <div style={{ position: 'absolute', left: '-9999px', top: 0, width: '480px' }} aria-hidden="true">
             <div ref={igCaptureRef} className="bg-white rounded-lg overflow-hidden border-[3px] border-primary/20">
               {dog.organizationLogoUrl ? (

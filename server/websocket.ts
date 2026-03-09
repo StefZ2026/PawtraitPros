@@ -4,6 +4,7 @@ import { Server as HttpServer } from "http";
 import { Server as SocketServer } from "socket.io";
 import { createClient } from "@supabase/supabase-js";
 import { storage } from "./storage";
+import { pool } from "./db";
 
 let io: any = null;
 
@@ -42,6 +43,20 @@ export function setupWebSocket(httpServer: HttpServer): any {
       const { data: { user }, error } = await supabase.auth.getUser(token);
 
       if (error || !user) {
+        // Try sendToken auth (for companion devices)
+        try {
+          const tokenResult = await pool.query(
+            'SELECT id FROM organizations WHERE send_token = $1 AND is_active = true',
+            [token]
+          );
+          if (tokenResult.rows.length > 0) {
+            (socket as any).orgId = tokenResult.rows[0].id;
+            (socket as any).isDevice = true;
+            return next();
+          }
+        } catch (dbErr) {
+          console.error("[websocket] sendToken lookup failed:", dbErr);
+        }
         return next(new Error("Invalid token"));
       }
 
@@ -55,6 +70,19 @@ export function setupWebSocket(httpServer: HttpServer): any {
   });
 
   io.on("connection", async (socket: any) => {
+    // Handle device connections (sendToken auth)
+    if ((socket as any).isDevice) {
+      const orgId = (socket as any).orgId;
+      socket.join(`org:${orgId}`);
+      io?.to(`org:${orgId}`).emit("phone:status", { online: true });
+      socket.emit("connected", { orgId, role: "device" });
+
+      socket.on("disconnect", () => {
+        io?.to(`org:${orgId}`).emit("phone:status", { online: false });
+      });
+      return;
+    }
+
     const userId = (socket as any).userId;
     const userEmail = (socket as any).userEmail;
 

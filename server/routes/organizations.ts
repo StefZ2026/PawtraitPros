@@ -1,11 +1,25 @@
+// Organization CRUD — create, update, public showcase, and slug-based lookups
 import type { Express, Request, Response } from "express";
+import crypto from "crypto";
 import { storage } from "../storage";
+import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { canStartFreeTrial, markFreeTrialUsed } from "../subscription";
 import type { InsertOrganization } from "@shared/schema";
-import { ADMIN_EMAIL, generateUniqueSlug, computePetLimitInfo, toPublicOrg, ORG_ALLOWED_FIELDS } from "./helpers";
+import { ADMIN_EMAIL, generateUniqueSlug, computePetLimitInfo, toPublicOrg, ORG_ALLOWED_FIELDS, resolveOrg } from "./helpers";
 
 export function registerOrganizationRoutes(app: Express): void {
+  // Active referrers list (for admin dropdown when creating new orgs)
+  app.get("/api/organizations/active-referrers", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const referrers = await storage.getActiveReferrers();
+      res.json(referrers);
+    } catch (error) {
+      console.error("Error fetching active referrers:", error);
+      res.status(500).json({ error: "Failed to fetch referrers" });
+    }
+  });
+
   app.get("/api/my-organization", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user.claims.sub;
@@ -17,11 +31,12 @@ export function registerOrganizationRoutes(app: Express): void {
       if (synced) org = synced;
       const orgDogs = await storage.getDogsByOrganization(org.id);
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-      const { stripeCustomerId, stripeSubscriptionId, ...safeOrg } = org as any;
+      const { stripeCustomerId, stripeSubscriptionId, sendToken, ...safeOrg } = org as any;
       res.json({
         ...safeOrg,
         hasStripeAccount: !!stripeCustomerId,
         hasActiveSubscription: !!stripeSubscriptionId,
+        hasDeviceConnected: !!sendToken,
         ...computePetLimitInfo(org, plan, orgDogs.length),
       });
     } catch (error) {
@@ -265,6 +280,41 @@ export function registerOrganizationRoutes(app: Express): void {
     } catch (error) {
       console.error("Error fetching business showcase:", error);
       res.status(500).json({ error: "Failed to fetch business" });
+    }
+  });
+
+  // Generate a send token for phone connection (iOS Shortcut / Android app)
+  app.post("/api/my-organization/generate-send-token", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+
+      const token = crypto.randomBytes(24).toString("hex"); // 48-char token
+      await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, org.id]);
+
+      res.json({ sendToken: token });
+    } catch (error: any) {
+      console.error("Error generating send token:", error.message);
+      res.status(500).json({ error: "Failed to generate token" });
+    }
+  });
+
+  // Revoke send token (disconnects phone)
+  app.delete("/api/my-organization/revoke-send-token", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+
+      await pool.query("UPDATE organizations SET send_token = NULL WHERE id = $1", [org.id]);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error revoking send token:", error.message);
+      res.status(500).json({ error: "Failed to revoke token" });
     }
   });
 }

@@ -19,7 +19,8 @@ import {
   Dog, Cat, Shield, ArrowLeft, Building2, Users, MapPin,
   StickyNote, Pencil, X, Check, LogOut, PawPrint,
   Phone, Mail, Globe, CreditCard, ImageIcon, Upload,
-  Crown, Heart, Plus, Bell, Smartphone, MessageSquare
+  Crown, Heart, Plus, Bell, Smartphone, MessageSquare,
+  Copy, RefreshCw, Unplug
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
@@ -28,6 +29,199 @@ import { LogoCropDialog } from "@/components/logo-crop-dialog";
 import type { Organization, SubscriptionPlan, Dog as DogType } from "@shared/schema";
 
 const IG_PREFIX = '/api/instagram-native';
+
+function PhoneConnectionCard({ org }: { org: any }) {
+  const { toast } = useToast();
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [activeTab, setActiveTab] = useState<"iphone" | "android">("iphone");
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+
+  const hasDevice = (org as any).hasDeviceConnected;
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/my-organization/generate-send-token", {
+        method: "POST",
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok && data.sendToken) {
+        setGeneratedToken(data.sendToken);
+        queryClient.invalidateQueries({ queryKey: ["/api/my-organization"] });
+        toast({ title: "Token generated", description: "Copy this token to connect your phone." });
+      } else {
+        toast({ title: "Error", description: data.error || "Failed to generate token", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRevoke = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/my-organization/revoke-send-token", {
+        method: "DELETE",
+        headers,
+      });
+      if (res.ok) {
+        setGeneratedToken(null);
+        setShowDisconnectConfirm(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/my-organization"] });
+        toast({ title: "Phone disconnected" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const copyToken = () => {
+    if (generatedToken) {
+      navigator.clipboard.writeText(generatedToken);
+      toast({ title: "Copied to clipboard" });
+    }
+  };
+
+  return (
+    <Card data-testid="section-sms-method">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+        <div className="flex items-center gap-2">
+          <Smartphone className="h-5 w-5 text-primary" />
+          <div>
+            <CardTitle className="text-base">Connect Your Phone</CardTitle>
+            <CardDescription>Send portrait texts automatically from your own number</CardDescription>
+          </div>
+        </div>
+        {hasDevice && (
+          <Badge className="bg-green-100 text-green-700 border-green-300">
+            <span className="w-2 h-2 rounded-full bg-green-500 mr-1.5 inline-block" />
+            Connected
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent>
+        {hasDevice && !generatedToken ? (
+          <div className="space-y-3">
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">
+                Your phone is connected. When you deliver portraits, messages are sent automatically from your phone number.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGenerate}
+                disabled={generating}
+              >
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${generating ? "animate-spin" : ""}`} />
+                Regenerate Token
+              </Button>
+              {showDisconnectConfirm ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Are you sure?</span>
+                  <Button variant="destructive" size="sm" onClick={handleRevoke}>Yes, Disconnect</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setShowDisconnectConfirm(false)}>Cancel</Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => setShowDisconnectConfirm(true)}
+                >
+                  <Unplug className="h-4 w-4 mr-1.5" />
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {!generatedToken ? (
+              <div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Connect your phone so portrait delivery texts go out from your number automatically — clients see messages coming from YOU, not a random number.
+                </p>
+                <Button onClick={handleGenerate} disabled={generating}>
+                  {generating ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Smartphone className="h-4 w-4 mr-2" />}
+                  Generate Connection Token
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Token display */}
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Your Connection Token</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-muted px-3 py-2 rounded text-xs font-mono break-all select-all">
+                      {generatedToken}
+                    </code>
+                    <Button variant="outline" size="sm" onClick={copyToken}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Platform tabs */}
+                <div className="flex gap-1 bg-muted rounded-lg p-1">
+                  <button
+                    className={`flex-1 text-sm py-1.5 px-3 rounded-md transition-colors ${activeTab === "iphone" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                    onClick={() => setActiveTab("iphone")}
+                  >
+                    iPhone
+                  </button>
+                  <button
+                    className={`flex-1 text-sm py-1.5 px-3 rounded-md transition-colors ${activeTab === "android" ? "bg-background shadow-sm font-medium" : "text-muted-foreground"}`}
+                    onClick={() => setActiveTab("android")}
+                  >
+                    Android
+                  </button>
+                </div>
+
+                {activeTab === "iphone" ? (
+                  <div className="space-y-2 text-sm">
+                    <p className="font-medium">iOS Shortcut Setup</p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground">
+                      <li>Open the <strong className="text-foreground">Shortcuts</strong> app on your iPhone</li>
+                      <li>Tap <strong className="text-foreground">+</strong> to create a new Shortcut</li>
+                      <li>Add action: <strong className="text-foreground">Get Contents of URL</strong>
+                        <br /><span className="text-xs ml-4">URL: <code className="bg-muted px-1">https://pawtraitpros.com/api/sms-queue/fetch</code></span>
+                        <br /><span className="text-xs ml-4">Header: <code className="bg-muted px-1">Authorization: Bearer [your token]</code></span>
+                      </li>
+                      <li>Add action: <strong className="text-foreground">Repeat with Each</strong> item in Messages</li>
+                      <li>Inside the loop, add: <strong className="text-foreground">Send Message</strong> to Repeat Item's recipient_phone with body message_body</li>
+                      <li>After the loop: <strong className="text-foreground">Get Contents of URL</strong> (POST) to report results back</li>
+                      <li>Go to <strong className="text-foreground">Automation</strong> tab → Create Personal Automation</li>
+                      <li>Choose a trigger (e.g., Time of Day) → select your Shortcut</li>
+                      <li>Toggle <strong className="text-foreground">OFF "Ask Before Running"</strong> for fully automatic sending</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <p className="font-medium">Android App Setup</p>
+                    <ol className="list-decimal list-inside space-y-1.5 text-muted-foreground">
+                      <li>Download the <strong className="text-foreground">Pawtrait Send</strong> app</li>
+                      <li>Open the app and tap <strong className="text-foreground">"Connect with Token"</strong></li>
+                      <li>Paste your connection token</li>
+                      <li>Grant SMS permissions when prompted</li>
+                      <li>Keep the app running in the background — messages send automatically</li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 interface OrgDetail extends Organization {
   dogCount?: number;
@@ -848,27 +1042,8 @@ export default function BusinessSettings() {
             </CardContent>
           </Card>
 
-          {/* Send Queue Info */}
-          <Card data-testid="section-sms-method">
-            <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-primary" />
-                <div>
-                  <CardTitle className="text-base">Text Message Delivery</CardTitle>
-                  <CardDescription>Messages are sent from your phone number</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  <strong>How it works:</strong> When you deliver portraits, messages queue up. Open{" "}
-                  <a href="/send-queue" className="underline font-semibold">pawtraitpros.com/send-queue</a>{" "}
-                  on your phone to send each message from your number — your clients see texts coming from YOU, not a random number.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Phone Connection for Native Send */}
+          <PhoneConnectionCard org={org} />
 
           {/* Portrait Cadence (daycare only) */}
           {orgIndustryType === "daycare" && (

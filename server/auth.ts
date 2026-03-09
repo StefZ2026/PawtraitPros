@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Express, RequestHandler } from 'express';
 import rateLimit from 'express-rate-limit';
 import { authStorage } from './auth-storage';
+import { pool } from './db';
 
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -59,6 +60,34 @@ export const isAuthenticated: RequestHandler = async (req: any, res, next) => {
     return next();
   } catch (error) {
     return res.status(401).json({ message: 'Unauthorized' });
+  }
+};
+
+// Token-based auth for companion devices (iOS Shortcut / Android app)
+// Uses the send_token stored on the organization — no Supabase JWT needed.
+export const isDeviceAuthenticated: RequestHandler = async (req: any, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Token required' });
+  }
+  const token = authHeader.substring(7);
+  if (!token || token.length < 32) {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM organizations WHERE send_token = $1 AND is_active = true',
+      [token]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Invalid or revoked token' });
+    }
+    req.deviceOrg = result.rows[0];
+    return next();
+  } catch (error) {
+    console.error('[device-auth] Error:', error);
+    return res.status(500).json({ message: 'Authentication failed' });
   }
 };
 

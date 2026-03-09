@@ -2,7 +2,7 @@
 import type { Express, Response } from "express";
 import { pool } from "../db";
 import { storage } from "../storage";
-import { isAuthenticated } from "../auth";
+import { isAuthenticated, isDeviceAuthenticated } from "../auth";
 import { resolveOrg, ADMIN_EMAIL, generatePetCode } from "./helpers";
 import { getIo } from "../websocket";
 
@@ -196,6 +196,83 @@ export function registerSmsQueueRoutes(app: Express): void {
     } catch (error: any) {
       console.error("Error updating queue status:", error.message);
       res.status(500).json({ error: "Failed to update status" });
+    }
+  });
+
+  // ── Device endpoints (token auth — for iOS Shortcut / Android companion app) ──
+
+  // Fetch pending messages and claim them atomically
+  app.get("/api/sms-queue/fetch", isDeviceAuthenticated, async (req: any, res: Response) => {
+    try {
+      const org = req.deviceOrg;
+
+      // Recover stale claims: anything claimed >10 min ago without a final status
+      await pool.query(
+        `UPDATE sms_queue SET status = 'pending', claimed_at = NULL
+         WHERE organization_id = $1 AND status = 'claimed'
+           AND claimed_at < NOW() - INTERVAL '10 minutes'`,
+        [org.id]
+      );
+
+      // Claim all pending messages
+      const result = await pool.query(
+        `UPDATE sms_queue
+         SET status = 'claimed', claimed_at = CURRENT_TIMESTAMP
+         WHERE organization_id = $1 AND status = 'pending'
+         RETURNING id, dog_id, recipient_phone, message_body, image_url, pawfile_url`,
+        [org.id]
+      );
+
+      res.json({ messages: result.rows, count: result.rows.length });
+    } catch (error: any) {
+      console.error("Error fetching SMS queue (device):", error.message);
+      res.status(500).json({ error: "Failed to fetch queue" });
+    }
+  });
+
+  // Report send results for one or more messages
+  app.post("/api/sms-queue/report", isDeviceAuthenticated, async (req: any, res: Response) => {
+    try {
+      const org = req.deviceOrg;
+      const { results } = req.body;
+
+      if (!results || !Array.isArray(results) || results.length === 0) {
+        return res.status(400).json({ error: "results array is required" });
+      }
+
+      const io = getIo();
+
+      for (const r of results) {
+        if (!r.id || !["sent", "failed"].includes(r.status)) continue;
+
+        if (r.status === "sent") {
+          await pool.query(
+            `UPDATE sms_queue SET status = 'sent', sent_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND organization_id = $2`,
+            [r.id, org.id]
+          );
+        } else {
+          await pool.query(
+            `UPDATE sms_queue SET status = 'failed', error = $3
+             WHERE id = $1 AND organization_id = $2`,
+            [r.id, org.id, r.error || "Unknown error"]
+          );
+        }
+
+        // Notify dashboard in real time
+        if (io) {
+          io.to(`org:${org.id}`).emit("delivery:update", {
+            queueId: r.id,
+            status: r.status,
+            error: r.error,
+          });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error reporting SMS results:", error.message);
+      res.status(500).json({ error: "Failed to report results" });
     }
   });
 
