@@ -4,33 +4,13 @@ const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/publ
 
 export default function SetupPhone() {
   const [token, setToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [step, setStep] = useState<"download" | "token">("download");
+  const [step, setStep] = useState<"download" | "open">("download");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("token");
     if (t) setToken(t);
   }, []);
-
-  const handleCopy = async () => {
-    if (!token) return;
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    } catch {
-      // Fallback for older browsers
-      const el = document.createElement("textarea");
-      el.value = token;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    }
-  };
 
   if (!token) {
     return (
@@ -45,6 +25,8 @@ export default function SetupPhone() {
     );
   }
 
+  const deepLink = `pawtraitsend://connect?token=${token}`;
+
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -55,17 +37,17 @@ export default function SetupPhone() {
           <>
             <div style={styles.stepBadge}>Step 1 of 2</div>
             <p style={styles.instruction}>
-              Tap the button below to download the Pawtrait Send app to your Android phone.
+              Tap the button below to download the Pawtrait Send app.
             </p>
             <a href={APK_URL} style={styles.button} download>
               Download Pawtrait Send
             </a>
             <p style={styles.note}>
-              After downloading, tap the file in your notifications to install it.
-              You may need to allow "Install from unknown sources" in your phone settings.
+              After the download finishes, tap the file in your notifications to install it.
+              If prompted, allow "Install from unknown sources."
             </p>
             <button
-              onClick={() => setStep("token")}
+              onClick={() => setStep("open")}
               style={styles.nextButton}
             >
               I've installed the app — Next
@@ -75,18 +57,13 @@ export default function SetupPhone() {
           <>
             <div style={styles.stepBadge}>Step 2 of 2</div>
             <p style={styles.instruction}>
-              Open the Pawtrait Send app and paste this connection token:
+              Tap the button below to open the app. It will connect automatically — no typing or pasting needed.
             </p>
-            <div style={styles.tokenBox}>
-              <code style={styles.tokenText}>
-                {token.substring(0, 8)}...{token.substring(token.length - 8)}
-              </code>
-              <button onClick={handleCopy} style={styles.copyButton}>
-                {copied ? "Copied!" : "Copy Token"}
-              </button>
-            </div>
+            <a href={deepLink} style={styles.button}>
+              Open Pawtrait Send
+            </a>
             <p style={styles.note}>
-              Once connected, portrait texts will automatically send from your phone when queued from the dashboard.
+              Once connected, portrait texts will send from your phone automatically when queued from the dashboard.
             </p>
             <button
               onClick={() => setStep("download")}
@@ -171,34 +148,6 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     cursor: "pointer",
     marginTop: 12,
-  },
-  tokenBox: {
-    backgroundColor: "#f5f5f0",
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 16,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  tokenText: {
-    fontSize: 14,
-    color: "#333",
-    fontFamily: "monospace",
-    wordBreak: "break-all" as const,
-  },
-  copyButton: {
-    backgroundColor: "#7c5832",
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: 600,
-    padding: "8px 16px",
-    borderRadius: 8,
-    border: "none",
-    cursor: "pointer",
-    whiteSpace: "nowrap" as const,
-    flexShrink: 0,
   },
   note: {
     fontSize: 13,
