@@ -107,148 +107,167 @@ export function setupOgMetaRoutes(app: Express) {
     console.log("[og-meta] /business/:slug hit, UA:", ua?.substring(0, 50), "isCrawler:", isCrawler(ua));
     if (!isCrawler(ua)) return next();
 
+    const { slug } = req.params;
+    let title = `Business | ${SITE_NAME}`;
+    let description = `View our pets' stunning portraits!`;
+    let ogImageUrl: string | undefined;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/business/${slug}`;
+
     try {
-      const { slug } = req.params;
       const org = await storage.getOrganizationBySlug(slug as string);
       if (!org || !org.isActive) return next();
 
-      const orgDogs = await storage.getDogsByOrganization(org.id);
-      const availableDogs = orgDogs.filter(d => d.isAvailable);
+      ogImageUrl = `${baseUrl}/api/business/${slug}/og-image`;
 
-      const baseUrl = getBaseUrl(req);
-      const ogImageUrl = `${baseUrl}/api/business/${slug}/og-image`;
-
-      const petCount = availableDogs.length;
-      const speciesSet = new Set(availableDogs.map(d => d.species));
-      const species = availableDogs.length > 0
-        ? Array.from(speciesSet).join(' and ')
-        : 'pets';
-      const description = org.description
-        || `Meet ${petCount} adorable ${species} at ${org.name}! View their beautiful artistic portraits.`;
-
-      const template = getHtmlTemplate();
-      const html = buildOgHtml(template, {
-        title: `${org.name} - Pet Portraits | ${SITE_NAME}`,
-        description,
-        imageUrl: ogImageUrl,
-        url: `${baseUrl}/business/${slug}`,
-      });
-
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (error: any) {
-      console.error("OG meta error for business:", error?.message || error);
+      let petInfo = '';
       try {
-        const template = getHtmlTemplate();
-        const html = buildOgHtml(template, {
-          title: `Business | ${SITE_NAME}`,
-          description: `View our pets' stunning portraits!`,
-          url: `${getBaseUrl(req)}/business/${req.params.slug}`,
-        });
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      } catch { next(); }
+        const orgDogs = await storage.getDogsByOrganization(org.id);
+        const availableDogs = orgDogs.filter(d => d.isAvailable);
+        const petCount = availableDogs.length;
+        const speciesSet = new Set(availableDogs.map(d => d.species));
+        const species = availableDogs.length > 0 ? Array.from(speciesSet).join(' and ') : 'pets';
+        petInfo = `Meet ${petCount} adorable ${species} at ${org.name}! View their beautiful artistic portraits.`;
+      } catch (e: any) {
+        console.error("[og-meta] dogs lookup failed:", e?.message);
+      }
+
+      title = `${org.name} - Pet Portraits | ${SITE_NAME}`;
+      description = org.description || petInfo || description;
+    } catch (error: any) {
+      console.error("[og-meta] org lookup failed for business:", error?.message || error);
+    }
+
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e: any) {
+      console.error("[og-meta] template render failed:", e?.message);
+      next();
     }
   });
 
   // Serve OG to all user agents for pawfile routes (iMessage/RCS use regular Safari UA)
   app.get('/pawfile/:id', async (req: Request, res: Response, next: NextFunction) => {
+    const id = parseInt(req.params.id as string);
+    if (isNaN(id)) return next();
+
+    let title = `Pet Portrait | ${SITE_NAME}`;
+    let description = `View this pet's stunning portrait!`;
+    let ogImageUrl: string | undefined;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/pawfile/${id}`;
+
     try {
-      const id = parseInt(req.params.id as string);
-      if (isNaN(id)) return next();
-
       const dog = await storage.getDog(id);
-      if (!dog) return next();
+      if (dog) {
+        let orgName = '';
+        try {
+          if (dog.organizationId) {
+            const org = await storage.getOrganization(dog.organizationId);
+            if (org) orgName = ` at ${org.name}`;
+          }
+        } catch (e: any) {
+          console.error("[og-meta] org lookup failed:", e?.message);
+        }
 
-      const org = dog.organizationId ? await storage.getOrganization(dog.organizationId) : null;
-      const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
+        try {
+          const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
+          ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
+            ? selectedPortrait.generatedImageUrl
+            : `${baseUrl}/api/pawfile/${id}/og-image`;
+        } catch (e: any) {
+          console.error("[og-meta] portrait lookup failed:", e?.message);
+          ogImageUrl = `${baseUrl}/api/pawfile/${id}/og-image`;
+        }
 
-      const baseUrl = getBaseUrl(req);
-      const ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
-        ? selectedPortrait.generatedImageUrl
-        : `${baseUrl}/api/pawfile/${id}/og-image`;
+        const breedStr = dog.breed ? `${dog.breed} ` : '';
+        const ageStr = dog.age ? `, ${dog.age}` : '';
+        const speciesLabel = dog.species === 'cat' ? 'Cat' : 'Dog';
 
-      const breedStr = dog.breed ? `${dog.breed} ` : '';
-      const ageStr = dog.age ? `, ${dog.age}` : '';
-      const orgStr = org ? ` at ${org.name}` : '';
-      const speciesLabel = dog.species === 'cat' ? 'Cat' : 'Dog';
-
-      const title = `${dog.name} - ${breedStr}${speciesLabel} Portrait${orgStr} | ${SITE_NAME}`;
-      const description = dog.description
-        || `Meet ${dog.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgStr}. View ${dog.name}'s stunning artistic portrait!`;
-
-      const template = getHtmlTemplate();
-      const html = buildOgHtml(template, {
-        title,
-        description,
-        imageUrl: ogImageUrl,
-        url: `${baseUrl}/pawfile/${id}`,
-      });
-
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        title = `${dog.name} - ${breedStr}${speciesLabel} Portrait${orgName} | ${SITE_NAME}`;
+        description = dog.description
+          || `Meet ${dog.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgName}. View ${dog.name}'s stunning artistic portrait!`;
+      }
     } catch (error: any) {
-      console.error("OG meta error for pawfile:", error?.message || error);
-      try {
-        const template = getHtmlTemplate();
-        const html = buildOgHtml(template, {
-          title: `Pet Portrait | ${SITE_NAME}`,
-          description: `View this pet's stunning portrait!`,
-          url: `${getBaseUrl(req)}/pawfile/${req.params.id}`,
-        });
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      } catch { next(); }
+      console.error("[og-meta] dog lookup failed:", error?.message || error);
+    }
+
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e: any) {
+      console.error("[og-meta] template render failed:", e?.message);
+      next();
     }
   });
 
   // Pawfile by pet code — the URL customers actually receive
   app.get('/pawfile/code/:petCode', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { petCode } = req.params;
-      console.log("[og-meta] /pawfile/code/:petCode hit, petCode =", petCode);
-      if (!petCode) return next();
+    const { petCode } = req.params;
+    console.log("[og-meta] /pawfile/code/:petCode hit, petCode =", petCode);
+    if (!petCode) return next();
 
+    // Default fallback values
+    let title = `Pet Portrait | ${SITE_NAME}`;
+    let description = `View this pet's stunning portrait!`;
+    let ogImageUrl: string | undefined;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/pawfile/code/${petCode}`;
+
+    try {
       const result = await pool.query(
         `SELECT d.id, d.name, d.breed, d.age, d.species, d.description, d.organization_id
          FROM dogs d WHERE d.pet_code = $1`,
         [(petCode as string).toUpperCase()]
       );
-      if (result.rows.length === 0) return next();
 
-      const row = result.rows[0];
-      const org = row.organization_id ? await storage.getOrganization(row.organization_id) : null;
-      const selectedPortrait = await storage.getSelectedPortraitByDog(row.id);
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
 
-      const baseUrl = getBaseUrl(req);
-      const ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
-        ? selectedPortrait.generatedImageUrl
-        : `${baseUrl}/api/pawfile/${row.id}/og-image`;
+        // Org lookup — optional, don't let it break everything
+        let orgName = '';
+        try {
+          if (row.organization_id) {
+            const org = await storage.getOrganization(row.organization_id);
+            if (org) orgName = ` at ${org.name}`;
+          }
+        } catch (e: any) {
+          console.error("[og-meta] org lookup failed:", e?.message);
+        }
 
-      const breedStr = row.breed ? `${row.breed} ` : '';
-      const ageStr = row.age ? `, ${row.age}` : '';
-      const orgStr = org ? ` at ${org.name}` : '';
-      const speciesLabel = row.species === 'cat' ? 'Cat' : 'Dog';
+        // Portrait lookup — optional
+        try {
+          const selectedPortrait = await storage.getSelectedPortraitByDog(row.id);
+          ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith('https://')
+            ? selectedPortrait.generatedImageUrl
+            : `${baseUrl}/api/pawfile/${row.id}/og-image`;
+        } catch (e: any) {
+          console.error("[og-meta] portrait lookup failed:", e?.message);
+          ogImageUrl = `${baseUrl}/api/pawfile/${row.id}/og-image`;
+        }
 
-      const title = `${row.name}'s Portrait${orgStr} | ${SITE_NAME}`;
-      const description = `Meet ${row.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgStr}. View ${row.name}'s stunning portrait!`;
+        const breedStr = row.breed ? `${row.breed} ` : '';
+        const ageStr = row.age ? `, ${row.age}` : '';
+        const speciesLabel = row.species === 'cat' ? 'Cat' : 'Dog';
 
-      const template = getHtmlTemplate();
-      const html = buildOgHtml(template, {
-        title,
-        description,
-        imageUrl: ogImageUrl,
-        url: `${baseUrl}/pawfile/code/${petCode}`,
-      });
-
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        title = `${row.name}'s Portrait${orgName} | ${SITE_NAME}`;
+        description = `Meet ${row.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgName}. View ${row.name}'s stunning portrait!`;
+      }
     } catch (error: any) {
-      console.error("OG meta error for pawfile/code:", error?.message || error);
-      try {
-        const template = getHtmlTemplate();
-        const html = buildOgHtml(template, {
-          title: `Pet Portrait | ${SITE_NAME}`,
-          description: `View this pet's stunning portrait!`,
-          url: `${getBaseUrl(req)}/pawfile/code/${req.params.petCode}`,
-        });
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-      } catch { next(); }
+      console.error("[og-meta] DB query failed for pawfile/code:", error?.message || error);
+    }
+
+    // Always serve OG HTML — with pet-specific data if we got it, fallback if not
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+    } catch (e: any) {
+      console.error("[og-meta] template render failed:", e?.message);
+      next();
     }
   });
 }
