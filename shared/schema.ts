@@ -57,7 +57,8 @@ export const organizations = pgTable("organizations", {
   captureMode: text("capture_mode"), // "hero" | "batch" — hero=single photo, batch=multi-upload
   deliveryMode: text("delivery_mode").default("receipt"), // "receipt" | "receipt_sms" | "receipt_sms_pod"
   notificationMode: text("notification_mode").default("both"), // "sms" | "email" | "both" — how customers are notified at departure
-  smsSendMethod: text("sms_send_method").default("platform"), // "platform" (Telnyx) | "native" (BGD's phone via companion app)
+  smsSendMethod: text("sms_send_method").default("native"), // "native" (BGD's phone) — always native now
+  sendToken: text("send_token"), // auth token for iOS Shortcut / Android companion app
   portraitCadence: text("portrait_cadence"), // "weekly" | "biweekly" — org-wide default for daycare portrait rotation (null = weekly)
   speciesHandled: text("species_handled"), // dogs, cats, both — must be explicitly chosen during onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),

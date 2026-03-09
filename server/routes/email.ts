@@ -1,3 +1,4 @@
+// Email delivery — sends portrait links to pet owners via Nodemailer/SMTP
 export interface EmailSendResult {
   success: boolean;
   error?: string;

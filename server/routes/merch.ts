@@ -1,3 +1,4 @@
+// Merch orders — Printful (prints, mugs, totes) and Gelato (greeting cards)
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";

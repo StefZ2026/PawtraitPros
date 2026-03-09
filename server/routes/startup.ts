@@ -1,3 +1,4 @@
+// Startup reconciliation — syncs Stripe subscription state with local DB on boot
 import { storage } from "../storage";
 import { getStripeClient, mapStripeStatusToInternal, STRIPE_PLAN_PRICE_MAP } from "../stripeClient";
 import { handleCancellation, isWithinTrialWindow, revertToFreeTrial, getFreeTrial, markFreeTrialUsed } from "../subscription";

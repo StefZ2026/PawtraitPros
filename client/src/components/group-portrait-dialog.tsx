@@ -38,6 +38,7 @@ export function GroupPortraitDialog({
   const [selectedStyleId, setSelectedStyleId] = useState<number | null>(null);
   const [generating, setGenerating] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set(dogIds));
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -45,11 +46,26 @@ export function GroupPortraitDialog({
       setSelectedStyleId(null);
       setGenerating(false);
       setResultUrl(null);
+      setSelectedIds(new Set(dogIds));
     }
-  }, [open]);
+  }, [open, dogIds]);
 
-  const selectedDogs = dogIds.map(id => dogs.find(d => d.id === id)).filter(Boolean) as DogWithPortrait[];
+  const allDogs = dogIds.map(id => dogs.find(d => d.id === id)).filter(Boolean) as DogWithPortrait[];
+  const selectedDogs = allDogs.filter(d => selectedIds.has(d.id));
   const petNames = selectedDogs.map(d => d.name).join(" & ");
+
+  const toggleDog = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        if (next.size <= 2) return prev; // minimum 2
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const handleGenerate = async () => {
     if (!selectedStyleId) return;
@@ -57,8 +73,9 @@ export function GroupPortraitDialog({
     setResultUrl(null);
 
     try {
+      const activeDogIds = Array.from(selectedIds);
       const res = await apiRequest("POST", "/api/generate-group-portrait", {
-        dogIds,
+        dogIds: activeDogIds,
         styleId: selectedStyleId,
       });
       const data = await res.json();
@@ -115,19 +132,41 @@ export function GroupPortraitDialog({
 
         {/* Pets in the group */}
         <div className="flex gap-3 justify-center py-2">
-          {selectedDogs.map(dog => (
-            <div key={dog.id} className="text-center">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-violet-200 dark:border-violet-800 bg-muted">
-                {dog.originalPhotoUrl ? (
-                  <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 text-lg">?</div>
-                )}
-              </div>
-              <p className="text-xs mt-1 font-medium">{dog.name}</p>
-            </div>
-          ))}
+          {allDogs.map(dog => {
+            const isIncluded = selectedIds.has(dog.id);
+            const canDeselect = selectedIds.size > 2;
+            return (
+              <button
+                key={dog.id}
+                type="button"
+                className={`text-center relative transition-opacity ${isIncluded ? "" : "opacity-40"}`}
+                onClick={() => toggleDog(dog.id)}
+                title={!isIncluded ? "Click to include" : !canDeselect ? "At least 2 pets required" : "Click to exclude"}
+              >
+                <div className={`w-16 h-16 rounded-full overflow-hidden border-2 bg-muted ${
+                  isIncluded ? "border-violet-200 dark:border-violet-800" : "border-muted-foreground/30"
+                }`}>
+                  {dog.originalPhotoUrl ? (
+                    <img src={dog.originalPhotoUrl} alt={dog.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 text-lg">?</div>
+                  )}
+                </div>
+                <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${
+                  isIncluded ? "bg-violet-500" : "bg-muted-foreground/50"
+                }`}>
+                  {isIncluded ? <Check className="h-3 w-3" /> : ""}
+                </div>
+                <p className="text-xs mt-1 font-medium">{dog.name}</p>
+              </button>
+            );
+          })}
         </div>
+        {allDogs.length > 2 && (
+          <p className="text-xs text-center text-muted-foreground -mt-1">
+            {selectedDogs.length} of {allDogs.length} pets selected — tap to toggle
+          </p>
+        )}
 
         {/* Result preview */}
         {resultUrl && (
@@ -182,11 +221,11 @@ export function GroupPortraitDialog({
 
             <div className="flex items-center justify-between pt-2">
               <p className="text-xs text-muted-foreground">
-                Uses {dogIds.length} credit{dogIds.length !== 1 ? "s" : ""} (1 per pet)
+                Uses {selectedDogs.length} credit{selectedDogs.length !== 1 ? "s" : ""} (1 per pet)
               </p>
               <Button
                 onClick={handleGenerate}
-                disabled={!selectedStyleId}
+                disabled={!selectedStyleId || selectedDogs.length < 2}
                 className="gap-2 bg-violet-600 hover:bg-violet-700"
               >
                 <Users className="h-4 w-4" />

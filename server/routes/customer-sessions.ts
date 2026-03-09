@@ -1,3 +1,4 @@
+// Customer session tokens — short-lived links for pet owners to view/share portraits
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { storage } from "../storage";

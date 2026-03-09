@@ -1,3 +1,4 @@
+// Pet CRUD — add, update, delete, check-in/out, portrait queue, and visit photos
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -21,7 +22,7 @@ export function registerDogRoutes(app: Express): void {
          FROM dogs d
          JOIN organizations o ON d.organization_id = o.id
          WHERE d.pet_code = $1`,
-        [petCode.toUpperCase()]
+        [(petCode as string).toUpperCase()]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Pet not found" });
@@ -90,7 +91,7 @@ export function registerDogRoutes(app: Express): void {
         `SELECT d.id, d.species, d.organization_id, o.industry_type
          FROM dogs d JOIN organizations o ON d.organization_id = o.id
          WHERE d.pet_code = $1`,
-        [petCode.toUpperCase()]
+        [(petCode as string).toUpperCase()]
       );
       if (dogResult.rows.length === 0) {
         return res.status(404).json({ error: "Pet not found" });
@@ -179,7 +180,7 @@ export function registerDogRoutes(app: Express): void {
         `SELECT d.*, o.industry_type, o.id as org_id
          FROM dogs d JOIN organizations o ON d.organization_id = o.id
          WHERE d.pet_code = $1`,
-        [petCode.toUpperCase()]
+        [(petCode as string).toUpperCase()]
       );
       if (dogResult.rows.length === 0) {
         return res.status(404).json({ error: "Pet not found" });
@@ -782,7 +783,7 @@ export function registerDogRoutes(app: Express): void {
       if (!photo) return res.status(400).json({ error: "Photo data is required" });
 
       // Photo limit by industry type
-      const industryType = (org as any).industryType || "groomer";
+      const industryType = org.industryType || "groomer";
       const photoLimits: Record<string, number> = { groomer: 3, boarding: 5, daycare: 4 };
       const limit = photoLimits[industryType] || 3;
 

@@ -1,3 +1,4 @@
+// SMS sending utilities — message formatting, image optimization, provider abstraction
 import sharp from "sharp";
 import { uploadToStorage, fetchImageAsBuffer } from "../supabase-storage";
 

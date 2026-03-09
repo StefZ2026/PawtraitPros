@@ -722,7 +722,7 @@ export default function CustomerOrder() {
                             }`}
                             style={
                               selectedOccasion === occ.id
-                                ? { borderColor: occ.templateColors.primary, backgroundColor: occ.templateColors.secondary, color: occ.templateColors.textColor, ringColor: occ.templateColors.primary }
+                                ? { borderColor: occ.templateColors.primary, backgroundColor: occ.templateColors.secondary, color: occ.templateColors.textColor }
                                 : undefined
                             }
                             onClick={() => {

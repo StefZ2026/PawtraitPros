@@ -1,3 +1,4 @@
+// Portrait generation — calls Gemini AI, stores results, handles regeneration
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 sharp.cache(false);

@@ -1,3 +1,4 @@
+// GDPR compliance — data export and account deletion for end users
 import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";
@@ -43,8 +44,8 @@ export function registerGdprRoutes(app: Express): void {
           slug: org.slug,
           description: org.description,
           websiteUrl: org.websiteUrl,
-          phone: org.phone,
-          address: org.address,
+          phone: org.contactPhone,
+          address: org.locationStreet,
           createdAt: org.createdAt,
         } : null,
         pets: dogs.map(d => ({

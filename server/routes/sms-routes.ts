@@ -1,3 +1,4 @@
+// SMS API routes — send portrait links to pet owners via Telnyx/Twilio
 import type { Express, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { isAuthenticated } from "../auth";

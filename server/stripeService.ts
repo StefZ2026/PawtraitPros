@@ -180,10 +180,6 @@ export class StripeService {
     }
   }
 
-  async getAddonPriceId(testMode?: boolean): Promise<string> {
-    return this.getOrCreateAddonPriceId(testMode);
-  }
-
   async scheduleDowngrade(subscriptionId: string, newPriceId: string, testMode?: boolean): Promise<{ currentPeriodEnd: Date }> {
     const stripe = getStripeClient(testMode);
     const addonPriceId = await this.getOrCreateAddonPriceId(testMode);

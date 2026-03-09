@@ -1,3 +1,4 @@
+// Stripe billing — checkout, portal, plan changes, and add-on pet slots
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
@@ -64,8 +65,7 @@ export function registerPlansBillingRoutes(app: Express): void {
       if (!org) return res.status(orgSt || 400).json({ error: orgErr });
 
       // If org already has Stripe data from a different mode, clean it first
-      // org.stripeTestMode is not in Drizzle schema — treat undefined as test mode
-      const orgCurrentMode = (org as any).stripeTestMode ?? true;
+      const orgCurrentMode = org.stripeTestMode ?? true;
       if (org.stripeCustomerId && orgCurrentMode !== testMode) {
         await storage.updateOrganizationStripeInfo(org.id, {
           stripeCustomerId: null,
@@ -132,11 +132,11 @@ export function registerPlansBillingRoutes(app: Express): void {
       const metadataOrgId = session.metadata?.orgId ? parseInt(session.metadata.orgId) : null;
       const targetOrgId = metadataOrgId || (bodyOrgId ? parseInt(bodyOrgId) : null);
       if (!targetOrgId) {
-        return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
+        return res.status(404).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
       const org = await storage.getOrganization(targetOrgId);
       if (!org) {
-        return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
+        return res.status(404).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
 
       // Ownership check
@@ -214,7 +214,7 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       const stripeState = await validateAndCleanStripeData(org.id);
       if (!stripeState.customerId) {
-        return res.status(400).json({ error: "No billing account found. If you previously had a subscription, it may have been canceled. Please choose a new plan." });
+        return res.status(404).json({ error: "No billing account found. If you previously had a subscription, it may have been canceled. Please choose a new plan." });
       }
 
       const refreshedOrg = await storage.getOrganization(org.id);
@@ -287,10 +287,10 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       const org = await storage.getOrganization(orgId);
       if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
+        return res.status(404).json({ error: "Organization not found" });
       }
 
-      const orgTestMode = (org as any).stripeTestMode ?? true;
+      const orgTestMode = org.stripeTestMode ?? true;
       const changePlanPrice = plan ? getEffectivePlanPrice(plan, orgTestMode) : null;
       if (!plan || !changePlanPrice) {
         return res.status(400).json({ error: "Invalid plan selected" });
@@ -307,7 +307,7 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       const currentPlan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       if (!currentPlan) {
-        return res.status(400).json({ error: "Current plan not found" });
+        return res.status(404).json({ error: "Current plan not found" });
       }
 
       if (plan.id === currentPlan.id) {
@@ -356,7 +356,7 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       if (org.stripeSubscriptionId) {
         const currentPlan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-        const cancelOrgTestMode = (org as any).stripeTestMode ?? true;
+        const cancelOrgTestMode = org.stripeTestMode ?? true;
         const currentPrice = currentPlan ? getEffectivePlanPrice(currentPlan, cancelOrgTestMode) : null;
         if (currentPrice) {
           await stripeService.scheduleDowngrade(org.stripeSubscriptionId, currentPrice, cancelOrgTestMode);
@@ -410,7 +410,7 @@ export function registerPlansBillingRoutes(app: Express): void {
 
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       if (!plan || plan.priceMonthly === 0) {
-        return res.status(403).json({ error: "Add-on pet slots are only available on paid plans. Please upgrade first." });
+        return res.status(400).json({ error: "Add-on pet slots are only available on paid plans. Please upgrade first." });
       }
 
       const stripeState = await validateAndCleanStripeData(org.id);

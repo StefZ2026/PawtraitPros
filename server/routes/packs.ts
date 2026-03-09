@@ -1,4 +1,5 @@
-import type { Express, Request, Response } from "express";
+// Portrait packs and styles — daily pack selection and style catalog
+import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
@@ -6,7 +7,7 @@ import { getPacks } from "@shared/pack-config";
 import { resolveOrg } from "./helpers";
 
 export function registerPackRoutes(app: Express): void {
-  app.get("/api/portrait-styles", async (req: Request, res: Response) => {
+  app.get("/api/portrait-styles", async (req: any, res: Response) => {
     try {
       const styles = await storage.getAllPortraitStyles();
       res.json(styles);
@@ -18,7 +19,7 @@ export function registerPackRoutes(app: Express): void {
 
   // --- PACKS ---
   // Returns the 3 packs for a given species, with resolved style details
-  app.get("/api/packs", async (req: Request, res: Response) => {
+  app.get("/api/packs", async (req: any, res: Response) => {
     try {
       const species = (req.query.species as string) || "dog";
 
@@ -50,7 +51,7 @@ export function registerPackRoutes(app: Express): void {
 
   // Get today's pack selection for the org (per species)
   // Supports ?orgId= for admin/edit context, falls back to owner lookup
-  app.get("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+  app.get("/api/daily-pack", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
@@ -77,7 +78,7 @@ export function registerPackRoutes(app: Express): void {
   });
 
   // Clear today's pack selection (allows re-choosing)
-  app.delete("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+  app.delete("/api/daily-pack", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;
@@ -100,7 +101,7 @@ export function registerPackRoutes(app: Express): void {
   });
 
   // Set today's pack selection (per species)
-  app.post("/api/daily-pack", isAuthenticated, async (req: Request, res: Response) => {
+  app.post("/api/daily-pack", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user!.claims.sub as string;
       const userEmail = req.user!.claims.email as string;

@@ -1,3 +1,4 @@
+// Job status polling — lets the client check progress of queued portrait generation
 import type { Express, Response } from "express";
 import { isAuthenticated } from "../auth";
 import { getJob, getJobs } from "../job-queue";
