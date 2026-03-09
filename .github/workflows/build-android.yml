@@ -30,17 +30,18 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
       - name: Install JS dependencies
         run: npm install
-
-      - name: Generate Gradle wrapper
-        run: |
-          cd android
-          gradle wrapper --gradle-version 8.10.2
 
       - name: Build release APK
         run: |
           cd android
+          gradle wrapper --gradle-version 8.10.2
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
