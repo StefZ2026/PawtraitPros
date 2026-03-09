@@ -10,6 +10,7 @@ import { isValidBreed } from "../breeds";
 import type { InsertOrganization } from "@shared/schema";
 import crypto from "crypto";
 import { pool } from "../db";
+import { sendSms } from "./sms";
 import { ADMIN_EMAIL, isAdmin, generateUniqueSlug, computePetLimitInfo, checkDogLimit, createDogWithPortrait, ORG_ALLOWED_FIELDS, DOG_ALLOWED_FIELDS } from "./helpers";
 
 export function registerAdminRoutes(app: Express): void {
@@ -606,6 +607,42 @@ export function registerAdminRoutes(app: Express): void {
     } catch (error: any) {
       console.error("Error generating send token for org:", error.message);
       res.status(500).json({ error: "Failed to generate token" });
+    }
+  });
+
+  // One-click: generate token + send setup text to BGD's phone via Telnyx
+  app.post("/api/admin/organizations/:id/send-setup-text", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id as string);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      // Must have a phone number on file
+      const phone = (org as any).contactPhone || (org as any).contact_phone;
+      if (!phone) {
+        return res.status(400).json({ error: "No phone number on file for this business. Add their phone number first." });
+      }
+
+      // Generate send token if not already present
+      let token = org.sendToken;
+      if (!token) {
+        token = crypto.randomBytes(24).toString("hex");
+        await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, orgId]);
+      }
+
+      // Send the setup text via Telnyx
+      const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+      const message = `Hi from Pawtrait Pros! Download the Pawtrait Send app to start sending portrait texts from your phone: ${appUrl}/setup-phone`;
+      const result = await sendSms(phone, message);
+
+      if (!result.success) {
+        return res.status(500).json({ error: `Failed to send text: ${result.error || "Unknown error"}` });
+      }
+
+      res.json({ success: true, phone, orgName: org.name });
+    } catch (error: any) {
+      console.error("Error sending setup text:", error.message);
+      res.status(500).json({ error: "Failed to send setup text" });
     }
   });
 

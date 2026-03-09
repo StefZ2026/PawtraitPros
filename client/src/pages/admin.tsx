@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
   AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
-  Scissors, Sun, Handshake, Smartphone, Copy, Check
+  Scissors, Sun, Handshake, Smartphone
 } from "lucide-react";
 import {
   Select,
@@ -92,10 +92,7 @@ export default function Admin() {
   const { toast } = useToast();
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [currentView, setCurrentView] = useState<AdminView>("dashboard");
-  const [phoneSetupOrg, setPhoneSetupOrg] = useState<{ id: number; name: string } | null>(null);
-  const [phoneSetupToken, setPhoneSetupToken] = useState<string | null>(null);
-  const [phoneSetupLoading, setPhoneSetupLoading] = useState(false);
-  const [phoneSetupCopied, setPhoneSetupCopied] = useState(false);
+  const [sendingSetupText, setSendingSetupText] = useState<number | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -183,43 +180,20 @@ export default function Admin() {
     },
   });
 
-  const handlePhoneSetup = async (orgId: number, orgName: string) => {
-    setPhoneSetupOrg({ id: orgId, name: orgName });
-    setPhoneSetupToken(null);
-    setPhoneSetupLoading(true);
-    setPhoneSetupCopied(false);
+  const handleSendSetupText = async (orgId: number, orgName: string) => {
+    setSendingSetupText(orgId);
     try {
-      const res = await apiRequest("POST", `/api/admin/organizations/${orgId}/generate-send-token`);
+      const res = await apiRequest("POST", `/api/admin/organizations/${orgId}/send-setup-text`);
       const data = await res.json();
-      setPhoneSetupToken(data.sendToken);
+      if (data.success) {
+        toast({ title: "Setup text sent!", description: `Sent to ${orgName} at ${data.phone}` });
+      } else {
+        toast({ title: "Error", description: data.error || "Failed to send", variant: "destructive" });
+      }
     } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to generate token", variant: "destructive" });
-      setPhoneSetupOrg(null);
+      toast({ title: "Error", description: err.message || "Failed to send setup text", variant: "destructive" });
     } finally {
-      setPhoneSetupLoading(false);
-    }
-  };
-
-  const getSetupLink = () => {
-    const base = window.location.origin;
-    return `${base}/setup-phone`;
-  };
-
-  const getTextMessage = () => {
-    if (!phoneSetupOrg) return "";
-    return `Hi ${phoneSetupOrg.name}! Download the Pawtrait Send app to send portrait texts from your phone: ${getSetupLink()}`;
-  };
-
-  const handleCopyMessage = async () => {
-    const msg = getTextMessage();
-    if (!msg) return;
-    try {
-      await navigator.clipboard.writeText(msg);
-      setPhoneSetupCopied(true);
-      setTimeout(() => setPhoneSetupCopied(false), 3000);
-      toast({ title: "Message copied!", description: "Paste it into a text to the business owner." });
-    } catch {
-      toast({ title: "Copy failed", description: "Please select and copy the message manually.", variant: "destructive" });
+      setSendingSetupText(null);
     }
   };
 
@@ -845,11 +819,16 @@ export default function Admin() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              title="Phone Setup Link"
-                              onClick={() => handlePhoneSetup(org.id, org.name)}
+                              title="Send Setup Text"
+                              onClick={() => handleSendSetupText(org.id, org.name)}
+                              disabled={sendingSetupText === org.id}
                               data-testid={`button-phone-${org.id}`}
                             >
-                              <Smartphone className="h-4 w-4" />
+                              {sendingSetupText === org.id ? (
+                                <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                              ) : (
+                                <Smartphone className="h-4 w-4" />
+                              )}
                             </Button>
                             <Button
                               variant="ghost"
@@ -877,43 +856,6 @@ export default function Admin() {
         </Card>
       </div>
 
-      {/* Phone Setup Modal */}
-      {phoneSetupOrg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPhoneSetupOrg(null)}>
-          <div className="bg-background rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Phone Setup — {phoneSetupOrg.name}</h3>
-              <Button variant="ghost" size="icon" onClick={() => setPhoneSetupOrg(null)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {phoneSetupLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Setting up...</div>
-            ) : phoneSetupToken ? (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Text this message to {phoneSetupOrg?.name}. They download the app, open it, and enter their phone number to connect.
-                </p>
-
-                <div className="bg-muted rounded-lg p-4">
-                  <p className="text-sm select-all">{getTextMessage()}</p>
-                </div>
-
-                <Button className="w-full gap-2" onClick={handleCopyMessage}>
-                  {phoneSetupCopied ? <><Check className="h-4 w-4" /> Copied!</> : <><Copy className="h-4 w-4" /> Copy Message</>}
-                </Button>
-
-                <p className="text-xs text-muted-foreground text-center">
-                  Make sure {phoneSetupOrg?.name}'s phone number is saved in their business settings so the app can find them.
-                </p>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-destructive">Failed to set up. Try again.</div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
