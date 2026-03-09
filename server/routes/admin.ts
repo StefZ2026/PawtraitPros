@@ -1,3 +1,4 @@
+// Admin panel routes — organization management, stats, and platform-wide operations
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -14,17 +15,25 @@ export function registerAdminRoutes(app: Express): void {
   // Admin routes
   app.post("/api/admin/organizations", isAuthenticated, isAdmin, async (req: any, res: Response) => {
     const MAX_RETRIES = 2;
-    const { name, description, websiteUrl } = req.body;
+    const { name, description, websiteUrl, referredByOrgId } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: "Organization name is required" });
+    }
+
+    // Validate referrer if provided
+    if (referredByOrgId) {
+      const referrer = await storage.getOrganization(referredByOrgId);
+      if (!referrer || referrer.subscriptionStatus !== 'active') {
+        return res.status(400).json({ error: "Referrer must be an active subscriber" });
+      }
     }
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const slug = await generateUniqueSlug(name);
 
-        const org = await storage.createOrganization({
+        const orgData: any = {
           name,
           slug,
           description: description || "",
@@ -32,7 +41,12 @@ export function registerAdminRoutes(app: Express): void {
           ownerId: null,
           subscriptionStatus: "inactive",
           portraitsUsedThisMonth: 0,
-        });
+        };
+        if (referredByOrgId) {
+          orgData.referredByOrgId = referredByOrgId;
+        }
+
+        const org = await storage.createOrganization(orgData);
 
         return res.status(201).json(org);
       } catch (error) {
@@ -136,6 +150,61 @@ export function registerAdminRoutes(app: Express): void {
     } catch (error) {
       console.error("Error fetching admin stats:", error);
       res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
+  // Referral commission endpoints
+  app.get("/api/admin/referrals", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const orgs = await storage.getAllOrganizations();
+      const referredOrgs = orgs.filter(o => o.referredByOrgId);
+
+      const relationships = [];
+      for (const org of referredOrgs) {
+        const referrer = orgs.find(o => o.id === org.referredByOrgId);
+        if (!referrer) continue;
+
+        const commissions = await storage.getReferralCommissions(referrer.id);
+        const orgCommissions = commissions.filter((c: any) => c.referred_org_id === org.id);
+        const totalEarned = orgCommissions.reduce((sum: number, c: any) => sum + c.commission_cents, 0);
+        const totalApplied = orgCommissions.filter((c: any) => c.credit_applied).reduce((sum: number, c: any) => sum + c.commission_cents, 0);
+
+        const startDate = org.referralStartDate;
+        let monthsRemaining = 12;
+        if (startDate) {
+          const elapsed = (Date.now() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 365 / 12);
+          monthsRemaining = Math.max(0, Math.round(12 - elapsed));
+        }
+
+        relationships.push({
+          referrerOrgId: referrer.id,
+          referrerName: referrer.name,
+          referredOrgId: org.id,
+          referredName: org.name,
+          referredStatus: org.subscriptionStatus,
+          startDate: startDate || null,
+          monthsRemaining,
+          totalEarnedCents: totalEarned,
+          totalAppliedCents: totalApplied,
+          commissionCount: orgCommissions.length,
+        });
+      }
+
+      res.json(relationships);
+    } catch (error) {
+      console.error("Error fetching referrals:", error);
+      res.status(500).json({ error: "Failed to fetch referrals" });
+    }
+  });
+
+  app.get("/api/admin/referrals/:orgId", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId as string);
+      const commissions = await storage.getReferralCommissions(orgId);
+      res.json(commissions);
+    } catch (error) {
+      console.error("Error fetching referral commissions:", error);
+      res.status(500).json({ error: "Failed to fetch commissions" });
     }
   });
 

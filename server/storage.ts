@@ -79,6 +79,12 @@ export interface IStorage {
   getDogsDueForPortrait(today: string): Promise<Dog[]>;
   getUsedStyleIdsForDog(dogId: number): Promise<number[]>;
   advanceNextPortraitDate(dogId: number, newDate: string | null): Promise<void>;
+
+  // Referral Commissions
+  createReferralCommission(data: { referrerOrgId: number; referredOrgId: number; stripeInvoiceId: string; invoiceAmountCents: number; commissionCents: number }): Promise<void>;
+  markReferralCreditApplied(id: number): Promise<void>;
+  getReferralCommissions(referrerOrgId?: number): Promise<any[]>;
+  getActiveReferrers(): Promise<{ id: number; name: string }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -431,6 +437,61 @@ export class DatabaseStorage implements IStorage {
       }
     }
     return fixes;
+  }
+
+  // Referral Commissions
+
+  async createReferralCommission(data: { referrerOrgId: number; referredOrgId: number; stripeInvoiceId: string; invoiceAmountCents: number; commissionCents: number }): Promise<void> {
+    await pool.query(
+      `INSERT INTO referral_commissions (referrer_org_id, referred_org_id, stripe_invoice_id, invoice_amount_cents, commission_cents)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [data.referrerOrgId, data.referredOrgId, data.stripeInvoiceId, data.invoiceAmountCents, data.commissionCents]
+    );
+  }
+
+  async markReferralCreditApplied(id: number): Promise<void> {
+    await pool.query(
+      `UPDATE referral_commissions SET credit_applied = true, credit_applied_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [id]
+    );
+  }
+
+  async getReferralCommissions(referrerOrgId?: number): Promise<any[]> {
+    if (referrerOrgId) {
+      const result = await pool.query(
+        `SELECT rc.*,
+                referrer.name as referrer_name,
+                referred.name as referred_name,
+                referred.subscription_status as referred_status,
+                referred.referral_start_date
+         FROM referral_commissions rc
+         JOIN organizations referrer ON rc.referrer_org_id = referrer.id
+         JOIN organizations referred ON rc.referred_org_id = referred.id
+         WHERE rc.referrer_org_id = $1
+         ORDER BY rc.created_at DESC`,
+        [referrerOrgId]
+      );
+      return result.rows;
+    }
+    const result = await pool.query(
+      `SELECT rc.*,
+              referrer.name as referrer_name,
+              referred.name as referred_name,
+              referred.subscription_status as referred_status,
+              referred.referral_start_date
+       FROM referral_commissions rc
+       JOIN organizations referrer ON rc.referrer_org_id = referrer.id
+       JOIN organizations referred ON rc.referred_org_id = referred.id
+       ORDER BY rc.created_at DESC`
+    );
+    return result.rows;
+  }
+
+  async getActiveReferrers(): Promise<{ id: number; name: string }[]> {
+    const result = await pool.query(
+      `SELECT id, name FROM organizations WHERE subscription_status = 'active' AND is_active = true ORDER BY name`
+    );
+    return result.rows;
   }
 }
 

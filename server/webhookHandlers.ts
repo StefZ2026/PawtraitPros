@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { getStripeClient, getWebhookSecret, mapStripeStatusToInternal } from './stripeClient';
 import { storage } from './storage';
 import { pool } from './db';
@@ -8,6 +9,166 @@ import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrde
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from './routes/email';
 
 export class WebhookHandlers {
+
+  // --- Gelato order status webhook ---
+  static async processGelatoWebhook(rawBody: Buffer, signatureHeader: string | undefined): Promise<{ status: number; body: any }> {
+    const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
+    if (gelatoSecret) {
+      if (!signatureHeader) {
+        console.warn('[gelato-webhook] Missing signature header — rejecting');
+        return { status: 401, body: { error: 'Missing webhook signature' } };
+      }
+      const expected = crypto.createHmac('sha256', gelatoSecret).update(rawBody).digest('hex');
+      if (!crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))) {
+        console.warn('[gelato-webhook] Invalid signature — rejecting');
+        return { status: 401, body: { error: 'Invalid webhook signature' } };
+      }
+    }
+
+    const body = JSON.parse(rawBody.toString());
+    const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
+    console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
+
+    if (event !== 'order_status_updated' && event !== 'order_item_status_updated') {
+      return { status: 200, body: { received: true } };
+    }
+    if (!orderReferenceId) {
+      return { status: 200, body: { received: true } };
+    }
+
+    const merchOrderId = orderReferenceId.startsWith('gelato-')
+      ? parseInt(orderReferenceId.replace('gelato-', ''))
+      : null;
+    if (!merchOrderId || isNaN(merchOrderId)) {
+      return { status: 200, body: { received: true } };
+    }
+
+    let appStatus: string | null = null;
+    switch (fulfillmentStatus) {
+      case 'shipped':
+      case 'in_transit':
+        appStatus = 'shipped';
+        break;
+      case 'delivered':
+        appStatus = 'delivered';
+        break;
+      case 'failed':
+      case 'returned':
+        appStatus = 'failed';
+        break;
+      case 'canceled':
+        appStatus = 'canceled';
+        break;
+      case 'in_production':
+      case 'printed':
+        appStatus = 'fulfilled';
+        break;
+    }
+
+    const updateFields = ['printful_status = $1'];
+    const updateValues: any[] = [fulfillmentStatus];
+    let paramIdx = 2;
+
+    if (appStatus) {
+      updateFields.push(`status = $${paramIdx}`);
+      updateValues.push(appStatus);
+      paramIdx++;
+    }
+    if (orderId) {
+      updateFields.push(`printful_order_id = $${paramIdx}`);
+      updateValues.push(orderId);
+      paramIdx++;
+    }
+
+    updateValues.push(merchOrderId);
+    await pool.query(
+      `UPDATE merch_orders SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+
+    if (fulfillmentStatus === 'shipped' && items?.[0]?.fulfillments?.[0]?.trackingUrl) {
+      const tracking = items[0].fulfillments[0];
+      console.log(`[gelato-webhook] Tracking for order ${merchOrderId}: ${tracking.trackingUrl}`);
+    }
+
+    console.log(`[gelato-webhook] Updated merch_order ${merchOrderId}: ${fulfillmentStatus} → ${appStatus || 'unchanged'}`);
+    return { status: 200, body: { received: true } };
+  }
+
+  // --- Printful order status webhook ---
+  static async processPrintfulWebhook(rawBody: Buffer, signatureHeader: string | undefined): Promise<{ status: number; body: any }> {
+    const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
+    if (printfulSecret) {
+      if (!signatureHeader) {
+        console.warn('[printful-webhook] Missing signature header — rejecting');
+        return { status: 401, body: { error: 'Missing webhook signature' } };
+      }
+      const expected = crypto.createHmac('sha256', printfulSecret).update(rawBody).digest('hex');
+      if (!crypto.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))) {
+        console.warn('[printful-webhook] Invalid signature — rejecting');
+        return { status: 401, body: { error: 'Invalid webhook signature' } };
+      }
+    }
+
+    const body = JSON.parse(rawBody.toString());
+    const { type, data } = body;
+    console.log(`[printful-webhook] Received event: ${type}`);
+
+    if (!data?.order?.external_id) {
+      return { status: 200, body: { received: true } };
+    }
+
+    const merchOrderId = parseInt(data.order.external_id);
+    if (isNaN(merchOrderId)) {
+      return { status: 200, body: { received: true } };
+    }
+
+    const printfulStatus = data.order.status || type;
+    let appStatus: string | null = null;
+
+    switch (type) {
+      case 'package_shipped':
+        appStatus = 'shipped';
+        break;
+      case 'order_failed':
+        appStatus = 'failed';
+        break;
+      case 'order_canceled':
+        appStatus = 'canceled';
+        break;
+      case 'order_created':
+        appStatus = 'submitted';
+        break;
+      case 'order_updated':
+        break;
+    }
+
+    const updateFields = ['printful_status = $1'];
+    const updateValues: any[] = [printfulStatus];
+    let paramIdx = 2;
+
+    if (appStatus) {
+      updateFields.push(`status = $${paramIdx}`);
+      updateValues.push(appStatus);
+      paramIdx++;
+    }
+    if (data.order.id) {
+      updateFields.push(`printful_order_id = $${paramIdx}`);
+      updateValues.push(String(data.order.id));
+      paramIdx++;
+    }
+
+    updateValues.push(merchOrderId);
+    await pool.query(
+      `UPDATE merch_orders SET ${updateFields.join(', ')} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+
+    console.log(`[printful-webhook] Updated merch_order ${merchOrderId}: ${type} → ${appStatus || 'status unchanged'}`);
+    return { status: 200, body: { received: true } };
+  }
+
+  // --- Stripe webhook ---
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
     if (!Buffer.isBuffer(payload)) {
       throw new Error(
@@ -80,7 +241,7 @@ export class WebhookHandlers {
         }
 
         try {
-          const addonPriceId = await stripeService.getAddonPriceId(testMode);
+          const addonPriceId = await stripeService.getOrCreateAddonPriceId(testMode);
           const subItems = data.items?.data || [];
           const addonItem = subItems.find((item: any) => {
             const priceId = typeof item.price === 'string' ? item.price : item.price?.id;
@@ -131,6 +292,68 @@ export class WebhookHandlers {
           await storage.syncOrgCredits(org.id);
           console.log(`[webhook] Synced credits for org ${org.id} on billing cycle`);
         }
+
+        // Referral commission: 5% of subscription payments for first 12 months
+        if (org.referredByOrgId && (data.billing_reason === 'subscription_create' || data.billing_reason === 'subscription_cycle')) {
+          try {
+            // Set referral start date on first subscription payment
+            if (!org.referralStartDate) {
+              await storage.updateOrganization(org.id, { referralStartDate: new Date() } as any);
+              console.log(`[webhook] Referral start date set for org ${org.id}`);
+            }
+
+            const startDate = org.referralStartDate || new Date();
+            const monthsElapsed = (Date.now() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24 * 365 / 12);
+
+            if (monthsElapsed < 12) {
+              // Get subscription line items only (exclude add-ons/merch)
+              const subscriptionAmount = data.lines?.data
+                ?.filter((line: any) => line.type === 'subscription')
+                ?.reduce((sum: number, line: any) => sum + (line.amount || 0), 0) || data.amount_paid || 0;
+
+              if (subscriptionAmount > 0) {
+                const commissionCents = Math.round(subscriptionAmount * 0.05);
+                const invoiceId = data.id || `inv_${Date.now()}`;
+
+                await storage.createReferralCommission({
+                  referrerOrgId: org.referredByOrgId,
+                  referredOrgId: org.id,
+                  stripeInvoiceId: invoiceId,
+                  invoiceAmountCents: subscriptionAmount,
+                  commissionCents,
+                });
+
+                // Apply credit to referrer's Stripe balance
+                const referrerOrg = await storage.getOrganization(org.referredByOrgId);
+                if (referrerOrg?.stripeCustomerId) {
+                  const testMode = referrerOrg.stripeTestMode;
+                  const stripe = getStripeClient(testMode);
+                  await stripe.customers.createBalanceTransaction(referrerOrg.stripeCustomerId, {
+                    amount: -commissionCents, // negative = credit
+                    currency: 'usd',
+                    description: `Referral credit — thanks for referring ${org.name}!`,
+                  });
+
+                  // Mark as applied
+                  const commissions = await storage.getReferralCommissions(org.referredByOrgId);
+                  const latest = commissions.find((c: any) => c.stripe_invoice_id === invoiceId);
+                  if (latest) {
+                    await storage.markReferralCreditApplied(latest.id);
+                  }
+
+                  console.log(`[webhook] Referral commission: $${(commissionCents / 100).toFixed(2)} credited to org ${referrerOrg.id} (${referrerOrg.name}) for referring org ${org.id} (${org.name})`);
+                } else {
+                  console.log(`[webhook] Referral commission recorded for org ${org.referredByOrgId} but no Stripe customer to credit`);
+                }
+              }
+            } else {
+              console.log(`[webhook] Referral window expired for org ${org.id} (${monthsElapsed.toFixed(1)} months elapsed)`);
+            }
+          } catch (refErr: any) {
+            console.error(`[webhook] Referral commission error for org ${org.id}:`, refErr.message);
+          }
+        }
+
         break;
       }
 

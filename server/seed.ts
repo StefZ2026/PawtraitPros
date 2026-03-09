@@ -397,6 +397,26 @@ export async function seedDatabase() {
     console.log('[migration] portraits group_id:', migErr.message);
   }
 
+  // Migration: referral commission system
+  try {
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS referred_by_org_id INTEGER REFERENCES organizations(id)');
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS referral_start_date TIMESTAMP');
+    await pool.query(`CREATE TABLE IF NOT EXISTS referral_commissions (
+      id SERIAL PRIMARY KEY,
+      referrer_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      referred_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      stripe_invoice_id TEXT NOT NULL,
+      invoice_amount_cents INTEGER NOT NULL,
+      commission_cents INTEGER NOT NULL,
+      credit_applied BOOLEAN NOT NULL DEFAULT false,
+      credit_applied_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    )`);
+    console.log('[migration] referral commission tables ready');
+  } catch (migErr: any) {
+    console.log('[migration] referral commissions:', migErr.message);
+  }
+
   // Migration: fix customer_sessions FK constraints to cascade on dog/portrait delete
   try {
     await pool.query(`

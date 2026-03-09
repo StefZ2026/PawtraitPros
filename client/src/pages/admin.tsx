@@ -15,8 +15,15 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
   AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
-  Scissors, Sun
+  Scissors, Sun, Handshake
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { Organization } from "@shared/schema";
 
 interface OrganizationWithStats extends Organization {
@@ -43,7 +50,20 @@ interface AdminStats {
   };
 }
 
-type AdminView = "dashboard" | "revenue" | "pastdue";
+type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals";
+
+interface ReferralRelationship {
+  referrerOrgId: number;
+  referrerName: string;
+  referredOrgId: number;
+  referredName: string;
+  referredStatus: string;
+  startDate: string | null;
+  monthsRemaining: number;
+  totalEarnedCents: number;
+  totalAppliedCents: number;
+  commissionCount: number;
+}
 
 function AdminHeader({ adminBadge = true }: { adminBadge?: boolean }) {
   return (
@@ -99,6 +119,16 @@ export default function Admin() {
     staleTime: 0,
   });
 
+  const { data: activeReferrers = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/organizations/active-referrers"],
+    enabled: isAuthenticated && isAdmin,
+  });
+
+  const { data: referrals = [] } = useQuery<ReferralRelationship[]>({
+    queryKey: ["/api/admin/referrals"],
+    enabled: isAuthenticated && isAdmin && currentView === "referrals",
+  });
+
   const deleteOrgMutation = useMutation({
     mutationFn: async (orgId: number) => {
       const res = await apiRequest("DELETE", `/api/admin/organizations/${orgId}`);
@@ -119,12 +149,17 @@ export default function Admin() {
       name: "",
       description: "",
       websiteUrl: "",
+      referredByOrgId: "",
     },
   });
 
   const createOrgMutation = useMutation({
-    mutationFn: async (data: { name: string; description: string; websiteUrl: string }) => {
-      const res = await apiRequest("POST", "/api/admin/organizations", data);
+    mutationFn: async (data: { name: string; description: string; websiteUrl: string; referredByOrgId: string }) => {
+      const payload: any = { name: data.name, description: data.description, websiteUrl: data.websiteUrl };
+      if (data.referredByOrgId && data.referredByOrgId !== "none") {
+        payload.referredByOrgId = parseInt(data.referredByOrgId);
+      }
+      const res = await apiRequest("POST", "/api/admin/organizations", payload);
       return res.json();
     },
     retry: 2,
@@ -343,6 +378,90 @@ export default function Admin() {
     );
   }
 
+  if (currentView === "referrals") {
+    const totalEarned = referrals.reduce((sum, r) => sum + r.totalEarnedCents, 0);
+    const activeReferralCount = referrals.filter(r => r.monthsRemaining > 0 && r.referredStatus === "active").length;
+
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-8">
+          <div className="mb-6 flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setCurrentView("dashboard")} data-testid="button-back-referrals">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Referral Commissions</h1>
+              <p className="text-muted-foreground">5% commission on referred subscription payments for 12 months</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Active Referrals</p>
+                <p className="text-2xl font-bold">{activeReferralCount}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Total Referrals</p>
+                <p className="text-2xl font-bold">{referrals.length}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Total Commissions Paid</p>
+                <p className="text-2xl font-bold">${(totalEarned / 100).toFixed(2)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-background">
+            <CardContent className="pt-6">
+              {referrals.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No referrals yet. When you add a business with a referrer, it will appear here.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-left text-sm text-muted-foreground">
+                        <th className="pb-3 font-medium">Referrer</th>
+                        <th className="pb-3 font-medium">Referred</th>
+                        <th className="pb-3 font-medium">Status</th>
+                        <th className="pb-3 font-medium">Earned</th>
+                        <th className="pb-3 font-medium">Window</th>
+                        <th className="pb-3 font-medium">Payments</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referrals.map((r) => (
+                        <tr key={`${r.referrerOrgId}-${r.referredOrgId}`} className="border-b last:border-0">
+                          <td className="py-3 font-medium">{r.referrerName}</td>
+                          <td className="py-3">{r.referredName}</td>
+                          <td className="py-3">
+                            <Badge variant={r.referredStatus === "active" ? "default" : "secondary"} className="text-xs">
+                              {r.referredStatus}
+                            </Badge>
+                          </td>
+                          <td className="py-3 font-medium">${(r.totalEarnedCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-sm text-muted-foreground">
+                            {r.monthsRemaining > 0 ? `${r.monthsRemaining} mo left` : "Expired"}
+                          </td>
+                          <td className="py-3 text-sm">{r.commissionCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
@@ -430,6 +549,20 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
+
+          <Card className="bg-background hover-elevate cursor-pointer" onClick={() => setCurrentView("referrals")} data-testid="card-referrals">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-violet-100 dark:bg-violet-900/30">
+                  <Handshake className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{organizations.filter(o => (o as any).referredByOrgId).length}</p>
+                  <p className="text-sm text-muted-foreground underline">Referrals</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="mb-6 bg-background">
@@ -512,6 +645,27 @@ export default function Admin() {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="referredByOrgId"
+                    render={({ field }: any) => (
+                      <FormItem className="flex-1 min-w-[160px]">
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-referred-by">
+                              <SelectValue placeholder="Referred by (optional)" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No referral</SelectItem>
+                            {activeReferrers.map((r) => (
+                              <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
                   <Button type="submit" disabled={createOrgMutation.isPending} data-testid="button-submit-new-business">
                     {createOrgMutation.isPending ? "Creating..." : "Create"}
                   </Button>
@@ -581,7 +735,15 @@ export default function Admin() {
                       <tr key={org.id} className="border-b last:border-0" data-testid={`row-business-${org.id}`}>
                         <td className="py-4">
                           <Link href={`/dashboard?org=${org.id}`} className="block hover:underline" data-testid={`link-business-${org.id}`}>
-                            <p className="font-medium text-primary" data-testid={`text-business-name-${org.id}`}>{org.name}</p>
+                            <p className="font-medium text-primary" data-testid={`text-business-name-${org.id}`}>
+                              {org.name}
+                              {(org as any).referredByOrgId && (
+                                <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 font-normal text-violet-600 border-violet-300">
+                                  <Handshake className="h-2.5 w-2.5 mr-0.5" />
+                                  Referred
+                                </Badge>
+                              )}
+                            </p>
                             <p className="text-sm text-muted-foreground">{org.contactEmail || "—"}</p>
                           </Link>
                         </td>
