@@ -102,28 +102,6 @@ function getHtmlTemplate(): string {
 }
 
 export function setupOgMetaRoutes(app: Express) {
-  // Temporary debug endpoint — remove after fixing OG
-  app.get('/api/debug-og/:petCode', async (req: Request, res: Response) => {
-    try {
-      const { petCode } = req.params;
-      const result = await pool.query(
-        `SELECT d.id, d.name, d.breed FROM dogs d WHERE d.pet_code = $1`,
-        [petCode.toUpperCase()]
-      );
-      const template = getHtmlTemplate();
-      res.json({
-        petCode,
-        found: result.rows.length > 0,
-        dog: result.rows[0] || null,
-        templateLength: template.length,
-        templateSnippet: template.substring(0, 200),
-        hasOgTitle: template.includes('og:title'),
-      });
-    } catch (error: any) {
-      res.json({ error: error.message, stack: error.stack?.substring(0, 300) });
-    }
-  });
-
   app.get('/business/:slug', async (req: Request, res: Response, next: NextFunction) => {
     const ua = req.headers['user-agent'];
     console.log("[og-meta] /business/:slug hit, UA:", ua?.substring(0, 50), "isCrawler:", isCrawler(ua));
@@ -157,9 +135,17 @@ export function setupOgMetaRoutes(app: Express) {
       });
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (error) {
-      console.error("OG meta error for business:", error);
-      next();
+    } catch (error: any) {
+      console.error("OG meta error for business:", error?.message || error);
+      try {
+        const template = getHtmlTemplate();
+        const html = buildOgHtml(template, {
+          title: `Business | ${SITE_NAME}`,
+          description: `View our pets' stunning portraits!`,
+          url: `${getBaseUrl(req)}/business/${req.params.slug}`,
+        });
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch { next(); }
     }
   });
 
@@ -198,9 +184,17 @@ export function setupOgMetaRoutes(app: Express) {
       });
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
-    } catch (error) {
-      console.error("OG meta error for pawfile:", error);
-      next();
+    } catch (error: any) {
+      console.error("OG meta error for pawfile:", error?.message || error);
+      try {
+        const template = getHtmlTemplate();
+        const html = buildOgHtml(template, {
+          title: `Pet Portrait | ${SITE_NAME}`,
+          description: `View this pet's stunning portrait!`,
+          url: `${getBaseUrl(req)}/pawfile/${req.params.id}`,
+        });
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch { next(); }
     }
   });
 
@@ -246,7 +240,15 @@ export function setupOgMetaRoutes(app: Express) {
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (error: any) {
       console.error("OG meta error for pawfile/code:", error?.message || error);
-      next();
+      try {
+        const template = getHtmlTemplate();
+        const html = buildOgHtml(template, {
+          title: `Pet Portrait | ${SITE_NAME}`,
+          description: `View this pet's stunning portrait!`,
+          url: `${getBaseUrl(req)}/pawfile/code/${req.params.petCode}`,
+        });
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      } catch { next(); }
     }
   });
 }
