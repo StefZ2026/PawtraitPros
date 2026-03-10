@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/public/portraits/pawtrait-send-v9.apk";
+const APK_URL = "https://yotqqwzghguacylqceoe.supabase.co/storage/v1/object/public/portraits/pawtrait-send-v10.apk";
 
 function getOS(): "android" | "ios" | "other" {
   const ua = navigator.userAgent.toLowerCase();
