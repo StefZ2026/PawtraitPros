@@ -20,15 +20,106 @@ import {
   StickyNote, Pencil, X, Check, LogOut, PawPrint,
   Phone, Mail, Globe, CreditCard, ImageIcon, Upload,
   Crown, Heart, Plus, Bell, Smartphone, MessageSquare,
-  Copy, RefreshCw, Unplug
+  Copy, RefreshCw, Unplug, Key, Eye, EyeOff
 } from "lucide-react";
 import { SiFacebook, SiInstagram } from "react-icons/si";
 import { FaXTwitter } from "react-icons/fa6";
 import { NextdoorIcon } from "@/components/nextdoor-icon";
 import { LogoCropDialog } from "@/components/logo-crop-dialog";
+import { supabase } from "@/lib/supabase";
 import type { Organization, SubscriptionPlan, Dog as DogType } from "@shared/schema";
 
 const IG_PREFIX = '/api/instagram-native';
+
+function ChangePasswordCard() {
+  const { toast } = useToast();
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Passwords don't match", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast({ title: "Password updated!" });
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card data-testid="section-password">
+      <CardHeader className="flex flex-row items-start justify-between gap-2 pb-3">
+        <div className="flex items-center gap-2">
+          <Key className="h-5 w-5 text-primary" />
+          <div>
+            <CardTitle className="text-base">Change Password</CardTitle>
+            <CardDescription>Update your account password</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">New Password</label>
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="Min 6 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+                className="pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                )}
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Confirm Password</label>
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              minLength={6}
+            />
+          </div>
+          <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+            {loading ? "Updating..." : "Update Password"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
 
 function PhoneConnectionCard({ org }: { org: any }) {
   const { toast } = useToast();
@@ -992,6 +1083,9 @@ export default function BusinessSettings() {
               )}
             </CardContent>
           </Card>
+
+          {/* Change Password */}
+          <ChangePasswordCard />
 
           {/* Notification Settings */}
           <Card data-testid="section-notifications">
