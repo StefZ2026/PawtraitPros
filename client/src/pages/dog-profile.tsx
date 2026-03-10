@@ -47,7 +47,7 @@ function TextOwnerButton({ dog, orgName }: { dog: DogWithPortrait; orgName: stri
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [customize, setCustomize] = useState(false);
-  const defaultMsg = `Hi from ${orgName}! We created a portrait of ${dog.name} and it's ready for you. View it and order a keepsake: {link}`;
+  const defaultMsg = `Check out ${dog.name}'s beautiful portrait from ${orgName}! {link}`;
   const [message, setMessage] = useState(defaultMsg);
 
   const handleSend = async () => {
@@ -64,9 +64,9 @@ function TextOwnerButton({ dog, orgName }: { dog: DogWithPortrait; orgName: stri
         }),
       });
       const data = await res.json();
-      if (res.ok && data.totalQueued > 0) {
+      if (res.ok && data.sent) {
         setSent(true);
-        toast({ title: "Message queued", description: "Your phone will send it automatically." });
+        toast({ title: "Message sent!", description: `${dog.name}'s portrait text was delivered.` });
       } else if (data.errors?.length > 0) {
         toast({ title: "Error", description: data.errors[0].error, variant: "destructive" });
       }
@@ -79,9 +79,19 @@ function TextOwnerButton({ dog, orgName }: { dog: DogWithPortrait; orgName: stri
 
   if (sent) {
     return (
-      <div className="mt-2 print:hidden p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-sm text-green-700">
-        <Check className="h-4 w-4" />
-        Message queued — your phone will send it to {dog.name}'s owner automatically.
+      <div className="mt-2 print:hidden p-3 bg-green-50 border border-green-200 rounded-lg space-y-2">
+        <div className="flex items-center gap-2 text-sm text-green-700">
+          <Check className="h-4 w-4" />
+          Message sent to {dog.name}'s owner!
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-xs"
+          onClick={() => { setSent(false); setExpanded(true); }}
+        >
+          Send Again
+        </Button>
       </div>
     );
   }

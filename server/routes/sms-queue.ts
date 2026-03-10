@@ -1,10 +1,11 @@
-// SMS Queue — stores messages for native sending from BGD's phone
+// SMS Queue — sends messages via Telnyx and logs to sms_queue for record-keeping
 import type { Express, Response } from "express";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { isAuthenticated, isDeviceAuthenticated } from "../auth";
 import { resolveOrg, ADMIN_EMAIL, generatePetCode } from "./helpers";
 import { getIo } from "../websocket";
+import { sendSms, isSmsConfigured } from "./sms";
 
 export function registerSmsQueueRoutes(app: Express): void {
 
@@ -23,7 +24,7 @@ export function registerSmsQueueRoutes(app: Express): void {
       if (!org) return res.status(status || 404).json({ error });
 
       const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-      const defaultTemplate = "Hi from {orgName}! We created a portrait of {dogName} and it's ready for you. View it and order a keepsake: {link}";
+      const defaultTemplate = "Check out {dogName}'s beautiful portrait from {orgName}! {link}";
       const template = messageTemplate?.trim() || defaultTemplate;
 
       const queued: Array<{ dogId: number; queueId: number }> = [];
@@ -61,27 +62,61 @@ export function registerSmsQueueRoutes(app: Express): void {
           .replace(/\{orgName\}/g, org.name)
           .replace(/\{link\}/g, pawfileUrl);
 
+        // Send via Telnyx DIRECTLY — this is the primary send path
+        let smsStatus = "pending";
+        let smsError: string | null = null;
+        if (isSmsConfigured()) {
+          try {
+            const smsResult = await sendSms(dog.ownerPhone, messageBody, imageUrl || undefined);
+            if (smsResult.success) {
+              smsStatus = "sent";
+            } else {
+              smsStatus = "failed";
+              smsError = smsResult.error || "Send failed";
+              console.error(`[sms-queue] Telnyx send failed for ${dog.name}:`, smsResult.error);
+            }
+          } catch (smsErr: any) {
+            smsStatus = "failed";
+            smsError = smsErr.message;
+            console.error(`[sms-queue] Telnyx send error for ${dog.name}:`, smsErr.message);
+          }
+        } else {
+          smsStatus = "failed";
+          smsError = "SMS not configured";
+          console.error(`[sms-queue] SMS not configured — cannot send to ${dog.name}`);
+        }
+
+        // Log to sms_queue for record-keeping
         const result = await pool.query(
-          `INSERT INTO sms_queue (organization_id, dog_id, recipient_phone, message_body, image_url, pawfile_url, status)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending') RETURNING id`,
-          [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl]
+          `INSERT INTO sms_queue (organization_id, dog_id, recipient_phone, message_body, image_url, pawfile_url, status, ${smsStatus === "sent" ? "sent_at" : "error"})
+           VALUES ($1, $2, $3, $4, $5, $6, $7, ${smsStatus === "sent" ? "CURRENT_TIMESTAMP" : "$8"}) RETURNING id`,
+          smsStatus === "sent"
+            ? [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus]
+            : [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus, smsError]
         );
 
         queued.push({ dogId: dog.id, queueId: result.rows[0].id });
+
+        if (smsStatus === "failed") {
+          errors.push({ dogId: dog.id, error: smsError || "Send failed" });
+        }
       }
 
-      // Notify connected devices via WebSocket
+      const sentCount = queued.length - errors.filter(e => queued.some(q => q.dogId === e.dogId)).length;
+
+      // Notify dashboard via WebSocket
       if (queued.length > 0) {
         const io = getIo();
         if (io) {
-          io.to(`org:${org.id}`).emit("queue:ready", {
+          io.to(`org:${org.id}`).emit("delivery:update", {
             count: queued.length,
+            sent: sentCount,
             orgId: org.id,
           });
         }
       }
 
-      res.json({ queued, errors, totalQueued: queued.length });
+      res.json({ queued, errors, totalQueued: queued.length, totalSent: sentCount, sent: sentCount > 0 });
     } catch (error: any) {
       console.error("Error enqueuing SMS:", error.message);
       res.status(500).json({ error: "Failed to enqueue messages" });

@@ -55,7 +55,7 @@ export async function deliverPortraitToOwner(
             .replace(/\{dogName\}/g, dog.name)
             .replace(/\{orgName\}/g, org.name)
             .replace(/\{link\}/g, pawfileUrl)
-        : `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
+        : `Check out ${dog.name}'s beautiful portrait from ${org.name}! ${pawfileUrl}`;
       const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
       if (smsResult.success) {
         methods.push("sms");
