@@ -5,7 +5,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
-import { AccessGate } from "@/components/access-gate";
 import { Footer } from "@/components/footer";
 import { CookieConsent } from "@/components/cookie-consent";
 import NotFound from "@/pages/not-found";
@@ -85,12 +84,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light" storageKey="pawtrait-pros-theme">
         <TooltipProvider>
-          <AccessGate>
             <Toaster />
             <Router />
             <Footer />
             <CookieConsent />
-          </AccessGate>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
