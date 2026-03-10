@@ -317,12 +317,14 @@ export function registerSmsQueueRoutes(app: Express): void {
         digits.length === 10 ? digits : digits.slice(1), // 4045551234
       ];
 
+      // Strip non-digits from stored phone too, so "516-749-8302" matches "5167498302"
+      const digits10 = digits.length === 10 ? digits : digits.slice(1);
       const result = await pool.query(
         `SELECT send_token, name, id FROM organizations
          WHERE send_token IS NOT NULL
-           AND (contact_phone = $1 OR contact_phone = $2 OR contact_phone = $3)
+           AND regexp_replace(contact_phone, '[^0-9]', '', 'g') LIKE '%' || $1
          LIMIT 1`,
-        formats
+        [digits10]
       );
 
       if (result.rows.length === 0) {
