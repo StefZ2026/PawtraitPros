@@ -67,7 +67,22 @@ async function callWithRetry<T>(fn: () => Promise<T>, label: string, maxRetries 
 }
 
 // --- Identity-preservation prompt prefix for FLUX Kontext ---
-const FLUX_PREFIX = `Using the reference photo as the exact animal subject — preserve its face, markings, coloring, ear shape, eye color, fur texture, body proportions, and all unique features exactly as they appear. Do not generalize to a "typical" breed look. Depict ONLY this one animal (no duplicates or extra animals). Place this exact animal in the following scene:\n\n`;
+const FLUX_PREFIX = `CRITICAL: The reference photo is the ONLY authority for this animal's appearance. You MUST reproduce this EXACT individual animal — not a generic or idealized version of its breed.
+
+Study the reference photo carefully. Every facial feature, every marking, every proportion of THE ANIMAL ITSELF must match EXACTLY:
+- The precise shape and length of the muzzle/snout — not a breed-typical version
+- The exact angle, direction, and position of the ears — copy them precisely from the photo
+- Eye color, shape, size, and spacing — as they appear, not as they "should" look
+- Coat colors, patterns, and markings in their exact locations and proportions
+- Body build, size, and proportions
+
+IGNORE everything in the photo that is NOT the animal — collars, leashes, tags, toys, clothing, backgrounds. Only the animal's physical appearance matters. The scene, costume, and accessories come from the style prompt below, NOT from the reference photo.
+
+The photo is ground truth for the animal's appearance ONLY. If any physical feature of the animal in the generated image doesn't match the photo, it's wrong. Do NOT idealize, normalize, or "fix" any feature. Do NOT default to breed-standard appearance.
+
+Depict ONLY this one animal (no duplicates or extra animals).
+
+Now place this exact animal in the following scene:\n\n`;
 
 const FLUX_GROUP_PREFIX = `Multiple reference photos are provided. Each photo shows a different animal. Depict ALL of these exact animals together in one scene. For EACH animal, preserve its exact face, markings, coloring, ear shape, eye color, fur texture, and body proportions as seen in its reference photo. Position them so each is clearly visible. Place all of these animals together in the following scene:\n\n`;
 
