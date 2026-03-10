@@ -31,7 +31,7 @@ const DOG_PACKS: Record<PackType, Pack> = {
     type: "celebrate",
     name: "Celebrate",
     description: "Seasonal favorites, cozy vibes & celebrations",
-    styleIds: [23, 22, 10, 19, 11], // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party
+    styleIds: [23, 22, 10, 19, 11, 20], // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party, Autumn Leaves
   },
   artistic: {
     type: "artistic",
@@ -43,7 +43,7 @@ const DOG_PACKS: Record<PackType, Pack> = {
     type: "fun",
     name: "Fun",
     description: "Costumes, adventures & bold characters",
-    styleIds: [14, 12, 17, 29, 30, 31], // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party
+    styleIds: [14, 12, 17, 29, 30, 31, 16, 15], // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party, Garden Party, Country Cowboy
   },
 };
 
