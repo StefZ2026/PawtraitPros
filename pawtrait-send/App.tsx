@@ -17,41 +17,48 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      // 1. Check if app was opened via deep link with a token
       try {
-        const initialUrl = await Linking.getInitialURL();
-        if (initialUrl) {
-          const match = initialUrl.match(/[?&]token=([a-f0-9]+)/i);
-          if (match && match[1].length >= 32) {
-            const token = match[1];
-            const res = await fetch(`${API_URL}/api/sms-queue/fetch`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (res.ok) {
-              await setSendToken(token);
-              setScreen("queue");
-              return;
+        // 1. Check if app was opened via deep link with a token
+        try {
+          const initialUrl = await Linking.getInitialURL();
+          if (initialUrl) {
+            const match = initialUrl.match(/[?&]token=([a-f0-9]+)/i);
+            if (match && match[1].length >= 32) {
+              const token = match[1];
+              const res = await fetch(`${API_URL}/api/sms-queue/fetch`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.ok) {
+                await setSendToken(token);
+                setScreen("queue");
+                return;
+              }
             }
           }
+        } catch {}
+
+        // 2. Check for existing stored sendToken
+        const sendToken = await getSendToken();
+        if (sendToken) {
+          setScreen("queue");
+          return;
         }
-      } catch {}
 
-      // 2. Check for existing stored sendToken
-      const sendToken = await getSendToken();
-      if (sendToken) {
-        setScreen("queue");
-        return;
+        // 3. Check for Supabase session
+        try {
+          const session = await getSession();
+          if (session) {
+            setScreen("queue");
+            return;
+          }
+        } catch {}
+
+        // 4. First launch — show phone connect screen
+        setScreen("phone");
+      } catch {
+        // If anything goes wrong, show the phone connect screen
+        setScreen("phone");
       }
-
-      // 3. Check for Supabase session
-      const session = await getSession();
-      if (session) {
-        setScreen("queue");
-        return;
-      }
-
-      // 4. First launch — show phone connect screen
-      setScreen("phone");
     })();
 
     // Listen for deep links while app is running
