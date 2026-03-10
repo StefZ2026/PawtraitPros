@@ -1,11 +1,110 @@
+// Portrait generation engine — FLUX Kontext Pro via Replicate (primary)
+// Fallback: Gemini 3 Pro Image Preview (if Replicate unavailable)
+import Replicate from "replicate";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Semaphore } from "./semaphore";
 
+// --- Replicate (FLUX) setup ---
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
+
+// --- Gemini setup (fallback) ---
 export const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-const geminiSemaphore = new Semaphore(10);
+const generationSemaphore = new Semaphore(10);
+
+// --- Helpers ---
+
+function parseBase64(dataUrl: string): { mimeType: string; data: string } {
+  const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+  const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
+  return { mimeType, data };
+}
+
+/** Convert a URL to a data URI */
+async function urlToDataUri(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get("content-type") || "image/png";
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
+}
+
+/** Extract the output URL from Replicate's response */
+function extractReplicateUrl(output: unknown): string | null {
+  if (typeof output === "string") return output;
+  if (Array.isArray(output) && typeof output[0] === "string") return output[0];
+  // Some models return { url: "..." } or similar
+  if (output && typeof output === "object" && "url" in output) return (output as any).url;
+  return null;
+}
+
+function isRetryableError(err: any): boolean {
+  const status = err?.status || err?.httpStatusCode || err?.code;
+  if (status === 429 || status === 503) return true;
+  const msg = String(err?.message || "").toLowerCase();
+  return msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable") || msg.includes("resource_exhausted");
+}
+
+async function callWithRetry<T>(fn: () => Promise<T>, label: string, maxRetries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      if (attempt < maxRetries && isRetryableError(err)) {
+        const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
+        console.warn(`[flux] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${label}: all retries exhausted`);
+}
+
+// --- Identity-preservation prompt prefix for FLUX Kontext ---
+const FLUX_PREFIX = `Using the reference photo as the exact animal subject — preserve its face, markings, coloring, ear shape, eye color, fur texture, body proportions, and all unique features exactly as they appear. Do not generalize to a "typical" breed look. Depict ONLY this one animal (no duplicates or extra animals). Place this exact animal in the following scene:\n\n`;
+
+const FLUX_GROUP_PREFIX = `Multiple reference photos are provided. Each photo shows a different animal. Depict ALL of these exact animals together in one scene. For EACH animal, preserve its exact face, markings, coloring, ear shape, eye color, fur texture, and body proportions as seen in its reference photo. Position them so each is clearly visible. Place all of these animals together in the following scene:\n\n`;
+
+// --- FLUX Kontext Pro: Single portrait ---
+
+async function generateWithFlux(prompt: string, sourceImage: string): Promise<string> {
+  const enhancedPrompt = FLUX_PREFIX + prompt;
+
+  const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+    input: {
+      prompt: enhancedPrompt,
+      input_image: sourceImage,
+      aspect_ratio: "1:1",
+    },
+  });
+
+  const outputUrl = extractReplicateUrl(output);
+  if (!outputUrl) throw new Error("FLUX Kontext Pro returned no image output");
+
+  // Convert URL to data URI (matches expected return format for uploadToStorage)
+  return urlToDataUri(outputUrl);
+}
+
+async function generateTextOnlyFlux(prompt: string): Promise<string> {
+  const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+    input: {
+      prompt,
+      aspect_ratio: "1:1",
+    },
+  });
+
+  const outputUrl = extractReplicateUrl(output);
+  if (!outputUrl) throw new Error("FLUX text-only generation returned no output");
+  return urlToDataUri(outputUrl);
+}
+
+// --- Gemini fallback functions ---
 
 function extractImageFromResponse(response: any): string | null {
   const part = response.candidates?.[0]?.content?.parts?.find(
@@ -16,49 +115,7 @@ function extractImageFromResponse(response: any): string | null {
   return `data:${mime};base64,${part.inlineData.data}`;
 }
 
-function parseBase64(dataUrl: string): { mimeType: string; data: string } {
-  const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
-  const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
-  return { mimeType, data };
-}
-
-function isRetryableError(err: any): boolean {
-  const status = err?.status || err?.httpStatusCode || err?.code;
-  if (status === 429 || status === 503) return true;
-  const msg = String(err?.message || "").toLowerCase();
-  return msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable");
-}
-
-async function callWithRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-  const MAX_RETRIES = 2;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      if (attempt < MAX_RETRIES && isRetryableError(err)) {
-        const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
-        console.warn(`[gemini] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error(`${label}: all retries exhausted`);
-}
-
-export async function generateImage(prompt: string, sourceImage?: string): Promise<string> {
-  if (sourceImage) {
-    // When we have a reference photo, NEVER fall back to text-only —
-    // a portrait of a random dog is worse than an error the user can retry
-    const result = await generateWithImage(prompt, sourceImage);
-    if (result) return result;
-    throw new Error("Image generation with reference photo returned no result. Please try again.");
-  }
-  return generateTextOnly(prompt);
-}
-
-const FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED — YOU MUST DEPICT THIS EXACT ANIMAL.
+const GEMINI_FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED — YOU MUST DEPICT THIS EXACT ANIMAL.
 
 MANDATORY RULES (violating any rule = total failure):
 1. SINGLE ANIMAL ONLY — depict ONLY the one animal from the reference photo. Never add extra animals, companions, or duplicates to the scene.
@@ -72,87 +129,94 @@ Now apply the following artistic style to this exact animal:
 
 `;
 
-async function generateWithImage(prompt: string, sourceImage: string): Promise<string | null> {
+async function generateWithGemini(prompt: string, sourceImage: string): Promise<string | null> {
   const { mimeType, data } = parseBase64(sourceImage);
-  const enhancedPrompt = FIDELITY_PREFIX + prompt;
-  return geminiSemaphore.run(() =>
-    callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
-        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-      });
-      return extractImageFromResponse(response);
-    }, "generateWithImage")
-  );
+  const enhancedPrompt = GEMINI_FIDELITY_PREFIX + prompt;
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-image-preview",
+    contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
+    config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+  });
+  return extractImageFromResponse(response);
 }
 
-async function generateTextOnly(prompt: string): Promise<string> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await geminiSemaphore.run(() =>
+async function generateTextOnlyGemini(prompt: string): Promise<string | null> {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-image-preview",
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+  });
+  return extractImageFromResponse(response);
+}
+
+// --- PUBLIC API (same signatures as before) ---
+
+export async function generateImage(prompt: string, sourceImage?: string): Promise<string> {
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+
+  if (sourceImage) {
+    return generationSemaphore.run(() =>
       callWithRetry(async () => {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-pro-image-preview",
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
-        });
-        return extractImageFromResponse(response);
-      }, "generateTextOnly")
+        if (useFlux) {
+          try {
+            return await generateWithFlux(prompt, sourceImage);
+          } catch (fluxErr: any) {
+            console.error("[flux] Primary generation failed, falling back to Gemini:", fluxErr.message);
+            const geminiResult = await generateWithGemini(prompt, sourceImage);
+            if (geminiResult) return geminiResult;
+            throw new Error("Both FLUX and Gemini failed to generate image");
+          }
+        }
+        const result = await generateWithGemini(prompt, sourceImage);
+        if (result) return result;
+        throw new Error("Image generation with reference photo returned no result. Please try again.");
+      }, "generateImage")
     );
-    if (result) return result;
-  }
-  throw new Error("Failed to generate image after retries");
-}
-
-const GROUP_FIDELITY_PREFIX = `MULTIPLE REFERENCE PHOTOS ATTACHED — YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
-
-MANDATORY RULES (violating any rule = total failure):
-1. DEPICT ALL ANIMALS — every reference photo represents a different animal. ALL of them must appear in the final image. Do not omit any.
-2. PHOTO OVERRIDES TEXT — if the text mentions breeds that don't match the photos, depict what you SEE in each photo. Each photo is the authority for its animal.
-3. EXACT COLORS AND PATTERNS — for EACH animal, reproduce its exact coat colors, patterns, markings, and proportions as seen in its reference photo. Do NOT simplify multi-colored coats or shift colors.
-4. PRESERVE UNIQUE FEATURES — for each animal, maintain its exact ear shape, muzzle shape, eye color, fur texture, body proportions, and any unique features. Do NOT normalize any feature.
-5. DIFFERENTIATE CLEARLY — each animal must be clearly distinguishable from the others. Position them so viewers can see each one fully. No animal should be obscured or hidden behind another.
-6. PHOTOREALISTIC ANIMALS — every animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costumes, and background — but each animal itself must always look like a genuine photograph of a real animal.
-7. NATURAL INTERACTION — the animals should appear together naturally, as friends or companions sharing the scene. They can be side by side, playing, or posed together.
-
-Reference photos are provided in order. Now apply the following artistic style to ALL of these animals together:
-
-`;
-
-export async function generateGroupPortrait(
-  prompt: string,
-  sourceImages: string[]
-): Promise<string> {
-  const parsedImages = sourceImages.map(img => parseBase64(img));
-
-  const enhancedPrompt = GROUP_FIDELITY_PREFIX + prompt;
-
-  const parts: any[] = [{ text: enhancedPrompt }];
-  for (const { mimeType, data } of parsedImages) {
-    parts.push({ inlineData: { mimeType, data } });
   }
 
-  const result = await geminiSemaphore.run(() =>
+  // Text-only (no reference photo)
+  return generationSemaphore.run(() =>
     callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts }],
-        config: {
-          responseModalities: [Modality.TEXT, Modality.IMAGE],
-        },
-      });
-      return extractImageFromResponse(response);
-    }, "generateGroupPortrait")
+      if (useFlux) {
+        try {
+          return await generateTextOnlyFlux(prompt);
+        } catch (fluxErr: any) {
+          console.error("[flux] Text-only generation failed, falling back to Gemini:", fluxErr.message);
+          const geminiResult = await generateTextOnlyGemini(prompt);
+          if (geminiResult) return geminiResult;
+          throw new Error("Both FLUX and Gemini failed for text-only generation");
+        }
+      }
+      const result = await generateTextOnlyGemini(prompt);
+      if (result) return result;
+      throw new Error("Failed to generate image after retries");
+    }, "generateTextOnly")
   );
-
-  if (!result) throw new Error("Group portrait generation returned no result");
-  return result;
 }
 
 export async function editImage(currentImage: string, editPrompt: string): Promise<string> {
-  const { mimeType, data } = parseBase64(currentImage);
-  return geminiSemaphore.run(() =>
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+
+  return generationSemaphore.run(() =>
     callWithRetry(async () => {
+      if (useFlux) {
+        try {
+          const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+            input: {
+              prompt: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.`,
+              input_image: currentImage,
+            },
+          });
+          const outputUrl = extractReplicateUrl(output);
+          if (!outputUrl) throw new Error("FLUX edit returned no output");
+          return urlToDataUri(outputUrl);
+        } catch (fluxErr: any) {
+          console.error("[flux] Edit failed, falling back to Gemini:", fluxErr.message);
+        }
+      }
+
+      // Gemini fallback for edits
+      const { mimeType, data } = parseBase64(currentImage);
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents: [{
@@ -168,5 +232,69 @@ export async function editImage(currentImage: string, editPrompt: string): Promi
       if (!result) throw new Error("Failed to edit image");
       return result;
     }, "editImage")
+  );
+}
+
+export async function generateGroupPortrait(
+  prompt: string,
+  sourceImages: string[]
+): Promise<string> {
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+
+  return generationSemaphore.run(() =>
+    callWithRetry(async () => {
+      if (useFlux) {
+        try {
+          // FLUX.2 max supports up to 8 reference images via input_image, input_image_2, etc.
+          const input: Record<string, any> = {
+            prompt: FLUX_GROUP_PREFIX + prompt,
+            aspect_ratio: "1:1",
+          };
+          // Map source images to input_image, input_image_2, input_image_3, etc.
+          sourceImages.forEach((img, i) => {
+            const key = i === 0 ? "input_image" : `input_image_${i + 1}`;
+            input[key] = img;
+          });
+
+          const output = await replicate.run("black-forest-labs/flux-2-max", { input });
+          const outputUrl = extractReplicateUrl(output);
+          if (!outputUrl) throw new Error("FLUX.2 max group portrait returned no output");
+          return urlToDataUri(outputUrl);
+        } catch (fluxErr: any) {
+          console.error("[flux] Group portrait failed, falling back to Gemini:", fluxErr.message);
+        }
+      }
+
+      // Gemini fallback for group portraits
+      const parsedImages = sourceImages.map(img => parseBase64(img));
+      const geminiGroupPrefix = `MULTIPLE REFERENCE PHOTOS ATTACHED — YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
+
+MANDATORY RULES (violating any rule = total failure):
+1. DEPICT ALL ANIMALS — every reference photo represents a different animal. ALL of them must appear in the final image. Do not omit any.
+2. PHOTO OVERRIDES TEXT — if the text mentions breeds that don't match the photos, depict what you SEE in each photo. Each photo is the authority for its animal.
+3. EXACT COLORS AND PATTERNS — for EACH animal, reproduce its exact coat colors, patterns, markings, and proportions as seen in its reference photo. Do NOT simplify multi-colored coats or shift colors.
+4. PRESERVE UNIQUE FEATURES — for each animal, maintain its exact ear shape, muzzle shape, eye color, fur texture, body proportions, and any unique features. Do NOT normalize any feature.
+5. DIFFERENTIATE CLEARLY — each animal must be clearly distinguishable from the others. Position them so viewers can see each one fully. No animal should be obscured or hidden behind another.
+6. PHOTOREALISTIC ANIMALS — every animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costumes, and background — but each animal itself must always look like a genuine photograph of a real animal.
+7. NATURAL INTERACTION — the animals should appear together naturally, as friends or companions sharing the scene. They can be side by side, playing, or posed together.
+
+Reference photos are provided in order. Now apply the following artistic style to ALL of these animals together:
+
+`;
+      const enhancedPrompt = geminiGroupPrefix + prompt;
+      const parts: any[] = [{ text: enhancedPrompt }];
+      for (const { mimeType, data } of parsedImages) {
+        parts.push({ inlineData: { mimeType, data } });
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [{ role: "user", parts }],
+        config: { responseModalities: [Modality.TEXT, Modality.IMAGE] },
+      });
+      const result = extractImageFromResponse(response);
+      if (!result) throw new Error("Group portrait generation returned no result");
+      return result;
+    }, "generateGroupPortrait")
   );
 }
