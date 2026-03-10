@@ -31,6 +31,7 @@ import CustomerPortal from "@/pages/customer-portal";
 import CounterDisplay from "@/pages/counter-display";
 import SendQueue from "@/pages/send-queue";
 import SetupPhone from "@/pages/setup-phone";
+import ResetPassword from "@/pages/reset-password";
 
 function Router() {
   return (
@@ -63,6 +64,7 @@ function Router() {
       <Route path="/send-queue" component={SendQueue} />
       <Route path="/counter/:slug" component={CounterDisplay} />
       <Route path="/setup-phone" component={SetupPhone} />
+      <Route path="/reset-password" component={ResetPassword} />
       <Route component={NotFound} />
     </Switch>
   );
