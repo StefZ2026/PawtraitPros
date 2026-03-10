@@ -76,7 +76,7 @@ export default function SetupPhone() {
                 Look for it at the bottom of your screen or swipe down from the top
               </p>
               <p style={styles.step}>
-                <strong>2.</strong> If you see "Install blocked" — tap <strong>Settings</strong>, turn on <strong>Allow from this source</strong>, then go back
+                <strong>2.</strong> If asked to allow the install, tap <strong>Allow</strong> or <strong>Install anyway</strong>
               </p>
               <p style={styles.step}>
                 <strong>3.</strong> After installing, tap <strong>Open</strong> and enter your phone number
