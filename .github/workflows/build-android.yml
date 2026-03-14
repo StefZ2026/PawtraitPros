@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android AAB + APK
 
 on:
   push:
@@ -48,16 +48,69 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US"
           fi
 
-      - name: Build release APK
+      - name: Set up release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          cd android/app
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore from secret..."
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > release.keystore
+          else
+            echo "No RELEASE_KEYSTORE_BASE64 secret found — generating new keystore..."
+            echo "⚠️  IMPORTANT: Download the keystore artifact and save as GitHub secret!"
+            STORE_PASS="${KEYSTORE_PASSWORD:-PawtraitSend2026}"
+            K_PASS="${KEY_PASSWORD:-PawtraitSend2026}"
+            keytool -genkeypair -v -keystore release.keystore \
+              -storepass "$STORE_PASS" -alias pawtrait-send -keypass "$K_PASS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Pawtrait Pals LLC,O=Pawtrait Pals LLC,L=Woodstock,ST=Georgia,C=US"
+          fi
+
+      - name: Build release AAB (for Play Store)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          export KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD:-PawtraitSend2026}"
+          export KEY_PASSWORD="${KEY_PASSWORD:-PawtraitSend2026}"
           cd android
           gradle wrapper --gradle-version 8.10.2
           chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Build release APK (for sideloading)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          export KEYSTORE_PASSWORD="${KEYSTORE_PASSWORD:-PawtraitSend2026}"
+          export KEY_PASSWORD="${KEY_PASSWORD:-PawtraitSend2026}"
+          cd android
           ./gradlew assembleRelease --no-daemon
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pawtrait-send-aab-v${{ github.run_number }}
+          path: pawtrait-send/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 90
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pawtrait-send-v${{ github.run_number }}
+          name: pawtrait-send-apk-v${{ github.run_number }}
           path: pawtrait-send/android/app/build/outputs/apk/release/*.apk
+          retention-days: 90
+
+      - name: Upload release keystore (save this!)
+        if: ${{ !env.RELEASE_KEYSTORE_BASE64 }}
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-keystore-SAVE-THIS
+          path: pawtrait-send/android/app/release.keystore
           retention-days: 90
