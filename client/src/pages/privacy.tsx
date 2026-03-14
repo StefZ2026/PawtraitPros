@@ -15,21 +15,23 @@ export default function Privacy() {
 
       <main className="container mx-auto px-4 pt-24 pb-16 max-w-3xl">
         <h1 className="text-3xl font-serif font-bold mb-2">Privacy Policy</h1>
-        <p className="text-sm text-muted-foreground mb-8">Last updated: February 17, 2026</p>
+        <p className="text-sm text-muted-foreground mb-8">Last updated: March 14, 2026</p>
 
         <div className="prose prose-stone dark:prose-invert max-w-none space-y-6">
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">1. Introduction</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Pawtrait Pros ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our website and services at pawtraitpros.com (the "Service"). This policy applies to all users worldwide, including those in the European Economic Area (EEA), United Kingdom (UK), and California. By using the Service, you agree to the practices described in this policy.
+              Pawtrait Pals LLC, operating as Pawtrait Pros ("we," "our," or "us"), is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our website and services at pawtraitpros.com (the "Web Platform") and our companion Android application, Pawtrait Send (the "App"). Together, the Web Platform and the App are referred to as the "Service." This policy applies to all users worldwide, including those in the European Economic Area (EEA), United Kingdom (UK), and California. By using the Service, you agree to the practices described in this policy.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">2. Data Controller</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Pawtrait Pros is the data controller responsible for your personal data. If you have questions about how your data is processed, or wish to exercise your rights, contact us at{" "}
-              <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">support@pawtraitpros.com</a>.
+              Pawtrait Pals LLC is the data controller responsible for your personal data. If you have questions about how your data is processed, or wish to exercise your rights, contact us at{" "}
+              <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">support@pawtraitpros.com</a>{" "}
+              or{" "}
+              <a href="mailto:stefanie@pawtraitpals.com" className="text-primary hover:underline">stefanie@pawtraitpals.com</a>.
             </p>
           </section>
 
@@ -39,7 +41,7 @@ export default function Privacy() {
               For users in the EEA and UK, we process your personal data based on the following legal grounds:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Contract performance:</strong> Processing necessary to provide the Service you signed up for — account management, portrait generation, subscription billing, and pet profile management</li>
+              <li><strong>Contract performance:</strong> Processing necessary to provide the Service you signed up for — account management, portrait generation, subscription billing, pet profile management, and SMS delivery</li>
               <li><strong>Legitimate interests:</strong> Security monitoring, fraud prevention, service improvement, and analytics — where our interests do not override your fundamental rights</li>
               <li><strong>Consent:</strong> Where you explicitly opt in to features such as connecting third-party social media accounts (e.g., Instagram) or receiving optional communications</li>
               <li><strong>Legal obligation:</strong> Where we are required by law to process or retain certain data</li>
@@ -48,28 +50,34 @@ export default function Privacy() {
 
           <section>
             <h2 className="text-xl font-serif font-semibold mb-3">4. Information We Collect</h2>
+
             <h3 className="text-lg font-semibold mb-2">Account Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
               When you create an account, we collect your email address and password. Accounts are managed through Supabase, a secure authentication provider. We do not store your password directly — it is handled by Supabase's authentication infrastructure.
             </p>
+
             <h3 className="text-lg font-semibold mb-2">Organization Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
               Business users provide information including organization name, description, location, website, logo, and contact details. This information is displayed publicly on your business showcase page to help clients find and connect with your business.
             </p>
+
             <h3 className="text-lg font-semibold mb-2">Pet Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
               You may upload pet photos, names, breeds, ages, species, descriptions, and other details about animals in your care. Pet photos are used to generate AI-powered artistic portraits.
             </p>
+
             <h3 className="text-lg font-semibold mb-2">Payment Information</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
               Payment processing is handled by Stripe. We do not store your credit card numbers or bank account details. Stripe collects and processes payment information in accordance with their own{" "}
               <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">privacy policy</a>.
               We receive only transaction confirmation details (such as subscription status and plan type).
             </p>
+
             <h3 className="text-lg font-semibold mb-2">Social Media Integrations</h3>
             <p className="text-muted-foreground leading-relaxed mb-3">
               If you connect your Instagram account, we store an access token, your Instagram user ID, and username. This data is used solely to post pet portraits to your Instagram account on your behalf. You can disconnect your Instagram at any time from your Settings page, which immediately deletes all stored Instagram credentials.
             </p>
+
             <h3 className="text-lg font-semibold mb-2">Automatically Collected Information</h3>
             <p className="text-muted-foreground leading-relaxed">
               We may collect standard web server logs including IP addresses, browser type, referring pages, and timestamps. This data is used for security monitoring and service improvement. We do not use tracking cookies for advertising purposes.
@@ -77,20 +85,62 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">5. How We Use Your Information</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">5. Pawtrait Send (Android App)</h2>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              Pawtrait Send is a companion Android application designed for business use. It enables pet service businesses to send SMS text messages containing links to pet portraits directly from the business's phone to pet owners. This section describes the data practices specific to the App.
+            </p>
+
+            <h3 className="text-lg font-semibold mb-2">What the App Does</h3>
+            <ul className="list-disc pl-6 space-y-2 text-muted-foreground mb-3">
+              <li>Sends outgoing SMS messages on behalf of the business to pet owners</li>
+              <li>Each SMS contains a link to a pet portrait hosted on pawtraitpros.com</li>
+              <li>The App receives phone numbers and message content from the Pawtrait Pros server via secure HTTPS connection</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mb-2">What the App Does NOT Do</h3>
+            <ul className="list-disc pl-6 space-y-2 text-muted-foreground mb-3">
+              <li>Does <strong>not</strong> read, access, or collect existing SMS messages or conversations on the device</li>
+              <li>Does <strong>not</strong> collect location data, device identifiers, or advertising IDs</li>
+              <li>Does <strong>not</strong> access contacts, call logs, camera, microphone, or other device sensors</li>
+              <li>Does <strong>not</strong> collect any personal information beyond what is strictly necessary for SMS delivery (recipient phone number and message text)</li>
+              <li>Does <strong>not</strong> store phone numbers on the device after a message is sent</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mb-2">Data Handling</h3>
+            <ul className="list-disc pl-6 space-y-2 text-muted-foreground mb-3">
+              <li><strong>Phone numbers:</strong> Received from the Pawtrait Pros server solely for the purpose of sending an SMS. Phone numbers are used only at the moment of sending and are not persisted on the device.</li>
+              <li><strong>Message content:</strong> Contains a portrait link and brief description. Content is provided by the server and is not stored on the device after sending.</li>
+              <li><strong>Authentication:</strong> The App authenticates with the Pawtrait Pros server using secure credentials to verify the business identity. Authentication tokens are stored securely on the device.</li>
+              <li><strong>Data in transit:</strong> All communication between the App and the Pawtrait Pros server is encrypted using HTTPS (TLS).</li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mb-2">Permissions</h3>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              The App requires the <strong>SEND_SMS</strong> permission on Android to deliver text messages. This permission is used exclusively to send outgoing portrait link messages. The App does not request or use the READ_SMS, RECEIVE_SMS, or any other SMS-related permissions.
+            </p>
+
+            <h3 className="text-lg font-semibold mb-2">Intended Users</h3>
+            <p className="text-muted-foreground leading-relaxed">
+              Pawtrait Send is intended for use by pet service businesses (groomers, boarders, daycares) and their authorized staff. It is not intended for use by individuals under the age of 18. The App is installed on a business-owned or business-designated phone.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-serif font-semibold mb-3">6. How We Use Your Information</h2>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>To provide and maintain the Service, including generating AI portraits of your pets</li>
               <li>To create and manage your account and organization profile</li>
               <li>To process subscription payments through Stripe</li>
               <li>To display your business and pet portraits on public showcase pages</li>
-              <li>To enable sharing of pet profiles via social media (including Instagram posting), text messaging, and link sharing</li>
+              <li>To enable sharing of pet profiles via social media (including Instagram posting), text messaging (including via the Pawtrait Send app), and link sharing</li>
               <li>To send transactional communications related to your account</li>
+              <li>To deliver SMS messages containing portrait links to pet owners on behalf of businesses</li>
               <li>To monitor and improve the security and performance of the Service</li>
             </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">6. AI Portrait Generation</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">7. AI Portrait Generation</h2>
             <p className="text-muted-foreground leading-relaxed">
               Pet photos you upload are sent to Google's Gemini AI service to generate artistic portraits. These images are processed solely for the purpose of creating your requested portraits. We do not use your pet photos for AI model training. Generated portraits are stored in our database and associated with your pet profiles. Google's processing of this data is governed by their{" "}
               <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">privacy policy</a>.
@@ -98,22 +148,22 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">7. SMS/Text Messaging</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">8. SMS/Text Messaging</h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
-              Pawtrait Pros offers an optional SMS feature that allows users to share pet portrait links via text message. By using this feature, you consent to the following:
+              Pawtrait Pros offers SMS features that allow businesses to share pet portrait links via text message, either through the Web Platform or the Pawtrait Send companion app. By using these features, you consent to the following:
             </p>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
-              <li><strong>Opt-in:</strong> SMS messages are only sent when you explicitly enter a phone number and check the consent box in the "Send via Text" dialog. No automated or marketing messages are sent.</li>
+              <li><strong>Opt-in:</strong> SMS messages are only sent when the business explicitly initiates a send action. No automated marketing messages are sent.</li>
               <li><strong>Message content:</strong> Messages contain a link to a pet portrait on Pawtrait Pros and a brief description. Standard message and data rates may apply.</li>
-              <li><strong>Opt-out:</strong> Recipients can reply STOP to any message to opt out of future texts from this number.</li>
-              <li><strong>Phone numbers:</strong> We do not store recipient phone numbers after the message is sent. Phone numbers are transmitted to our SMS provider (Twilio) solely for message delivery.</li>
-              <li><strong>Frequency:</strong> Messages are sent only on demand — one message per share action initiated by the user.</li>
-              <li><strong>Help:</strong> Reply HELP to any message for support, or contact us at stefanie@pawtraitpros.com.</li>
+              <li><strong>Opt-out:</strong> Recipients can reply STOP to any message to opt out of future texts from that number.</li>
+              <li><strong>Phone numbers:</strong> Recipient phone numbers are used solely for message delivery. When sent via the Pawtrait Send app, phone numbers are not stored on the device after sending. When sent via the Web Platform, phone numbers are transmitted to our SMS provider solely for delivery.</li>
+              <li><strong>Frequency:</strong> Messages are sent only on demand — one message per share action initiated by the business.</li>
+              <li><strong>Help:</strong> Reply HELP to any message for support, or contact us at stefanie@pawtraitpals.com.</li>
             </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">8. Data Sharing and Disclosure</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">9. Data Sharing and Disclosure</h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
               We do not sell, trade, or rent your personal information to third parties. We may share information with:
             </p>
@@ -126,14 +176,14 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">9. International Data Transfers</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">10. International Data Transfers</h2>
             <p className="text-muted-foreground leading-relaxed">
               Your data is stored on servers in the United States. If you are accessing the Service from the EEA, UK, or other regions with data protection laws, please be aware that your data will be transferred to and processed in the United States. We ensure appropriate safeguards are in place for such transfers, including reliance on Standard Contractual Clauses (SCCs) where applicable, and our service providers maintain appropriate data protection measures.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">10. Data Retention</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">11. Data Retention</h2>
             <p className="text-muted-foreground leading-relaxed">
               We retain your personal data only for as long as necessary to provide the Service and fulfill the purposes described in this policy. Specifically:
             </p>
@@ -143,18 +193,19 @@ export default function Privacy() {
               <li><strong>Payment records:</strong> Retained as required by tax and financial regulations (typically 7 years)</li>
               <li><strong>Server logs:</strong> Retained for up to 90 days for security purposes</li>
               <li><strong>Instagram tokens:</strong> Deleted immediately upon disconnecting your Instagram account</li>
+              <li><strong>SMS data (Pawtrait Send):</strong> Phone numbers and message content are not stored on the device after sending. Server-side delivery records are retained for up to 90 days for troubleshooting purposes.</li>
             </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">11. Data Storage and Security</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">12. Data Storage and Security</h2>
             <p className="text-muted-foreground leading-relaxed">
-              Your data is stored securely using Supabase's PostgreSQL database infrastructure hosted on Amazon Web Services (AWS) in the United States. We use industry-standard security measures including encrypted connections (SSL/TLS), secure authentication tokens (JWT), role-based access controls, and encrypted data at rest. While we strive to protect your information, no method of electronic storage is 100% secure. In the event of a data breach, we will notify affected users and relevant supervisory authorities within 72 hours as required by GDPR.
+              Your data is stored securely using Supabase's PostgreSQL database infrastructure hosted on Amazon Web Services (AWS) in the United States. We use industry-standard security measures including encrypted connections (SSL/TLS), secure authentication tokens (JWT), role-based access controls, and encrypted data at rest. All data transmitted between the Pawtrait Send app and our servers is encrypted via HTTPS. While we strive to protect your information, no method of electronic storage is 100% secure. In the event of a data breach, we will notify affected users and relevant supervisory authorities within 72 hours as required by GDPR.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">12. Your Rights</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">13. Your Rights</h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
               Depending on your location, you have the following rights regarding your personal data:
             </p>
@@ -166,6 +217,7 @@ export default function Privacy() {
               <li>Remove pet profiles and uploaded photos at any time</li>
               <li>Cancel your subscription at any time</li>
               <li>Disconnect third-party integrations (Instagram) at any time</li>
+              <li>Request deletion of any data associated with SMS messages sent via Pawtrait Send</li>
             </ul>
             <h3 className="text-lg font-semibold mb-2">EEA and UK Users (GDPR Rights)</h3>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground mb-3">
@@ -187,42 +239,48 @@ export default function Privacy() {
             </ul>
             <p className="text-muted-foreground leading-relaxed">
               To exercise any of these rights, please contact us at{" "}
-              <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">support@pawtraitpros.com</a>.
+              <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">support@pawtraitpros.com</a>{" "}
+              or{" "}
+              <a href="mailto:stefanie@pawtraitpals.com" className="text-primary hover:underline">stefanie@pawtraitpals.com</a>.
               We will respond to your request within 30 days (or sooner as required by applicable law). We may ask you to verify your identity before processing your request.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">13. Cookies and Tracking</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">14. Cookies and Tracking</h2>
             <p className="text-muted-foreground leading-relaxed">
-              We use essential cookies only — specifically for session management and authentication. We do not use advertising cookies, tracking pixels, or third-party analytics that track you across websites. Your authentication session is managed through secure, HTTP-only tokens.
+              We use essential cookies only — specifically for session management and authentication. We do not use advertising cookies, tracking pixels, or third-party analytics that track you across websites. Your authentication session is managed through secure, HTTP-only tokens. The Pawtrait Send app does not use cookies or any tracking technologies.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">14. Children's Privacy</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">15. Children's Privacy</h2>
             <p className="text-muted-foreground leading-relaxed">
-              The Service is not directed to individuals under the age of 16 (or 13 in jurisdictions where permitted). We do not knowingly collect personal information from children. If we become aware that we have collected information from a child below the applicable age, we will take steps to delete that information promptly.
+              The Service, including both the Web Platform and the Pawtrait Send app, is intended for use by adults (18+) operating pet service businesses. The Service is not directed to individuals under the age of 16 (or 13 in jurisdictions where permitted). We do not knowingly collect personal information from children. If we become aware that we have collected information from a child below the applicable age, we will take steps to delete that information promptly.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">15. Changes to This Policy</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">16. Changes to This Policy</h2>
             <p className="text-muted-foreground leading-relaxed">
               We may update this Privacy Policy from time to time. We will notify you of material changes by posting the new Privacy Policy on this page, updating the "Last updated" date, and, for significant changes, sending an email notification to the address associated with your account. Your continued use of the Service after changes constitutes acceptance of the updated policy.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-serif font-semibold mb-3">16. Contact Us</h2>
+            <h2 className="text-xl font-serif font-semibold mb-3">17. Contact Us</h2>
             <p className="text-muted-foreground leading-relaxed">
               If you have questions about this Privacy Policy or wish to exercise your data protection rights, please contact us at:
             </p>
             <p className="text-muted-foreground leading-relaxed mt-2">
-              Pawtrait Pros LLC<br />
+              Pawtrait Pals LLC<br />
               119 Colemans Bluff Drive<br />
               Woodstock, GA 30188<br />
               Email:{" "}
+              <a href="mailto:stefanie@pawtraitpals.com" className="text-primary hover:underline">
+                stefanie@pawtraitpals.com
+              </a>
+              {" "}or{" "}
               <a href="mailto:support@pawtraitpros.com" className="text-primary hover:underline">
                 support@pawtraitpros.com
               </a>
