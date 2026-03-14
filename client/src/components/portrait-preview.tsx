@@ -62,7 +62,7 @@ export function PortraitPreview({
                     : "Generating portrait..."}
               </p>
               <p className="text-xs text-muted-foreground mt-4">
-                This may take 20-40 seconds
+                This may take a minute
               </p>
             </div>
           </div>
