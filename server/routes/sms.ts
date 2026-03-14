@@ -34,27 +34,6 @@ export function isSmsConfigured(): boolean {
   return isTwilioConfigured() || isTelnyxConfigured();
 }
 
-// --- Per-recipient send tracking (spam filter prevention) ---
-const recentSends = new Map<string, number[]>();
-const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_SENDS_BEFORE_DELAY = 3;
-const DELAY_MS = 10 * 60 * 1000; // 10 min delay
-
-function recordSend(phone: string): void {
-  const now = Date.now();
-  const timestamps = recentSends.get(phone) || [];
-  timestamps.push(now);
-  // Keep only timestamps within the window
-  recentSends.set(phone, timestamps.filter(t => now - t < RATE_WINDOW_MS));
-}
-
-function getRecentSendCount(phone: string): number {
-  const now = Date.now();
-  const timestamps = recentSends.get(phone) || [];
-  const recent = timestamps.filter(t => now - t < RATE_WINDOW_MS);
-  recentSends.set(phone, recent);
-  return recent.length;
-}
 
 // --- Retry queue for carrier-rejected messages ---
 interface RetryEntry {
@@ -124,22 +103,12 @@ function scheduleRetry(messageId: string, entry: RetryEntry): void {
 
 // Cleanup stale retry entries every 30 min
 setInterval(() => {
-  // Clean up completed/failed retry entries
   const retryIds = Array.from(retryQueue.keys());
   for (const id of retryIds) {
     const entry = retryQueue.get(id)!;
     if (entry.status !== "pending") {
       retryQueue.delete(id);
     }
-  }
-  // Clean up recentSends
-  const now = Date.now();
-  const phones = Array.from(recentSends.keys());
-  for (const phone of phones) {
-    const timestamps = recentSends.get(phone)!;
-    const recent = timestamps.filter((t: number) => now - t < RATE_WINDOW_MS);
-    if (recent.length === 0) recentSends.delete(phone);
-    else recentSends.set(phone, recent);
   }
 }, 30 * 60 * 1000);
 
@@ -274,43 +243,6 @@ export async function sendSms(to: string, body: string, mediaUrl?: string): Prom
       return { success: false, error: `Failed to process portrait image: ${err.message}` };
     }
   }
-
-  // Check per-recipient rate — delay if we've sent too many recently
-  const recentCount = getRecentSendCount(phone);
-  if (recentCount >= MAX_SENDS_BEFORE_DELAY) {
-    console.log(`[sms] ${recentCount} recent sends to ${phone}, queueing with ${DELAY_MS / 60000}min delay`);
-    const queueId = `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const entry: RetryEntry = { phone, body, mediaUrl, attempts: 0, status: "pending" };
-    retryQueue.set(queueId, entry);
-
-    setTimeout(async () => {
-      try {
-        console.log(`[sms] Sending delayed message ${queueId} to ${phone}`);
-        recordSend(phone);
-        const result = await sendViaTelnyx(phone, body, mediaUrl);
-        if (result.success && result.messageId) {
-          const deliveryStatus = await pollDeliveryStatus(result.messageId);
-          entry.status = deliveryStatus === "failed" ? "failed" : "delivered";
-          if (deliveryStatus === "failed" && entry.attempts < MAX_RETRY_ATTEMPTS) {
-            scheduleRetry(queueId, entry);
-          }
-        } else {
-          entry.status = "failed";
-          entry.lastError = result.error;
-        }
-        retryQueue.set(queueId, entry);
-      } catch (err: any) {
-        entry.status = "failed";
-        entry.lastError = err.message;
-        retryQueue.set(queueId, entry);
-      }
-    }, DELAY_MS);
-
-    return { success: true, queued: true, messageId: queueId };
-  }
-
-  // Record this send for rate tracking
-  recordSend(phone);
 
   // Telnyx first — 10DLC campaign is ACTIVE and delivering
   if (isTelnyxConfigured()) {
