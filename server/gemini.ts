@@ -96,9 +96,6 @@ async function generateWithFal(options: FalOptions): Promise<string> {
     body: JSON.stringify({
       prompt,
       image_urls: [options.dogImageUrl, options.styleImageUrl],
-      aspect_ratio: "1:1",
-      output_format: "png",
-      resolution: "1K",
     }),
   });
 
@@ -114,7 +111,7 @@ async function generateWithFal(options: FalOptions): Promise<string> {
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 1500));
     const statusRes = await fetch(
-      `https://queue.fal.run/fal-ai/nano-banana-2/edit/requests/${request_id}/status`,
+      `https://queue.fal.run/fal-ai/nano-banana-2/requests/${request_id}/status`,
       { headers: { "Authorization": `Key ${FAL_KEY}` } },
     );
     const statusData = await statusRes.json();
@@ -126,7 +123,7 @@ async function generateWithFal(options: FalOptions): Promise<string> {
 
   // Get result
   const resultRes = await fetch(
-    `https://queue.fal.run/fal-ai/nano-banana-2/edit/requests/${request_id}`,
+    `https://queue.fal.run/fal-ai/nano-banana-2/requests/${request_id}`,
     { headers: { "Authorization": `Key ${FAL_KEY}` } },
   );
   if (!resultRes.ok) throw new Error(`fal.ai result fetch failed: ${resultRes.status}`);
