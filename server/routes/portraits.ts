@@ -1,17 +1,65 @@
-// Portrait generation — calls Gemini AI, stores results, handles regeneration
+// Portrait generation — calls fal.ai / FLUX / Gemini AI, stores results, handles regeneration
 import type { Express, Request, Response } from "express";
+import * as fs from "fs";
+import * as path from "path";
 import sharp from "sharp";
 sharp.cache(false);
 import { storage } from "../storage";
 import { isAuthenticated } from "../auth";
-import { generateImage, editImage, generateGroupPortrait } from "../gemini";
+import { generateImage, editImage, generateGroupPortrait, type FalOptions } from "../gemini";
 import { generateShowcaseMockup, generatePawfileMockup } from "../generate-mockups";
 import { isTrialExpired } from "../subscription";
 import { ADMIN_EMAIL, MAX_EDITS_PER_IMAGE, aiRateLimiter, sanitizeForPrompt, resolveOrg, checkDogLimit, generatePetCode } from "./helpers";
 import { uploadToStorage, isDataUri, fetchImageAsBuffer } from "../supabase-storage";
 import { enqueue, registerWorker, type Job } from "../job-queue";
+import { stylePreviewImages } from "../../client/src/lib/portrait-styles";
 
 const MAX_STYLES_PER_PET = 5;
+
+// --- Style reference image cache (upload to Supabase on first use for fal.ai) ---
+const styleImageUrlCache = new Map<string, string>();
+
+export async function getStyleReferenceUrl(previewImagePath: string): Promise<string | null> {
+  const cleanPath = previewImagePath.split("?")[0]; // strip ?v=2 etc.
+  if (styleImageUrlCache.has(cleanPath)) return styleImageUrlCache.get(cleanPath)!;
+
+  // Try to read the style image from disk
+  const possiblePaths = [
+    path.join(process.cwd(), "dist/public", cleanPath),
+    path.join(process.cwd(), "client/public", cleanPath),
+  ];
+
+  let fileBuffer: Buffer | null = null;
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        fileBuffer = fs.readFileSync(p);
+        break;
+      }
+    } catch { /* skip */ }
+  }
+
+  if (!fileBuffer) {
+    console.error(`[fal] Style image not found on disk: ${cleanPath}`);
+    return null;
+  }
+
+  // Upload to Supabase Storage so fal.ai can access it via public URL
+  const ext = path.extname(cleanPath).slice(1);
+  const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+  const dataUri = `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
+  const filename = `style-refs/${path.basename(cleanPath)}`;
+
+  try {
+    const url = await uploadToStorage(dataUri, "portraits", filename);
+    styleImageUrlCache.set(cleanPath, url);
+    console.log(`[fal] Cached style reference: ${cleanPath} → ${url}`);
+    return url;
+  } catch (err) {
+    console.error(`[fal] Failed to upload style reference ${cleanPath}:`, err);
+    return null;
+  }
+}
 
 export function registerPortraitRoutes(app: Express): void {
   // Register the async worker that processes all portrait job types
@@ -19,7 +67,12 @@ export function registerPortraitRoutes(app: Express): void {
     const p = job.payload;
 
     if (job.type === "generate") {
-      const generatedImageRaw = await generateImage(p.prompt, p.originalImage || undefined);
+      // Build fal.ai options if style info is available
+      const falOpts: FalOptions | undefined =
+        p.dogImageUrl && p.falStyleImageUrl && p.falStyleName
+          ? { dogImageUrl: p.dogImageUrl, styleImageUrl: p.falStyleImageUrl, styleName: p.falStyleName }
+          : undefined;
+      const generatedImageRaw = await generateImage(p.prompt, p.originalImage || undefined, falOpts);
 
       let generatedImage = generatedImageRaw;
       try {
@@ -98,7 +151,11 @@ export function registerPortraitRoutes(app: Express): void {
     }
 
     if (job.type === "batch") {
-      let generatedImageUrl = await generateImage(p.prompt, p.originalPhotoUrl);
+      const batchFalOpts: FalOptions | undefined =
+        p.dogImageUrl && p.falStyleImageUrl && p.falStyleName
+          ? { dogImageUrl: p.dogImageUrl, styleImageUrl: p.falStyleImageUrl, styleName: p.falStyleName }
+          : undefined;
+      let generatedImageUrl = await generateImage(p.prompt, p.originalPhotoUrl, batchFalOpts);
       try {
         const fname = `portrait-${p.dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
         generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
@@ -384,7 +441,13 @@ export function registerPortraitRoutes(app: Express): void {
         return res.status(400).json({ error: "Invalid image format." });
       }
 
-      // Convert Storage URLs to data URIs so Gemini can process them
+      // Preserve original URL for fal.ai (needs public URL, not base64)
+      let dogImageUrl: string | null = null;
+      if (originalImage && !isDataUri(originalImage)) {
+        dogImageUrl = originalImage; // Already a Supabase public URL
+      }
+
+      // Convert Storage URLs to data URIs for FLUX/Gemini fallback
       let resolvedImage = originalImage || null;
       if (resolvedImage && !isDataUri(resolvedImage)) {
         try {
@@ -393,6 +456,17 @@ export function registerPortraitRoutes(app: Express): void {
         } catch (err) {
           console.error("[generate-portrait] Failed to fetch source image:", err);
           return res.status(400).json({ error: "Could not load the source image. Please re-upload the photo." });
+        }
+      }
+
+      // If dog photo is base64 (legacy), upload to Supabase so fal.ai can access it
+      if (!dogImageUrl && resolvedImage && isDataUri(resolvedImage)) {
+        try {
+          const tempName = `fal-src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+          dogImageUrl = await uploadToStorage(resolvedImage, "originals", tempName);
+        } catch (err) {
+          console.error("[generate-portrait] Failed to upload base64 for fal.ai:", err);
+          // Not fatal — fal.ai just won't be used, falls back to FLUX/Gemini
         }
       }
 
@@ -469,10 +543,32 @@ export function registerPortraitRoutes(app: Express): void {
         }
       }
 
+      // Resolve fal.ai style reference image
+      let falStyleImageUrl: string | null = null;
+      let falStyleName: string | null = null;
+      if (styleId && dogImageUrl) {
+        try {
+          const style = await storage.getPortraitStyle(parseInt(styleId));
+          if (style) {
+            falStyleName = style.name;
+            // Use client-side style preview mapping (DB previewImageUrl is not populated)
+            const previewPath = stylePreviewImages[style.name] || style.previewImageUrl;
+            if (previewPath) {
+              falStyleImageUrl = await getStyleReferenceUrl(previewPath);
+            }
+          }
+        } catch (err) {
+          console.error("[generate-portrait] Failed to resolve style for fal.ai:", err);
+        }
+      }
+
       // Enqueue the generation job — returns instantly
       const jobId = enqueue("generate", {
         prompt: sanitizedPrompt,
         originalImage: resolvedImage,
+        dogImageUrl,
+        falStyleImageUrl,
+        falStyleName,
         dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
         dogId: dogId ? parseInt(dogId) : null,
         styleId: styleId ? parseInt(styleId) : null,

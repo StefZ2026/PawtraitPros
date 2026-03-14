@@ -7,6 +7,8 @@ import { getPacks } from "@shared/pack-config";
 import { deliverPortraitToOwner } from "./delivery";
 import { ADMIN_EMAIL, sanitizeForPrompt, resolveOrg } from "./helpers";
 import { enqueue } from "../job-queue";
+import { getStyleReferenceUrl } from "./portraits";
+import { stylePreviewImages } from "../../client/src/lib/portrait-styles";
 
 export function registerBatchRoutes(app: Express): void {
 
@@ -95,12 +97,26 @@ export function registerBatchRoutes(app: Express): void {
             .replace(/\{name\}/g, dog.name)
         );
 
+        // Resolve fal.ai style reference for this style
+        let falStyleImageUrl: string | null = null;
+        const previewPath = stylePreviewImages[style.name] || style.previewImageUrl;
+        if (previewPath) {
+          try {
+            falStyleImageUrl = await getStyleReferenceUrl(previewPath);
+          } catch (err) {
+            console.error(`[batch] Failed to resolve style reference for ${style.name}:`, err);
+          }
+        }
+
         // Enqueue batch job — returns instantly
         const jobId = enqueue("batch", {
           dogId: dog.id,
           dogName: dog.name,
           prompt,
           originalPhotoUrl: dog.originalPhotoUrl,
+          dogImageUrl: dog.originalPhotoUrl, // Public URL for fal.ai
+          falStyleImageUrl,
+          falStyleName: style.name,
           styleId: style.id,
           orgId: org.id,
           needsPetCode: !dog.petCode,

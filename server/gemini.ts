@@ -1,15 +1,19 @@
-// Portrait generation engine — FLUX Kontext Pro via Replicate (primary)
-// Fallback: Gemini 3 Pro Image Preview (if Replicate unavailable)
+// Portrait generation engine — fal.ai Nano Banana 2 (primary)
+// Fallback 1: FLUX Kontext Pro via Replicate
+// Fallback 2: Gemini 3 Pro Image Preview
 import Replicate from "replicate";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Semaphore } from "./semaphore";
 
-// --- Replicate (FLUX) setup ---
+// --- fal.ai setup (primary) ---
+const FAL_KEY = process.env.FAL_KEY;
+
+// --- Replicate (FLUX) setup (fallback 1) ---
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-// --- Gemini setup (fallback) ---
+// --- Gemini setup (fallback 2) ---
 export const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
@@ -64,6 +68,75 @@ async function callWithRetry<T>(fn: () => Promise<T>, label: string, maxRetries 
     }
   }
   throw new Error(`${label}: all retries exhausted`);
+}
+
+// --- fal.ai Nano Banana 2: Primary generator ---
+// Stefanie's proven prompt — DO NOT MODIFY THIS WORDING (20+ iterations to get right)
+function buildFalPrompt(styleName: string): string {
+  return `Create a ${styleName} scene using the EXACT dog from the first image. Note that the first dog does NOT have standard breed features so do not substitute or make this dog pretty. Ensure all ORIGINAL dog features are EXACTLY COPIED / PRESERVED (snout length and shape and slope, width of face (wide or narrow and fox-like), eye color and shape, ear shape and direction they point, fur color and texture, height)`;
+}
+
+export interface FalOptions {
+  dogImageUrl: string;     // Public URL of the dog's photo
+  styleImageUrl: string;   // Public URL of the style reference image
+  styleName: string;       // e.g. "Garden Party", "Renaissance Noble"
+}
+
+async function generateWithFal(options: FalOptions): Promise<string> {
+  const prompt = buildFalPrompt(options.styleName);
+  console.log(`[fal] Generating "${options.styleName}" portrait via Nano Banana 2...`);
+
+  // Submit to queue
+  const submitRes = await fetch("https://queue.fal.run/fal-ai/nano-banana-2/edit", {
+    method: "POST",
+    headers: {
+      "Authorization": `Key ${FAL_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prompt,
+      image_urls: [options.dogImageUrl, options.styleImageUrl],
+      aspect_ratio: "1:1",
+      output_format: "png",
+      resolution: "1K",
+    }),
+  });
+
+  if (!submitRes.ok) {
+    const errText = await submitRes.text();
+    throw new Error(`fal.ai submit failed (${submitRes.status}): ${errText}`);
+  }
+  const { request_id } = await submitRes.json();
+  console.log(`[fal] Queued request: ${request_id}`);
+
+  // Poll for completion (timeout after 120s)
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1500));
+    const statusRes = await fetch(
+      `https://queue.fal.run/fal-ai/nano-banana-2/edit/requests/${request_id}/status`,
+      { headers: { "Authorization": `Key ${FAL_KEY}` } },
+    );
+    const statusData = await statusRes.json();
+    if (statusData.status === "COMPLETED") break;
+    if (statusData.status === "FAILED") {
+      throw new Error(`fal.ai generation failed: ${JSON.stringify(statusData)}`);
+    }
+  }
+
+  // Get result
+  const resultRes = await fetch(
+    `https://queue.fal.run/fal-ai/nano-banana-2/edit/requests/${request_id}`,
+    { headers: { "Authorization": `Key ${FAL_KEY}` } },
+  );
+  if (!resultRes.ok) throw new Error(`fal.ai result fetch failed: ${resultRes.status}`);
+  const result = await resultRes.json();
+  const imageUrl = result.images?.[0]?.url;
+  if (!imageUrl) throw new Error("fal.ai returned no image in response");
+
+  console.log(`[fal] Portrait generated successfully`);
+  // Convert to data URI for consistency with rest of codebase
+  return urlToDataUri(imageUrl);
 }
 
 // --- Identity-preservation prompt prefix for FLUX Kontext ---
@@ -166,8 +239,23 @@ async function generateTextOnlyGemini(prompt: string): Promise<string | null> {
 
 // --- PUBLIC API (same signatures as before) ---
 
-export async function generateImage(prompt: string, sourceImage?: string): Promise<string> {
+export async function generateImage(prompt: string, sourceImage?: string, falOptions?: FalOptions): Promise<string> {
   const useFlux = !!process.env.REPLICATE_API_TOKEN;
+
+  // Try fal.ai first if configured and style info provided
+  if (FAL_KEY && falOptions?.dogImageUrl && falOptions?.styleImageUrl && falOptions?.styleName) {
+    try {
+      return await generationSemaphore.run(() =>
+        callWithRetry(
+          () => generateWithFal(falOptions),
+          "generateWithFal"
+        )
+      );
+    } catch (falErr: any) {
+      console.error("[fal] Generation failed, falling back to FLUX/Gemini:", falErr.message);
+      // Fall through to FLUX/Gemini
+    }
+  }
 
   if (sourceImage) {
     return generationSemaphore.run(() =>
