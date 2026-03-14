@@ -16,14 +16,25 @@ import { stylePreviewImages } from "../../client/src/lib/portrait-styles";
 
 const MAX_STYLES_PER_PET = 5;
 
-// --- Style reference image cache (upload to Supabase on first use for fal.ai) ---
+// --- Style reference image URL resolver for fal.ai ---
+// Strategy 1: Use APP_URL to construct public URL (works on Render)
+// Strategy 2: Read from disk and upload to Supabase (fallback)
 const styleImageUrlCache = new Map<string, string>();
 
 export async function getStyleReferenceUrl(previewImagePath: string): Promise<string | null> {
   const cleanPath = previewImagePath.split("?")[0]; // strip ?v=2 etc.
   if (styleImageUrlCache.has(cleanPath)) return styleImageUrlCache.get(cleanPath)!;
 
-  // Try to read the style image from disk
+  // Strategy 1: Construct URL from APP_URL (the app serves these as static files)
+  const appUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL;
+  if (appUrl) {
+    const publicUrl = `${appUrl.replace(/\/$/, "")}${cleanPath}`;
+    console.log(`[fal] Using public style URL: ${publicUrl}`);
+    styleImageUrlCache.set(cleanPath, publicUrl);
+    return publicUrl;
+  }
+
+  // Strategy 2: Read from disk and upload to Supabase
   const possiblePaths = [
     path.join(process.cwd(), "dist/public", cleanPath),
     path.join(process.cwd(), "client/public", cleanPath),
@@ -44,7 +55,6 @@ export async function getStyleReferenceUrl(previewImagePath: string): Promise<st
     return null;
   }
 
-  // Upload to Supabase Storage so fal.ai can access it via public URL
   const ext = path.extname(cleanPath).slice(1);
   const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
   const dataUri = `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
@@ -470,6 +480,8 @@ export function registerPortraitRoutes(app: Express): void {
         }
       }
 
+      console.log(`[fal-debug] dogImageUrl=${dogImageUrl ? dogImageUrl.substring(0, 80) + '...' : 'NULL'}, styleId=${styleId}, originalImage type=${originalImage ? (isDataUri(originalImage) ? 'base64' : 'url') : 'none'}`);
+
       const sanitizedPrompt = sanitizeForPrompt(prompt);
       if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
 
@@ -549,12 +561,15 @@ export function registerPortraitRoutes(app: Express): void {
       if (styleId && dogImageUrl) {
         try {
           const style = await storage.getPortraitStyle(parseInt(styleId));
+          console.log(`[fal] Style lookup: id=${styleId}, found=${!!style}, name=${style?.name}`);
           if (style) {
             falStyleName = style.name;
             // Use client-side style preview mapping (DB previewImageUrl is not populated)
             const previewPath = stylePreviewImages[style.name] || style.previewImageUrl;
+            console.log(`[fal] Preview path for "${style.name}": ${previewPath || "NOT FOUND"}`);
             if (previewPath) {
               falStyleImageUrl = await getStyleReferenceUrl(previewPath);
+              console.log(`[fal] Style reference URL: ${falStyleImageUrl || "FAILED"}`);
             }
           }
         } catch (err) {
