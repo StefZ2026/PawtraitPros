@@ -13,8 +13,7 @@ const liveStripe = new Stripe(process.env.STRIPE_LIVE_SECRET_KEY!, {
   apiVersion: '2025-11-17.clover' as any,
 });
 
-// IMPORTANT: undefined defaults to test mode for backward compat
-// (org.stripeTestMode is not in Drizzle schema, reads as undefined)
+// IMPORTANT: undefined defaults to test mode for safety
 // Only explicit `false` triggers live mode
 export function getStripeClient(testMode?: boolean): Stripe {
   return testMode === false ? liveStripe : testStripe;

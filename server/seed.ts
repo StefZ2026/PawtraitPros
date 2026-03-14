@@ -217,10 +217,6 @@ export async function seedDatabase() {
       (async () => {
         await pool.query('SET LOCAL statement_timeout = 8000');
         await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_test_mode BOOLEAN DEFAULT false NOT NULL');
-        const migResult = await pool.query('UPDATE organizations SET stripe_test_mode = true WHERE stripe_customer_id IS NOT NULL AND stripe_test_mode = false');
-        if (migResult.rowCount && migResult.rowCount > 0) {
-          console.log(`[migration] Set ${migResult.rowCount} existing org(s) to Stripe test mode`);
-        }
         console.log('[migration] stripe_test_mode column ready');
 
         // Pros columns on organizations
