@@ -477,6 +477,24 @@ export class WebhookHandlers {
         break;
       }
 
+      case 'checkout.session.expired': {
+        // Customer abandoned Stripe checkout — delete the unpaid order
+        const expiredMerchOrderId = data.metadata?.merchOrderId;
+        if (!expiredMerchOrderId) break;
+
+        const expiredOrder = await pool.query(
+          `SELECT id, status FROM merch_orders WHERE id = $1`,
+          [parseInt(expiredMerchOrderId)]
+        );
+        if (expiredOrder.rows.length === 0) break;
+        if (expiredOrder.rows[0].status !== 'awaiting_payment') break;
+
+        await pool.query(`DELETE FROM merch_order_items WHERE order_id = $1`, [parseInt(expiredMerchOrderId)]);
+        await pool.query(`DELETE FROM merch_orders WHERE id = $1`, [parseInt(expiredMerchOrderId)]);
+        console.log(`[webhook] Deleted expired merch order ${expiredMerchOrderId}`);
+        break;
+      }
+
       default:
         break;
     }

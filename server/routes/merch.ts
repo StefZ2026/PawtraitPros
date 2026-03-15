@@ -230,13 +230,14 @@ export function registerMerchRoutes(app: Express): void {
         ? `${baseUrl}/order/${sessionToken}?payment=success&session_id={CHECKOUT_SESSION_ID}`
         : `${baseUrl}/order-complete?session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = sessionToken
-        ? `${baseUrl}/order/${sessionToken}?payment=canceled`
-        : `${baseUrl}/`;
+        ? `${baseUrl}/order/${sessionToken}?payment=canceled&cancel_order=${merchOrderId}`
+        : `${baseUrl}/?cancel_order=${merchOrderId}`;
 
-      // Create Stripe Checkout Session
+      // Create Stripe Checkout Session (expires in 30 minutes)
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
         allow_promotion_codes: true,
+        expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
         line_items: lineItems,
         customer_email: customer.email || undefined,
         metadata: {
@@ -267,6 +268,33 @@ export function registerMerchRoutes(app: Express): void {
     } catch (error: any) {
       console.error("Error creating merch checkout:", error);
       res.status(500).json({ error: "Failed to create checkout" });
+    }
+  });
+
+  // Cancel abandoned order — called when customer leaves Stripe checkout
+  app.delete("/api/merch/order/:id", async (req: any, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+
+      const result = await pool.query(
+        `SELECT id, status FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "Order not found" });
+
+      // Only delete if still awaiting payment
+      if (result.rows[0].status !== 'awaiting_payment') {
+        return res.json({ message: "Order already processed", status: result.rows[0].status });
+      }
+
+      await pool.query(`DELETE FROM merch_order_items WHERE order_id = $1`, [orderId]);
+      await pool.query(`DELETE FROM merch_orders WHERE id = $1`, [orderId]);
+      console.log(`[merch] Deleted abandoned order ${orderId}`);
+      res.json({ deleted: true });
+    } catch (error: any) {
+      console.error("Error deleting abandoned order:", error);
+      res.status(500).json({ error: "Failed to delete order" });
     }
   });
 

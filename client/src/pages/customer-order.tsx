@@ -236,6 +236,11 @@ export default function CustomerOrder() {
       setConfirmingPayment(true);
       confirmMutation.mutate(sessionId);
     } else if (payment === "canceled") {
+      // Delete the abandoned order
+      const cancelOrderId = params.get("cancel_order");
+      if (cancelOrderId) {
+        fetch(`/api/merch/order/${cancelOrderId}`, { method: "DELETE" }).catch(() => {});
+      }
       toast({ title: "Payment canceled", description: "Your order was not placed. You can try again.", variant: "destructive" });
       // Clean up URL params
       window.history.replaceState({}, "", `/order/${token}`);
