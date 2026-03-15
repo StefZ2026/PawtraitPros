@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getAuthHeaders } from "@/lib/queryClient";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useForm } from "react-hook-form";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
@@ -57,10 +57,19 @@ interface MerchRevenueData {
     orderCount: number;
     totalRevenueCents: number;
     totalShippingCents: number;
+    vendorCostCents: number;
+    clientPayoutCents: number;
+    platformProfitCents: number;
     lastOrderAt: string;
   }>;
   totalRevenueCents: number;
+  totalShippingCents: number;
+  totalVendorCostCents: number;
+  totalClientPayoutCents: number;
+  totalPlatformProfitCents: number;
   totalOrders: number;
+  availableMonths: string[];
+  selectedMonth: string | null;
 }
 
 type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals" | "merchrevenue" | "payouts";
@@ -117,6 +126,7 @@ export default function Admin() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [currentView, setCurrentView] = useState<AdminView>("dashboard");
   const [sendingSetupText, setSendingSetupText] = useState<number | null>(null);
+  const [merchMonth, setMerchMonth] = useState<string>("");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -155,7 +165,14 @@ export default function Admin() {
   });
 
   const { data: merchRevenue } = useQuery<MerchRevenueData>({
-    queryKey: ["/api/admin/merch-revenue"],
+    queryKey: ["/api/admin/merch-revenue", merchMonth],
+    queryFn: async () => {
+      const url = merchMonth ? `/api/admin/merch-revenue?month=${merchMonth}` : "/api/admin/merch-revenue";
+      const headers = await getAuthHeaders();
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
     enabled: isAuthenticated && isAdmin,
   });
 
@@ -536,31 +553,68 @@ export default function Admin() {
 
   if (currentView === "merchrevenue") {
     const merchOrgs = merchRevenue?.byOrg || [];
+    const fmt = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+    const availableMonths = merchRevenue?.availableMonths || [];
+    const monthLabel = (m: string) => {
+      const [y, mo] = m.split("-");
+      return new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    };
     return (
       <div className="min-h-screen bg-muted/30">
         <AdminHeader />
         <div className="container mx-auto px-4 py-8">
-          <div className="mb-6 flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setCurrentView("dashboard")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Merch Order Revenue</h1>
-              <p className="text-muted-foreground">Product orders from your customers' clients</p>
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="icon" onClick={() => setCurrentView("dashboard")}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <h1 className="text-2xl font-bold">Merch P&L</h1>
+                <p className="text-muted-foreground">Revenue, costs, and profit by business</p>
+              </div>
             </div>
+            <select
+              className="border rounded-md px-3 py-1.5 text-sm bg-background"
+              value={merchMonth}
+              onChange={(e) => setMerchMonth(e.target.value)}
+            >
+              <option value="">All Time</option>
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>{monthLabel(m)}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
             <Card className="bg-background">
               <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Total Merch Revenue</p>
-                <p className="text-2xl font-bold">${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground">Revenue</p>
+                <p className="text-xl font-bold">{fmt(merchRevenue?.totalRevenueCents || 0)}</p>
               </CardContent>
             </Card>
             <Card className="bg-background">
               <CardContent className="pt-6">
-                <p className="text-sm text-muted-foreground">Total Orders</p>
-                <p className="text-2xl font-bold">{merchRevenue?.totalOrders || 0}</p>
+                <p className="text-xs text-muted-foreground">Vendor Costs</p>
+                <p className="text-xl font-bold text-red-600">-{fmt((merchRevenue?.totalVendorCostCents || 0) + (merchRevenue?.totalShippingCents || 0))}</p>
+                <p className="text-[10px] text-muted-foreground">incl. shipping</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-xs text-muted-foreground">Client Payouts</p>
+                <p className="text-xl font-bold text-red-600">-{fmt(merchRevenue?.totalClientPayoutCents || 0)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-xs text-muted-foreground">Our Profit</p>
+                <p className="text-xl font-bold text-emerald-600">{fmt(merchRevenue?.totalPlatformProfitCents || 0)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-xs text-muted-foreground">Orders</p>
+                <p className="text-xl font-bold">{merchRevenue?.totalOrders || 0}</p>
               </CardContent>
             </Card>
           </div>
@@ -568,16 +622,18 @@ export default function Admin() {
           <Card className="bg-background">
             <CardContent className="pt-6">
               {merchOrgs.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">No merch orders yet.</p>
+                <p className="text-center py-8 text-muted-foreground">No merch orders {merchMonth ? "this month" : "yet"}.</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-sm text-muted-foreground">
+                      <tr className="border-b text-left text-muted-foreground">
                         <th className="pb-3 font-medium">Business</th>
                         <th className="pb-3 font-medium text-right">Orders</th>
-                        <th className="pb-3 font-medium text-right">Shipping</th>
-                        <th className="pb-3 font-medium text-right">Total Revenue</th>
+                        <th className="pb-3 font-medium text-right">Revenue</th>
+                        <th className="pb-3 font-medium text-right">Vendor + Ship</th>
+                        <th className="pb-3 font-medium text-right">Client Share</th>
+                        <th className="pb-3 font-medium text-right">Our Profit</th>
                         <th className="pb-3 font-medium text-right">Last Order</th>
                       </tr>
                     </thead>
@@ -586,10 +642,12 @@ export default function Admin() {
                         <tr key={org.orgId} className="border-b last:border-0">
                           <td className="py-3 font-medium text-primary">{org.orgName}</td>
                           <td className="py-3 text-right">{org.orderCount}</td>
-                          <td className="py-3 text-right">${(org.totalShippingCents / 100).toFixed(2)}</td>
-                          <td className="py-3 text-right font-bold">${(org.totalRevenueCents / 100).toFixed(2)}</td>
-                          <td className="py-3 text-right text-sm text-muted-foreground">
-                            {new Date(org.lastOrderAt).toLocaleDateString()}
+                          <td className="py-3 text-right">{fmt(org.totalRevenueCents)}</td>
+                          <td className="py-3 text-right text-red-600">-{fmt(org.vendorCostCents + org.totalShippingCents)}</td>
+                          <td className="py-3 text-right text-red-600">-{fmt(org.clientPayoutCents)}</td>
+                          <td className="py-3 text-right font-bold text-emerald-600">{fmt(org.platformProfitCents)}</td>
+                          <td className="py-3 text-right text-muted-foreground">
+                            {org.lastOrderAt ? new Date(org.lastOrderAt).toLocaleDateString() : "—"}
                           </td>
                         </tr>
                       ))}
@@ -598,12 +656,10 @@ export default function Admin() {
                       <tr className="border-t-2">
                         <td className="py-3 font-bold">Total</td>
                         <td className="py-3 text-right font-bold">{merchRevenue?.totalOrders || 0}</td>
-                        <td className="py-3 text-right font-bold">
-                          ${(merchOrgs.reduce((s, o) => s + o.totalShippingCents, 0) / 100).toFixed(2)}
-                        </td>
-                        <td className="py-3 text-right font-bold text-lg">
-                          ${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}
-                        </td>
+                        <td className="py-3 text-right font-bold">{fmt(merchRevenue?.totalRevenueCents || 0)}</td>
+                        <td className="py-3 text-right font-bold text-red-600">-{fmt((merchRevenue?.totalVendorCostCents || 0) + (merchRevenue?.totalShippingCents || 0))}</td>
+                        <td className="py-3 text-right font-bold text-red-600">-{fmt(merchRevenue?.totalClientPayoutCents || 0)}</td>
+                        <td className="py-3 text-right font-bold text-lg text-emerald-600">{fmt(merchRevenue?.totalPlatformProfitCents || 0)}</td>
                         <td></td>
                       </tr>
                     </tfoot>

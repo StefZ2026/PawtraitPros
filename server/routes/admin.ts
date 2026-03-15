@@ -156,38 +156,86 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
-  // Merch order revenue by organization
+  // Merch order revenue by organization (with full P&L breakdown)
+  // Query params: ?month=2026-03 (optional, filters to a specific month; omit for all-time)
   app.get("/api/admin/merch-revenue", isAuthenticated, isAdmin, async (req: any, res: Response) => {
     try {
+      const month = req.query.month as string | undefined; // e.g. "2026-03"
+      let dateFilter = "";
+      const params: any[] = [];
+      if (month && /^\d{4}-\d{2}$/.test(month)) {
+        dateFilter = `AND mo.created_at >= $1::timestamp AND mo.created_at < ($1::timestamp + INTERVAL '1 month')`;
+        params.push(`${month}-01`);
+      }
+
+      const validStatus = `mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')`;
+
       const result = await pool.query(`
         SELECT
           o.id as org_id,
           o.name as org_name,
-          COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')) as order_count,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
-          MAX(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.created_at END) as last_order_at
+          COUNT(mo.id) FILTER (WHERE ${validStatus}) as order_count,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.wholesale_cents ELSE 0 END), 0) as vendor_cost_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.business_share_cents ELSE 0 END), 0) as client_payout_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.platform_share_cents ELSE 0 END), 0) as platform_profit_cents,
+          MAX(CASE WHEN ${validStatus} THEN mo.created_at END) as last_order_at
         FROM organizations o
         JOIN merch_orders mo ON mo.organization_id = o.id
+        LEFT JOIN merch_earnings me ON me.merch_order_id = mo.id
+        ${dateFilter ? `WHERE ${dateFilter.replace('AND ', '')}` : ''}
         GROUP BY o.id, o.name
-        HAVING COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')) > 0
+        HAVING COUNT(mo.id) FILTER (WHERE ${validStatus}) > 0
         ORDER BY total_revenue_cents DESC
+      `, params);
+
+      // Get available months for the month selector
+      const monthsResult = await pool.query(`
+        SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM') as month
+        FROM merch_orders
+        WHERE status NOT IN ('awaiting_payment', 'failed', 'canceled')
+        ORDER BY month DESC
       `);
 
-      const totalRevenue = result.rows.reduce((sum: number, r: any) => sum + parseInt(r.total_revenue_cents), 0);
-      const totalOrders = result.rows.reduce((sum: number, r: any) => sum + parseInt(r.order_count), 0);
-
-      res.json({
-        byOrg: result.rows.map((r: any) => ({
+      const rows = result.rows.map((r: any) => {
+        const revenue = parseInt(r.total_revenue_cents);
+        const shipping = parseInt(r.total_shipping_cents);
+        const vendorCost = parseInt(r.vendor_cost_cents);
+        const clientPayout = parseInt(r.client_payout_cents);
+        const platformProfit = parseInt(r.platform_profit_cents);
+        return {
           orgId: r.org_id,
           orgName: r.org_name,
           orderCount: parseInt(r.order_count),
-          totalRevenueCents: parseInt(r.total_revenue_cents),
-          totalShippingCents: parseInt(r.total_shipping_cents),
+          totalRevenueCents: revenue,
+          totalShippingCents: shipping,
+          vendorCostCents: vendorCost,
+          clientPayoutCents: clientPayout,
+          platformProfitCents: platformProfit,
           lastOrderAt: r.last_order_at,
-        })),
-        totalRevenueCents: totalRevenue,
-        totalOrders,
+        };
+      });
+
+      const totals = rows.reduce((acc, r) => ({
+        revenue: acc.revenue + r.totalRevenueCents,
+        shipping: acc.shipping + r.totalShippingCents,
+        vendorCost: acc.vendorCost + r.vendorCostCents,
+        clientPayout: acc.clientPayout + r.clientPayoutCents,
+        platformProfit: acc.platformProfit + r.platformProfitCents,
+        orders: acc.orders + r.orderCount,
+      }), { revenue: 0, shipping: 0, vendorCost: 0, clientPayout: 0, platformProfit: 0, orders: 0 });
+
+      res.json({
+        byOrg: rows,
+        totalRevenueCents: totals.revenue,
+        totalShippingCents: totals.shipping,
+        totalVendorCostCents: totals.vendorCost,
+        totalClientPayoutCents: totals.clientPayout,
+        totalPlatformProfitCents: totals.platformProfit,
+        totalOrders: totals.orders,
+        availableMonths: monthsResult.rows.map((r: any) => r.month),
+        selectedMonth: month || null,
       });
     } catch (error) {
       console.error("Error fetching merch revenue:", error);
