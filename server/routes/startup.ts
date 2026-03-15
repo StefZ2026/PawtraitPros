@@ -1,5 +1,6 @@
 // Startup reconciliation — syncs Stripe subscription state with local DB on boot
 import { storage } from "../storage";
+import { pool } from "../db";
 import { getStripeClient, mapStripeStatusToInternal, STRIPE_PLAN_PRICE_MAP } from "../stripeClient";
 import { handleCancellation, isWithinTrialWindow, revertToFreeTrial, getFreeTrial, markFreeTrialUsed } from "../subscription";
 import { ADMIN_EMAIL } from "./helpers";
@@ -214,5 +215,22 @@ export async function runStartupHealthCheck(): Promise<void> {
   }
   if (issues.length > 0) {
     console.log(`[startup] Data integrity issues found:\n${issues.join("\n")}`);
+  }
+
+  // Clean up abandoned merch orders (awaiting_payment for more than 24 hours)
+  try {
+    const cleanup = await pool.query(
+      `DELETE FROM merch_order_items WHERE order_id IN (
+        SELECT id FROM merch_orders WHERE status = 'awaiting_payment' AND created_at < NOW() - INTERVAL '24 hours'
+      )`
+    );
+    const deleted = await pool.query(
+      `DELETE FROM merch_orders WHERE status = 'awaiting_payment' AND created_at < NOW() - INTERVAL '24 hours' RETURNING id`
+    );
+    if (deleted.rowCount && deleted.rowCount > 0) {
+      console.log(`[startup] Cleaned up ${deleted.rowCount} abandoned merch order(s): ${deleted.rows.map((r: any) => r.id).join(', ')}`);
+    }
+  } catch (err: any) {
+    console.error(`[startup] Abandoned order cleanup failed:`, err.message);
   }
 }

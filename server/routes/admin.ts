@@ -163,14 +163,14 @@ export function registerAdminRoutes(app: Express): void {
         SELECT
           o.id as org_id,
           o.name as org_name,
-          COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed')) as order_count,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
-          MAX(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.created_at END) as last_order_at
+          COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')) as order_count,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
+          MAX(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed', 'canceled') THEN mo.created_at END) as last_order_at
         FROM organizations o
         JOIN merch_orders mo ON mo.organization_id = o.id
         GROUP BY o.id, o.name
-        HAVING COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed')) > 0
+        HAVING COUNT(mo.id) FILTER (WHERE mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')) > 0
         ORDER BY total_revenue_cents DESC
       `);
 
