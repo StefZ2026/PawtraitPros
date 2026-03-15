@@ -60,6 +60,7 @@ interface MerchRevenueData {
     vendorCostCents: number;
     clientPayoutCents: number;
     platformProfitCents: number;
+    totalTaxCents: number;
     lastOrderAt: string;
   }>;
   totalRevenueCents: number;
@@ -67,6 +68,7 @@ interface MerchRevenueData {
   totalVendorCostCents: number;
   totalClientPayoutCents: number;
   totalPlatformProfitCents: number;
+  totalTaxCents: number;
   totalOrders: number;
   availableMonths: string[];
   selectedMonth: string | null;
@@ -585,7 +587,7 @@ export default function Admin() {
             </select>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <Card className="bg-background">
               <CardContent className="pt-6">
                 <p className="text-xs text-muted-foreground">Revenue</p>
@@ -603,6 +605,13 @@ export default function Admin() {
               <CardContent className="pt-6">
                 <p className="text-xs text-muted-foreground">Client Payouts</p>
                 <p className="text-xl font-bold text-red-600">-{fmt(merchRevenue?.totalClientPayoutCents || 0)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-xs text-muted-foreground">Sales Tax</p>
+                <p className="text-xl font-bold text-amber-600">{fmt(merchRevenue?.totalTaxCents || 0)}</p>
+                <p className="text-[10px] text-muted-foreground">owed to state</p>
               </CardContent>
             </Card>
             <Card className="bg-background">
@@ -633,6 +642,7 @@ export default function Admin() {
                         <th className="pb-3 font-medium text-right">Revenue</th>
                         <th className="pb-3 font-medium text-right">Vendor + Ship</th>
                         <th className="pb-3 font-medium text-right">Client Share</th>
+                        <th className="pb-3 font-medium text-right">Tax</th>
                         <th className="pb-3 font-medium text-right">Our Profit</th>
                         <th className="pb-3 font-medium text-right">Last Order</th>
                       </tr>
@@ -645,6 +655,7 @@ export default function Admin() {
                           <td className="py-3 text-right">{fmt(org.totalRevenueCents)}</td>
                           <td className="py-3 text-right text-red-600">-{fmt(org.vendorCostCents + org.totalShippingCents)}</td>
                           <td className="py-3 text-right text-red-600">-{fmt(org.clientPayoutCents)}</td>
+                          <td className="py-3 text-right text-amber-600">{fmt(org.totalTaxCents)}</td>
                           <td className="py-3 text-right font-bold text-emerald-600">{fmt(org.platformProfitCents)}</td>
                           <td className="py-3 text-right text-muted-foreground">
                             {org.lastOrderAt ? new Date(org.lastOrderAt).toLocaleDateString() : "—"}
@@ -659,6 +670,7 @@ export default function Admin() {
                         <td className="py-3 text-right font-bold">{fmt(merchRevenue?.totalRevenueCents || 0)}</td>
                         <td className="py-3 text-right font-bold text-red-600">-{fmt((merchRevenue?.totalVendorCostCents || 0) + (merchRevenue?.totalShippingCents || 0))}</td>
                         <td className="py-3 text-right font-bold text-red-600">-{fmt(merchRevenue?.totalClientPayoutCents || 0)}</td>
+                        <td className="py-3 text-right font-bold text-amber-600">{fmt(merchRevenue?.totalTaxCents || 0)}</td>
                         <td className="py-3 text-right font-bold text-lg text-emerald-600">{fmt(merchRevenue?.totalPlatformProfitCents || 0)}</td>
                         <td></td>
                       </tr>

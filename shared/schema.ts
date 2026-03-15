@@ -149,6 +149,7 @@ export const merchOrders = pgTable("merch_orders", {
   stripePaymentIntentId: text("stripe_payment_intent_id"),
   totalCents: integer("total_cents").notNull(),
   shippingCents: integer("shipping_cents").default(0).notNull(),
+  taxCents: integer("tax_cents").default(0).notNull(), // sales tax collected via Stripe Tax
   status: text("status").default("pending").notNull(), // pending, paid, submitted, fulfilled, shipped, failed
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

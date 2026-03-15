@@ -195,7 +195,7 @@ export function registerMerchRoutes(app: Express): void {
       const testMode = org?.stripeTestMode;
       const stripe = getStripeClient(testMode);
 
-      // Build line items for Stripe Checkout
+      // Build line items for Stripe Checkout (with tax code for automatic tax)
       const lineItems = validatedItems.map(item => {
         const printfulProduct = getProduct(item.productKey);
         const gelatoProduct = getGelatoProductConfig(item.productKey);
@@ -205,7 +205,10 @@ export function registerMerchRoutes(app: Express): void {
         return {
           price_data: {
             currency: "usd",
-            product_data: { name: displayName },
+            product_data: {
+              name: displayName,
+              tax_code: "txcd_99999999", // General tangible goods
+            },
             unit_amount: item.priceCents,
           },
           quantity: item.quantity,
@@ -217,7 +220,10 @@ export function registerMerchRoutes(app: Express): void {
         lineItems.push({
           price_data: {
             currency: "usd",
-            product_data: { name: "Shipping" },
+            product_data: {
+              name: "Shipping",
+              tax_code: "txcd_92010001", // Shipping - tangible goods
+            },
             unit_amount: shippingCents,
           },
           quantity: 1,
@@ -233,13 +239,38 @@ export function registerMerchRoutes(app: Express): void {
         ? `${baseUrl}/order/${sessionToken}?payment=canceled&cancel_order=${merchOrderId}`
         : `${baseUrl}/?cancel_order=${merchOrderId}`;
 
-      // Create Stripe Checkout Session (expires in 30 minutes)
+      // Create a Stripe Customer with the shipping address so automatic tax can calculate correctly
+      const stripeCustomer = await stripe.customers.create({
+        name: customer.name,
+        email: customer.email || undefined,
+        phone: customer.phone || undefined,
+        address: {
+          line1: address.address1,
+          city: address.city,
+          state: address.state_code,
+          postal_code: address.zip,
+          country: address.country_code || "US",
+        },
+        shipping: {
+          name: customer.name,
+          address: {
+            line1: address.address1,
+            city: address.city,
+            state: address.state_code,
+            postal_code: address.zip,
+            country: address.country_code || "US",
+          },
+        },
+      });
+
+      // Create Stripe Checkout Session (expires in 30 minutes, with automatic tax)
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
         allow_promotion_codes: true,
+        automatic_tax: { enabled: true },
+        customer: stripeCustomer.id,
         expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
         line_items: lineItems,
-        customer_email: customer.email || undefined,
         metadata: {
           merchOrderId: String(merchOrderId),
           imageUrl,
@@ -336,10 +367,14 @@ export function registerMerchRoutes(app: Express): void {
         return res.status(402).json({ error: "Payment not completed", paymentStatus: session.payment_status });
       }
 
-      // Mark as paid
+      // Capture actual tax and total from Stripe (includes automatic tax if enabled)
+      const actualTotalCents = session.amount_total || order.total_cents;
+      const taxCents = (session as any).total_details?.amount_tax || 0;
+
+      // Mark as paid and update with actual amounts (tax may have been added by Stripe Tax)
       await pool.query(
-        `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
-        [order.id]
+        `UPDATE merch_orders SET status = 'paid', total_cents = $1, tax_cents = $2 WHERE id = $3`,
+        [actualTotalCents, taxCents, order.id]
       );
 
       // Record merch earnings (70/30 split)

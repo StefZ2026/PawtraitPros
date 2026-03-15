@@ -180,6 +180,7 @@ export function registerAdminRoutes(app: Express): void {
           COALESCE(SUM(CASE WHEN ${validStatus} THEN me.wholesale_cents ELSE 0 END), 0) as vendor_cost_cents,
           COALESCE(SUM(CASE WHEN ${validStatus} THEN me.business_share_cents ELSE 0 END), 0) as client_payout_cents,
           COALESCE(SUM(CASE WHEN ${validStatus} THEN me.platform_share_cents ELSE 0 END), 0) as platform_profit_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.tax_cents ELSE 0 END), 0) as total_tax_cents,
           MAX(CASE WHEN ${validStatus} THEN mo.created_at END) as last_order_at
         FROM organizations o
         JOIN merch_orders mo ON mo.organization_id = o.id
@@ -204,6 +205,7 @@ export function registerAdminRoutes(app: Express): void {
         const vendorCost = parseInt(r.vendor_cost_cents);
         const clientPayout = parseInt(r.client_payout_cents);
         const platformProfit = parseInt(r.platform_profit_cents);
+        const tax = parseInt(r.total_tax_cents);
         return {
           orgId: r.org_id,
           orgName: r.org_name,
@@ -213,6 +215,7 @@ export function registerAdminRoutes(app: Express): void {
           vendorCostCents: vendorCost,
           clientPayoutCents: clientPayout,
           platformProfitCents: platformProfit,
+          totalTaxCents: tax,
           lastOrderAt: r.last_order_at,
         };
       });
@@ -223,8 +226,9 @@ export function registerAdminRoutes(app: Express): void {
         vendorCost: acc.vendorCost + r.vendorCostCents,
         clientPayout: acc.clientPayout + r.clientPayoutCents,
         platformProfit: acc.platformProfit + r.platformProfitCents,
+        tax: acc.tax + r.totalTaxCents,
         orders: acc.orders + r.orderCount,
-      }), { revenue: 0, shipping: 0, vendorCost: 0, clientPayout: 0, platformProfit: 0, orders: 0 });
+      }), { revenue: 0, shipping: 0, vendorCost: 0, clientPayout: 0, platformProfit: 0, tax: 0, orders: 0 });
 
       res.json({
         byOrg: rows,
@@ -233,6 +237,7 @@ export function registerAdminRoutes(app: Express): void {
         totalVendorCostCents: totals.vendorCost,
         totalClientPayoutCents: totals.clientPayout,
         totalPlatformProfitCents: totals.platformProfit,
+        totalTaxCents: totals.tax,
         totalOrders: totals.orders,
         availableMonths: monthsResult.rows.map((r: any) => r.month),
         selectedMonth: month || null,

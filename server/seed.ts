@@ -504,6 +504,9 @@ export async function seedDatabase() {
       completed_at TIMESTAMP
     )`);
 
+    // Add tax_cents column to merch_orders for Stripe Tax tracking
+    await pool.query('ALTER TABLE merch_orders ADD COLUMN IF NOT EXISTS tax_cents INTEGER NOT NULL DEFAULT 0');
+
     console.log('[migration] merch earnings payout tables ready');
   } catch (migErr: any) {
     console.log('[migration] merch earnings:', migErr.message);

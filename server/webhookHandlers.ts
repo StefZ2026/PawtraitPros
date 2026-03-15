@@ -377,10 +377,14 @@ export class WebhookHandlers {
 
         if (data.payment_status !== 'paid') break;
 
-        // Mark as paid
+        // Capture actual tax and total from Stripe (includes automatic tax if enabled)
+        const actualTotalCents = data.amount_total || order.total_cents;
+        const taxCents = data.total_details?.amount_tax || 0;
+
+        // Mark as paid and update with actual amounts
         await pool.query(
-          `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
-          [order.id]
+          `UPDATE merch_orders SET status = 'paid', total_cents = $1, tax_cents = $2 WHERE id = $3`,
+          [actualTotalCents, taxCents, order.id]
         );
 
         // Record merch earnings (70/30 split)

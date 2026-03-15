@@ -262,6 +262,8 @@ var init_schema = __esm({
       stripePaymentIntentId: (0, import_pg_core2.text)("stripe_payment_intent_id"),
       totalCents: (0, import_pg_core2.integer)("total_cents").notNull(),
       shippingCents: (0, import_pg_core2.integer)("shipping_cents").default(0).notNull(),
+      taxCents: (0, import_pg_core2.integer)("tax_cents").default(0).notNull(),
+      // sales tax collected via Stripe Tax
       status: (0, import_pg_core2.text)("status").default("pending").notNull(),
       // pending, paid, submitted, fulfilled, shipped, failed
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
@@ -571,14 +573,6 @@ var init_storage = __esm({
         const [updated] = await db.select().from(organizations).where((0, import_drizzle_orm4.eq)(organizations.id, id));
         return updated;
       }
-      async getOrgStripeTestMode(orgId) {
-        try {
-          const result = await pool.query("SELECT stripe_test_mode FROM organizations WHERE id = $1", [orgId]);
-          return result.rows[0]?.stripe_test_mode ?? true;
-        } catch {
-          return true;
-        }
-      }
       async clearOrganizationOwner(id) {
         await db.update(organizations).set({ ownerId: null }).where((0, import_drizzle_orm4.eq)(organizations.id, id));
       }
@@ -646,9 +640,6 @@ var init_storage = __esm({
           await tx.update(portraits).set({ isSelected: false }).where((0, import_drizzle_orm4.eq)(portraits.dogId, dogId));
           await tx.update(portraits).set({ isSelected: true }).where((0, import_drizzle_orm4.and)((0, import_drizzle_orm4.eq)(portraits.id, portraitId), (0, import_drizzle_orm4.eq)(portraits.dogId, dogId)));
         });
-      }
-      async getPortraitsByGroupId(groupId) {
-        return db.select().from(portraits).where((0, import_drizzle_orm4.eq)(portraits.groupId, groupId));
       }
       async incrementPortraitEditCount(portraitId) {
         await db.update(portraits).set({ editCount: import_drizzle_orm4.sql`COALESCE(${portraits.editCount}, 0) + 1` }).where((0, import_drizzle_orm4.eq)(portraits.id, portraitId));
@@ -3393,6 +3384,7 @@ init_helpers();
 
 // server/routes/startup.ts
 init_storage();
+init_db();
 init_stripeClient();
 init_subscription();
 init_helpers();
@@ -3587,6 +3579,21 @@ ${fixes.join("\n")}`);
   if (issues.length > 0) {
     console.log(`[startup] Data integrity issues found:
 ${issues.join("\n")}`);
+  }
+  try {
+    const cleanup = await pool.query(
+      `DELETE FROM merch_order_items WHERE order_id IN (
+        SELECT id FROM merch_orders WHERE status = 'awaiting_payment' AND created_at < NOW() - INTERVAL '24 hours'
+      )`
+    );
+    const deleted = await pool.query(
+      `DELETE FROM merch_orders WHERE status = 'awaiting_payment' AND created_at < NOW() - INTERVAL '24 hours' RETURNING id`
+    );
+    if (deleted.rowCount && deleted.rowCount > 0) {
+      console.log(`[startup] Cleaned up ${deleted.rowCount} abandoned merch order(s): ${deleted.rows.map((r) => r.id).join(", ")}`);
+    }
+  } catch (err) {
+    console.error(`[startup] Abandoned order cleanup failed:`, err.message);
   }
 }
 
@@ -7768,7 +7775,11 @@ function registerMerchRoutes(app2) {
         return {
           price_data: {
             currency: "usd",
-            product_data: { name: displayName },
+            product_data: {
+              name: displayName,
+              tax_code: "txcd_99999999"
+              // General tangible goods
+            },
             unit_amount: item.priceCents
           },
           quantity: item.quantity
@@ -7778,7 +7789,11 @@ function registerMerchRoutes(app2) {
         lineItems.push({
           price_data: {
             currency: "usd",
-            product_data: { name: "Shipping" },
+            product_data: {
+              name: "Shipping",
+              tax_code: "txcd_92010001"
+              // Shipping - tangible goods
+            },
             unit_amount: shippingCents
           },
           quantity: 1
@@ -7786,12 +7801,36 @@ function registerMerchRoutes(app2) {
       }
       const baseUrl = process.env.APP_URL || (process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000");
       const successUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=success&session_id={CHECKOUT_SESSION_ID}` : `${baseUrl}/order-complete?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=canceled` : `${baseUrl}/`;
+      const cancelUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=canceled&cancel_order=${merchOrderId}` : `${baseUrl}/?cancel_order=${merchOrderId}`;
+      const stripeCustomer = await stripe.customers.create({
+        name: customer.name,
+        email: customer.email || void 0,
+        phone: customer.phone || void 0,
+        address: {
+          line1: address.address1,
+          city: address.city,
+          state: address.state_code,
+          postal_code: address.zip,
+          country: address.country_code || "US"
+        },
+        shipping: {
+          name: customer.name,
+          address: {
+            line1: address.address1,
+            city: address.city,
+            state: address.state_code,
+            postal_code: address.zip,
+            country: address.country_code || "US"
+          }
+        }
+      });
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
         allow_promotion_codes: true,
+        automatic_tax: { enabled: true },
+        customer: stripeCustomer.id,
+        expires_at: Math.floor(Date.now() / 1e3) + 30 * 60,
         line_items: lineItems,
-        customer_email: customer.email || void 0,
         metadata: {
           merchOrderId: String(merchOrderId),
           imageUrl,
@@ -7817,6 +7856,27 @@ function registerMerchRoutes(app2) {
     } catch (error) {
       console.error("Error creating merch checkout:", error);
       res.status(500).json({ error: "Failed to create checkout" });
+    }
+  });
+  app2.delete("/api/merch/order/:id", async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      if (isNaN(orderId)) return res.status(400).json({ error: "Invalid order ID" });
+      const result = await pool.query(
+        `SELECT id, status FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "Order not found" });
+      if (result.rows[0].status !== "awaiting_payment") {
+        return res.json({ message: "Order already processed", status: result.rows[0].status });
+      }
+      await pool.query(`DELETE FROM merch_order_items WHERE order_id = $1`, [orderId]);
+      await pool.query(`DELETE FROM merch_orders WHERE id = $1`, [orderId]);
+      console.log(`[merch] Deleted abandoned order ${orderId}`);
+      res.json({ deleted: true });
+    } catch (error) {
+      console.error("Error deleting abandoned order:", error);
+      res.status(500).json({ error: "Failed to delete order" });
     }
   });
   app2.post("/api/merch/confirm-checkout", publicExpensiveRateLimiter, async (req, res) => {
@@ -7847,9 +7907,11 @@ function registerMerchRoutes(app2) {
       if (session.payment_status !== "paid") {
         return res.status(402).json({ error: "Payment not completed", paymentStatus: session.payment_status });
       }
+      const actualTotalCents = session.amount_total || order.total_cents;
+      const taxCents = session.total_details?.amount_tax || 0;
       await pool.query(
-        `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
-        [order.id]
+        `UPDATE merch_orders SET status = 'paid', total_cents = $1, tax_cents = $2 WHERE id = $3`,
+        [actualTotalCents, taxCents, order.id]
       );
       await recordMerchEarnings(order.id, order.organization_id);
       const itemsResult = await pool.query(
@@ -8666,32 +8728,80 @@ function registerAdminRoutes(app2) {
   });
   app2.get("/api/admin/merch-revenue", isAuthenticated, isAdmin, async (req, res) => {
     try {
+      const month = req.query.month;
+      let dateFilter = "";
+      const params = [];
+      if (month && /^\d{4}-\d{2}$/.test(month)) {
+        dateFilter = `AND mo.created_at >= $1::timestamp AND mo.created_at < ($1::timestamp + INTERVAL '1 month')`;
+        params.push(`${month}-01`);
+      }
+      const validStatus = `mo.status NOT IN ('awaiting_payment', 'failed', 'canceled')`;
       const result = await pool.query(`
         SELECT
           o.id as org_id,
           o.name as org_name,
-          COUNT(mo.id) as order_count,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
-          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
-          MAX(mo.created_at) as last_order_at
+          COUNT(mo.id) FILTER (WHERE ${validStatus}) as order_count,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.wholesale_cents ELSE 0 END), 0) as vendor_cost_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.business_share_cents ELSE 0 END), 0) as client_payout_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN me.platform_share_cents ELSE 0 END), 0) as platform_profit_cents,
+          COALESCE(SUM(CASE WHEN ${validStatus} THEN mo.tax_cents ELSE 0 END), 0) as total_tax_cents,
+          MAX(CASE WHEN ${validStatus} THEN mo.created_at END) as last_order_at
         FROM organizations o
         JOIN merch_orders mo ON mo.organization_id = o.id
+        LEFT JOIN merch_earnings me ON me.merch_order_id = mo.id
+        ${dateFilter ? `WHERE ${dateFilter.replace("AND ", "")}` : ""}
         GROUP BY o.id, o.name
+        HAVING COUNT(mo.id) FILTER (WHERE ${validStatus}) > 0
         ORDER BY total_revenue_cents DESC
+      `, params);
+      const monthsResult = await pool.query(`
+        SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM') as month
+        FROM merch_orders
+        WHERE status NOT IN ('awaiting_payment', 'failed', 'canceled')
+        ORDER BY month DESC
       `);
-      const totalRevenue = result.rows.reduce((sum, r) => sum + parseInt(r.total_revenue_cents), 0);
-      const totalOrders = result.rows.reduce((sum, r) => sum + parseInt(r.order_count), 0);
-      res.json({
-        byOrg: result.rows.map((r) => ({
+      const rows = result.rows.map((r) => {
+        const revenue = parseInt(r.total_revenue_cents);
+        const shipping = parseInt(r.total_shipping_cents);
+        const vendorCost = parseInt(r.vendor_cost_cents);
+        const clientPayout = parseInt(r.client_payout_cents);
+        const platformProfit = parseInt(r.platform_profit_cents);
+        const tax = parseInt(r.total_tax_cents);
+        return {
           orgId: r.org_id,
           orgName: r.org_name,
           orderCount: parseInt(r.order_count),
-          totalRevenueCents: parseInt(r.total_revenue_cents),
-          totalShippingCents: parseInt(r.total_shipping_cents),
+          totalRevenueCents: revenue,
+          totalShippingCents: shipping,
+          vendorCostCents: vendorCost,
+          clientPayoutCents: clientPayout,
+          platformProfitCents: platformProfit,
+          totalTaxCents: tax,
           lastOrderAt: r.last_order_at
-        })),
-        totalRevenueCents: totalRevenue,
-        totalOrders
+        };
+      });
+      const totals = rows.reduce((acc, r) => ({
+        revenue: acc.revenue + r.totalRevenueCents,
+        shipping: acc.shipping + r.totalShippingCents,
+        vendorCost: acc.vendorCost + r.vendorCostCents,
+        clientPayout: acc.clientPayout + r.clientPayoutCents,
+        platformProfit: acc.platformProfit + r.platformProfitCents,
+        tax: acc.tax + r.totalTaxCents,
+        orders: acc.orders + r.orderCount
+      }), { revenue: 0, shipping: 0, vendorCost: 0, clientPayout: 0, platformProfit: 0, tax: 0, orders: 0 });
+      res.json({
+        byOrg: rows,
+        totalRevenueCents: totals.revenue,
+        totalShippingCents: totals.shipping,
+        totalVendorCostCents: totals.vendorCost,
+        totalClientPayoutCents: totals.clientPayout,
+        totalPlatformProfitCents: totals.platformProfit,
+        totalTaxCents: totals.tax,
+        totalOrders: totals.orders,
+        availableMonths: monthsResult.rows.map((r) => r.month),
+        selectedMonth: month || null
       });
     } catch (error) {
       console.error("Error fetching merch revenue:", error);
@@ -10783,6 +10893,7 @@ async function seedDatabase() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
       completed_at TIMESTAMP
     )`);
+    await pool.query("ALTER TABLE merch_orders ADD COLUMN IF NOT EXISTS tax_cents INTEGER NOT NULL DEFAULT 0");
     console.log("[migration] merch earnings payout tables ready");
   } catch (migErr) {
     console.log("[migration] merch earnings:", migErr.message);
@@ -11184,9 +11295,11 @@ var WebhookHandlers = class _WebhookHandlers {
           break;
         }
         if (data.payment_status !== "paid") break;
+        const actualTotalCents = data.amount_total || order.total_cents;
+        const taxCents = data.total_details?.amount_tax || 0;
         await pool.query(
-          `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
-          [order.id]
+          `UPDATE merch_orders SET status = 'paid', total_cents = $1, tax_cents = $2 WHERE id = $3`,
+          [actualTotalCents, taxCents, order.id]
         );
         await recordMerchEarnings(order.id, order.organization_id);
         const itemsResult = await pool.query(
@@ -11264,6 +11377,20 @@ var WebhookHandlers = class _WebhookHandlers {
             [printfulErr.message, order.id]
           );
         }
+        break;
+      }
+      case "checkout.session.expired": {
+        const expiredMerchOrderId = data.metadata?.merchOrderId;
+        if (!expiredMerchOrderId) break;
+        const expiredOrder = await pool.query(
+          `SELECT id, status FROM merch_orders WHERE id = $1`,
+          [parseInt(expiredMerchOrderId)]
+        );
+        if (expiredOrder.rows.length === 0) break;
+        if (expiredOrder.rows[0].status !== "awaiting_payment") break;
+        await pool.query(`DELETE FROM merch_order_items WHERE order_id = $1`, [parseInt(expiredMerchOrderId)]);
+        await pool.query(`DELETE FROM merch_orders WHERE id = $1`, [parseInt(expiredMerchOrderId)]);
+        console.log(`[webhook] Deleted expired merch order ${expiredMerchOrderId}`);
         break;
       }
       default:

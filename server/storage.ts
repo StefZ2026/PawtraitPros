@@ -38,7 +38,6 @@ export interface IStorage {
   createOrganization(org: InsertOrganization): Promise<Organization>;
   updateOrganization(id: number, org: Partial<InsertOrganization>): Promise<Organization | undefined>;
   updateOrganizationStripeInfo(id: number, stripeInfo: { stripeCustomerId?: string | null; stripeSubscriptionId?: string | null; subscriptionStatus?: string; stripeTestMode?: boolean }): Promise<Organization | undefined>;
-  getOrgStripeTestMode(orgId: number): Promise<boolean>;
   clearOrganizationOwner(id: number): Promise<void>;
   deleteOrganization(id: number): Promise<void>;
 
@@ -62,7 +61,6 @@ export interface IStorage {
   createPortrait(portrait: InsertPortrait): Promise<Portrait>;
   updatePortrait(id: number, portrait: Partial<InsertPortrait>): Promise<Portrait | undefined>;
   selectPortraitForGallery(dogId: number, portraitId: number): Promise<void>;
-  getPortraitsByGroupId(groupId: string): Promise<Portrait[]>;
   incrementPortraitEditCount(portraitId: number): Promise<void>;
   incrementOrgPortraitsUsed(orgId: number): Promise<void>;
   getAccurateCreditsUsed(orgId: number): Promise<{ creditsUsed: number; billingCycleStart: Date | null }>;
@@ -159,17 +157,6 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getOrgStripeTestMode(orgId: number): Promise<boolean> {
-    try {
-      const result = await pool.query('SELECT stripe_test_mode FROM organizations WHERE id = $1', [orgId]);
-      // Default to true (test mode) for backward compat — all existing data is from test Stripe
-      return result.rows[0]?.stripe_test_mode ?? true;
-    } catch {
-      // Column may not exist yet, default to test mode for safety
-      return true;
-    }
-  }
-
   async clearOrganizationOwner(id: number): Promise<void> {
     await db.update(organizations).set({ ownerId: null } as any).where(eq(organizations.id, id));
   }
@@ -264,10 +251,6 @@ export class DatabaseStorage implements IStorage {
       await tx.update(portraits).set({ isSelected: false }).where(eq(portraits.dogId, dogId));
       await tx.update(portraits).set({ isSelected: true }).where(and(eq(portraits.id, portraitId), eq(portraits.dogId, dogId)));
     });
-  }
-
-  async getPortraitsByGroupId(groupId: string): Promise<Portrait[]> {
-    return db.select().from(portraits).where(eq(portraits.groupId, groupId));
   }
 
   async incrementPortraitEditCount(portraitId: number): Promise<void> {
