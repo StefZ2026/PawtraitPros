@@ -233,6 +233,7 @@ export function registerMerchRoutes(app: Express): void {
       // Create Stripe Checkout Session
       const checkoutSession = await stripe.checkout.sessions.create({
         mode: "payment",
+        allow_promotion_codes: true,
         line_items: lineItems,
         customer_email: customer.email || undefined,
         metadata: {
