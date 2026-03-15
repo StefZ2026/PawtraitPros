@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
   AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
-  Scissors, Sun, Handshake, Smartphone
+  Scissors, Sun, Handshake, Smartphone, ShoppingBag
 } from "lucide-react";
 import {
   Select,
@@ -50,7 +50,20 @@ interface AdminStats {
   };
 }
 
-type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals";
+interface MerchRevenueData {
+  byOrg: Array<{
+    orgId: number;
+    orgName: string;
+    orderCount: number;
+    totalRevenueCents: number;
+    totalShippingCents: number;
+    lastOrderAt: string;
+  }>;
+  totalRevenueCents: number;
+  totalOrders: number;
+}
+
+type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals" | "merchrevenue";
 
 interface ReferralRelationship {
   referrerOrgId: number;
@@ -128,6 +141,11 @@ export default function Admin() {
   const { data: referrals = [] } = useQuery<ReferralRelationship[]>({
     queryKey: ["/api/admin/referrals"],
     enabled: isAuthenticated && isAdmin && currentView === "referrals",
+  });
+
+  const { data: merchRevenue } = useQuery<MerchRevenueData>({
+    queryKey: ["/api/admin/merch-revenue"],
+    enabled: isAuthenticated && isAdmin,
   });
 
   const deleteOrgMutation = useMutation({
@@ -480,6 +498,89 @@ export default function Admin() {
     );
   }
 
+  if (currentView === "merchrevenue") {
+    const merchOrgs = merchRevenue?.byOrg || [];
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-8">
+          <div className="mb-6 flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setCurrentView("dashboard")}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold">Merch Order Revenue</h1>
+              <p className="text-muted-foreground">Product orders from your customers' clients</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Total Merch Revenue</p>
+                <p className="text-2xl font-bold">${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-background">
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <p className="text-2xl font-bold">{merchRevenue?.totalOrders || 0}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-background">
+            <CardContent className="pt-6">
+              {merchOrgs.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No merch orders yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-left text-sm text-muted-foreground">
+                        <th className="pb-3 font-medium">Business</th>
+                        <th className="pb-3 font-medium text-right">Orders</th>
+                        <th className="pb-3 font-medium text-right">Shipping</th>
+                        <th className="pb-3 font-medium text-right">Total Revenue</th>
+                        <th className="pb-3 font-medium text-right">Last Order</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {merchOrgs.map((org) => (
+                        <tr key={org.orgId} className="border-b last:border-0">
+                          <td className="py-3 font-medium text-primary">{org.orgName}</td>
+                          <td className="py-3 text-right">{org.orderCount}</td>
+                          <td className="py-3 text-right">${(org.totalShippingCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-right font-bold">${(org.totalRevenueCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-right text-sm text-muted-foreground">
+                            {new Date(org.lastOrderAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2">
+                        <td className="py-3 font-bold">Total</td>
+                        <td className="py-3 text-right font-bold">{merchRevenue?.totalOrders || 0}</td>
+                        <td className="py-3 text-right font-bold">
+                          ${(merchOrgs.reduce((s, o) => s + o.totalShippingCents, 0) / 100).toFixed(2)}
+                        </td>
+                        <td className="py-3 text-right font-bold text-lg">
+                          ${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
@@ -577,6 +678,20 @@ export default function Admin() {
                 <div>
                   <p className="text-2xl font-bold">{organizations.filter(o => (o as any).referredByOrgId).length}</p>
                   <p className="text-sm text-muted-foreground underline">Referrals</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-background hover-elevate cursor-pointer" onClick={() => setCurrentView("merchrevenue")}>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                  <ShoppingBag className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}</p>
+                  <p className="text-sm text-muted-foreground underline">Merch Revenue</p>
                 </div>
               </div>
             </CardContent>

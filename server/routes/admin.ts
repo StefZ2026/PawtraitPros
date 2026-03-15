@@ -156,6 +156,44 @@ export function registerAdminRoutes(app: Express): void {
     }
   });
 
+  // Merch order revenue by organization
+  app.get("/api/admin/merch-revenue", isAuthenticated, isAdmin, async (req: any, res: Response) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          o.id as org_id,
+          o.name as org_name,
+          COUNT(mo.id) as order_count,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
+          MAX(mo.created_at) as last_order_at
+        FROM organizations o
+        JOIN merch_orders mo ON mo.organization_id = o.id
+        GROUP BY o.id, o.name
+        ORDER BY total_revenue_cents DESC
+      `);
+
+      const totalRevenue = result.rows.reduce((sum: number, r: any) => sum + parseInt(r.total_revenue_cents), 0);
+      const totalOrders = result.rows.reduce((sum: number, r: any) => sum + parseInt(r.order_count), 0);
+
+      res.json({
+        byOrg: result.rows.map((r: any) => ({
+          orgId: r.org_id,
+          orgName: r.org_name,
+          orderCount: parseInt(r.order_count),
+          totalRevenueCents: parseInt(r.total_revenue_cents),
+          totalShippingCents: parseInt(r.total_shipping_cents),
+          lastOrderAt: r.last_order_at,
+        })),
+        totalRevenueCents: totalRevenue,
+        totalOrders,
+      });
+    } catch (error) {
+      console.error("Error fetching merch revenue:", error);
+      res.status(500).json({ error: "Failed to fetch merch revenue" });
+    }
+  });
+
   // Referral commission endpoints
   app.get("/api/admin/referrals", isAuthenticated, isAdmin, async (req: any, res: Response) => {
     try {
