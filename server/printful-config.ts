@@ -2,141 +2,147 @@
  * Pawtrait Pros — Printful Product Configuration
  *
  * All confirmed Printful variant IDs for merch products.
- * Prices are retail (what the customer pays).
- * Printful charges wholesale; the difference is margin.
+ * Product 2: Enhanced Matte Paper Framed Poster (in)
+ * Product 19: White Glossy Mug
+ * Product 84: All-Over Print Tote Bag
  *
  * Pricing strategy:
- *   - 80% gross margin across the board
- *   - 70/30 profit split (business 70%, Pawtrait Pros 30%)
+ *   - Frames: 79% gross margin
+ *   - Mugs & Totes: 80% gross margin
+ *   - 70/30 profit split (Pawtrait Pros 70%, business 30%)
  *
- * IMPORTANT: These variant IDs are confirmed and must not be changed
- * without verifying against Printful's catalog API.
+ * Wholesale costs verified from Printful API on 2026-03-14.
+ * IMPORTANT: These variant IDs are confirmed against Printful product 2 (inch version).
  */
 
 export interface PrintfulProduct {
   variantId: number;
   name: string;
-  category: "print" | "frame" | "mug" | "tote";
+  category: "frame" | "mug" | "tote";
   size?: string;
   frameColor?: string;
   priceCents: number; // retail price
+  wholesaleCostCents: number; // Printful wholesale cost per unit
 }
 
 export const PRINTFUL_PRODUCTS: Record<string, PrintfulProduct> = {
-  // --- UNFRAMED MATTE PRINT ---
-  print_8x10: {
-    variantId: 4463,
-    name: "Enhanced Matte Print — 8×10",
-    category: "print",
-    size: "8x10",
-    priceCents: 4500, // $45.00
-  },
-
-  // --- MUGS ---
+  // --- MUGS (product 19) ---
   mug_11oz: {
     variantId: 1320,
     name: "White Glossy Mug — 11 oz",
     category: "mug",
     size: "11oz",
-    priceCents: 3500, // $35.00
+    priceCents: 3000, // $30.00 (80% margin)
+    wholesaleCostCents: 595, // $5.95
   },
   mug_15oz: {
     variantId: 4830,
     name: "White Glossy Mug — 15 oz",
     category: "mug",
     size: "15oz",
-    priceCents: 4000, // $40.00
+    priceCents: 4000, // $40.00 (80% margin)
+    wholesaleCostCents: 795, // $7.95
   },
 
-  // --- TOTE ---
+  // --- TOTE (product 84) ---
   tote_natural: {
     variantId: 4533,
     name: "All-Over Print Tote Bag",
     category: "tote",
-    priceCents: 8500, // $85.00
+    priceCents: 8600, // $86.00 (80% margin)
+    wholesaleCostCents: 1725, // $17.25
   },
 
-  // --- FRAMED PRINTS: 8×10 ---
+  // --- FRAMED PRINTS: 8×10 (product 2) ---
   frame_8x10_wood: {
-    variantId: 11790,
+    variantId: 15021,
     name: "Framed Poster 8×10 — Wood",
     category: "frame",
     size: "8x10",
     frameColor: "wood",
-    priceCents: 13500, // $135.00
+    priceCents: 9700, // $97.00 (79% margin)
+    wholesaleCostCents: 2035, // $20.35
   },
   frame_8x10_black: {
-    variantId: 11789,
+    variantId: 4651,
     name: "Framed Poster 8×10 — Black",
     category: "frame",
     size: "8x10",
     frameColor: "black",
-    priceCents: 13500,
+    priceCents: 9700,
+    wholesaleCostCents: 2035,
   },
   frame_8x10_white: {
-    variantId: 11791,
+    variantId: 10754,
     name: "Framed Poster 8×10 — White",
     category: "frame",
     size: "8x10",
     frameColor: "white",
-    priceCents: 13500,
+    priceCents: 9700,
+    wholesaleCostCents: 2035,
   },
 
-  // --- FRAMED PRINTS: 11×14 ---
+  // --- FRAMED PRINTS: 11×14 (product 2) ---
   frame_11x14_wood: {
-    variantId: 11793,
+    variantId: 15023,
     name: "Framed Poster 11×14 — Wood",
     category: "frame",
     size: "11x14",
     frameColor: "wood",
-    priceCents: 16900, // $169.00
+    priceCents: 14300, // $143.00 (79% margin)
+    wholesaleCostCents: 3009, // $30.09
   },
   frame_11x14_black: {
-    variantId: 11792,
+    variantId: 14292,
     name: "Framed Poster 11×14 — Black",
     category: "frame",
     size: "11x14",
     frameColor: "black",
-    priceCents: 16900,
+    priceCents: 14300,
+    wholesaleCostCents: 3009,
   },
   frame_11x14_white: {
-    variantId: 11794,
+    variantId: 14293,
     name: "Framed Poster 11×14 — White",
     category: "frame",
     size: "11x14",
     frameColor: "white",
-    priceCents: 16900,
+    priceCents: 14300,
+    wholesaleCostCents: 3009,
   },
 
-  // --- FRAMED PRINTS: 12×16 ---
+  // --- FRAMED PRINTS: 12×16 (product 2) ---
   frame_12x16_wood: {
-    variantId: 11796,
+    variantId: 15025,
     name: "Framed Poster 12×16 — Wood",
     category: "frame",
     size: "12x16",
     frameColor: "wood",
-    priceCents: 20900, // $209.00
+    priceCents: 15000, // $150.00 (79% margin)
+    wholesaleCostCents: 3157, // $31.57
   },
   frame_12x16_black: {
-    variantId: 11795,
+    variantId: 1350,
     name: "Framed Poster 12×16 — Black",
     category: "frame",
     size: "12x16",
     frameColor: "black",
-    priceCents: 20900,
+    priceCents: 15000,
+    wholesaleCostCents: 3157,
   },
   frame_12x16_white: {
-    variantId: 11797,
+    variantId: 10751,
     name: "Framed Poster 12×16 — White",
     category: "frame",
     size: "12x16",
     frameColor: "white",
-    priceCents: 20900,
+    priceCents: 15000,
+    wholesaleCostCents: 3157,
   },
 };
 
 // Helper to get all products by category
-export function getProductsByCategory(category: "print" | "frame" | "mug" | "tote"): PrintfulProduct[] {
+export function getProductsByCategory(category: "frame" | "mug" | "tote"): PrintfulProduct[] {
   return Object.values(PRINTFUL_PRODUCTS).filter(p => p.category === category);
 }
 

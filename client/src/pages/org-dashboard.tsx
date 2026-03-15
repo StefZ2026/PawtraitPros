@@ -17,7 +17,8 @@ import {
   Sparkles, ExternalLink,
   Heart, Trash2, LogIn, Eye, X, Settings,
   Calendar, Palette, Send, Check, Camera, Loader2, Phone, Mail,
-  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle, RefreshCw, Archive, RotateCcw
+  ChevronDown, ChevronUp, Zap, Search, Users, Clock, AlertTriangle, RefreshCw, Archive, RotateCcw,
+  DollarSign, Wallet
 } from "lucide-react";
 import { PetLimitModal } from "@/components/pet-limit-modal";
 import { stylePreviewImages } from "@/lib/portrait-styles";
@@ -124,6 +125,25 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
       return res.json();
     },
     enabled: hasPlan,
+  });
+
+  // Merch earnings (business view — not shown to admin viewing an org)
+  const { data: earnings } = useQuery<{
+    totalEarnedCents: number;
+    totalPaidCents: number;
+    pendingBalanceCents: number;
+    recentEarnings: any[];
+    recentPayouts: any[];
+    connectStatus: { connected: boolean; onboardingComplete: boolean };
+  }>({
+    queryKey: ["/api/my-earnings"],
+    queryFn: async () => {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/my-earnings", { headers });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: hasPlan && !isAdmin,
   });
 
   const selectedPackType = dailyPack?.pack_type || null;
@@ -430,6 +450,20 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
     },
   });
 
+  // Stripe Connect onboarding (for merch earnings payouts)
+  const connectOnboardMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/connect/onboard");
+      return res.json();
+    },
+    onSuccess: (data: { url: string }) => {
+      window.location.href = data.url;
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Batch generate — async with polling, wizard-aware
   const handleBatchGenerate = async () => {
     if (!selectedPackType) {
@@ -654,6 +688,85 @@ export function OrgDashboard({ organization, dogs, dogsLoading, trialDaysRemaini
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Merch Earnings — business users only */}
+      {!isAdmin && earnings && (earnings.totalEarnedCents > 0 || earnings.connectStatus.connected) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-emerald-600" />
+                <CardTitle className="text-lg">Merch Earnings</CardTitle>
+              </div>
+              {!earnings.connectStatus.connected && (
+                <Button
+                  size="sm"
+                  onClick={() => connectOnboardMutation.mutate()}
+                  disabled={connectOnboardMutation.isPending}
+                  className="gap-1.5"
+                >
+                  <Wallet className="h-3.5 w-3.5" />
+                  {connectOnboardMutation.isPending ? "Setting up..." : "Set Up Payouts"}
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="text-center p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+                <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
+                  ${(earnings.totalEarnedCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Total Earned</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                <p className="text-xl font-bold text-blue-700 dark:text-blue-400">
+                  ${(earnings.totalPaidCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Paid Out</p>
+              </div>
+              <div className="text-center p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                <p className="text-xl font-bold text-amber-700 dark:text-amber-400">
+                  ${(earnings.pendingBalanceCents / 100).toFixed(2)}
+                </p>
+                <p className="text-xs text-muted-foreground">Pending</p>
+              </div>
+            </div>
+            {!earnings.connectStatus.connected && earnings.pendingBalanceCents > 0 && (
+              <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Set up Stripe Connect above to receive your merch earnings via direct deposit.
+              </div>
+            )}
+            {earnings.connectStatus.connected && !earnings.connectStatus.onboardingComplete && (
+              <div className="text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Your Stripe Connect setup is incomplete.{" "}
+                <Button variant="ghost" size="sm" className="p-0 h-auto underline" onClick={() => connectOnboardMutation.mutate()}>
+                  Complete setup
+                </Button>
+              </div>
+            )}
+            {earnings.recentEarnings.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium mb-2">Recent Earnings</p>
+                <div className="space-y-1">
+                  {earnings.recentEarnings.slice(0, 5).map((e: any) => (
+                    <div key={e.id} className="flex items-center justify-between text-sm py-1.5 border-b last:border-0">
+                      <span className="text-muted-foreground">
+                        {e.customer_name || "Order"} — {new Date(e.order_date).toLocaleDateString()}
+                      </span>
+                      <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                        +${(e.business_share_cents / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* SECTION 1: Today's Pack */}

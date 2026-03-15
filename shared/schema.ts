@@ -77,6 +77,8 @@ export const organizations = pgTable("organizations", {
   billingCycleStart: timestamp("billing_cycle_start"),
   referredByOrgId: integer("referred_by_org_id"), // which org referred this customer (nullable)
   referralStartDate: timestamp("referral_start_date"), // when referral window started (first subscription payment)
+  stripeConnectAccountId: text("stripe_connect_account_id"), // Stripe Connect Express account for receiving merch payouts
+  stripeConnectOnboardingComplete: boolean("stripe_connect_onboarding_complete").default(false),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -159,6 +161,7 @@ export const merchOrderItems = pgTable("merch_order_items", {
   variantId: integer("variant_id").notNull(), // Printful variant ID
   quantity: integer("quantity").default(1).notNull(),
   priceCents: integer("price_cents").notNull(),
+  wholesaleCostCents: integer("wholesale_cost_cents"), // Printful/Gelato wholesale cost per unit
   occasion: text("occasion"), // card occasion ID: "birthday", "valentines", etc.
   artworkUrl: text("artwork_url"), // public URL of generated card artwork
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -249,6 +252,34 @@ export const smsQueue = pgTable("sms_queue", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// Merch earnings — tracks revenue split per order (Pawtrait Pros 70%, business 30% of margin)
+export const merchEarnings = pgTable("merch_earnings", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  merchOrderId: integer("merch_order_id").notNull().references(() => merchOrders.id),
+  retailCents: integer("retail_cents").notNull(),
+  wholesaleCents: integer("wholesale_cents").notNull(),
+  marginCents: integer("margin_cents").notNull(),
+  businessShareCents: integer("business_share_cents").notNull(), // 30% of margin
+  platformShareCents: integer("platform_share_cents").notNull(), // 70% of margin
+  payoutId: integer("payout_id"), // FK to merch_payouts, null until paid
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Merch payouts — records of payments sent to businesses via Stripe Connect
+export const merchPayouts = pgTable("merch_payouts", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().references(() => organizations.id),
+  amountCents: integer("amount_cents").notNull(),
+  stripeTransferId: text("stripe_transfer_id"),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  status: text("status").default("pending").notNull(), // pending, completed, failed
+  initiatedBy: text("initiated_by"), // admin email
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Insert schemas
 export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
   id: true,
@@ -319,6 +350,16 @@ export const insertSmsQueueSchema = createInsertSchema(smsQueue).omit({
   createdAt: true,
 });
 
+export const insertMerchEarningsSchema = createInsertSchema(merchEarnings).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMerchPayoutSchema = createInsertSchema(merchPayouts).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
@@ -361,3 +402,9 @@ export type InsertReferralCommission = z.infer<typeof insertReferralCommissionSc
 
 export type SmsQueueItem = typeof smsQueue.$inferSelect;
 export type InsertSmsQueueItem = z.infer<typeof insertSmsQueueSchema>;
+
+export type MerchEarning = typeof merchEarnings.$inferSelect;
+export type InsertMerchEarning = z.infer<typeof insertMerchEarningsSchema>;
+
+export type MerchPayout = typeof merchPayouts.$inferSelect;
+export type InsertMerchPayout = z.infer<typeof insertMerchPayoutSchema>;

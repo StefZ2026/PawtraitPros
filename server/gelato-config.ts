@@ -18,7 +18,8 @@ export interface GelatoCardProduct {
   name: string;
   format: "flat" | "folded";
   size: string;
-  priceCents: number;
+  priceCents: number; // retail price per card
+  wholesaleCostCents: number; // Gelato wholesale cost per card (at min batch qty)
   artworkFiles: Array<{ type: string; description: string }>;
 }
 
@@ -35,7 +36,8 @@ export const GELATO_PRODUCTS: Record<string, GelatoCardProduct> = {
     name: "Flat Greeting Card — 5×7",
     format: "flat",
     size: "5x7",
-    priceCents: 1500,
+    priceCents: 700, // $7.00 per card (85% margin)
+    wholesaleCostCents: 101, // $1.01 per card at min qty 10
     artworkFiles: [
       { type: "default", description: "Front artwork (print-ready PNG/JPG)" },
       { type: "back", description: "Back artwork (print-ready PNG/JPG)" },
@@ -46,7 +48,8 @@ export const GELATO_PRODUCTS: Record<string, GelatoCardProduct> = {
     name: "Folded Greeting Card — 5×7",
     format: "folded",
     size: "5x7",
-    priceCents: 2000,
+    priceCents: 525, // $5.25 per card (85% margin)
+    wholesaleCostCents: 79, // $0.79 per card at min qty 25
     artworkFiles: [
       { type: "default", description: "Outside artwork — front cover + back when folded" },
       { type: "inside", description: "Inside artwork (greeting text spread)" },

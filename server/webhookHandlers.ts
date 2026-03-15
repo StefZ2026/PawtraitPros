@@ -7,6 +7,7 @@ import { handleCancellation } from './subscription';
 import { getProduct } from './printful-config';
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, buildOrderItem, type PrintfulRecipient } from './printful';
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from './routes/email';
+import { recordMerchEarnings } from './merch-payouts';
 
 export class WebhookHandlers {
 
@@ -381,6 +382,9 @@ export class WebhookHandlers {
           `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
           [order.id]
         );
+
+        // Record merch earnings (70/30 split)
+        await recordMerchEarnings(order.id, order.organization_id);
 
         // Get order items for Printful
         const itemsResult = await pool.query(

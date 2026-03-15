@@ -467,6 +467,48 @@ export async function seedDatabase() {
     console.log('[migration] sms_queue:', migErr.message);
   }
 
+  // Migration: merch earnings payout system
+  try {
+    // Add wholesale cost tracking to order items
+    await pool.query('ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS wholesale_cost_cents INTEGER');
+
+    // Stripe Connect columns on organizations (for receiving merch payouts)
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_connect_account_id TEXT');
+    await pool.query('ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_connect_onboarding_complete BOOLEAN DEFAULT false');
+
+    // Merch earnings table — tracks revenue split per order
+    await pool.query(`CREATE TABLE IF NOT EXISTS merch_earnings (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      merch_order_id INTEGER NOT NULL REFERENCES merch_orders(id),
+      retail_cents INTEGER NOT NULL,
+      wholesale_cents INTEGER NOT NULL,
+      margin_cents INTEGER NOT NULL,
+      business_share_cents INTEGER NOT NULL,
+      platform_share_cents INTEGER NOT NULL,
+      payout_id INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    )`);
+
+    // Merch payouts table — records of payments sent to businesses
+    await pool.query(`CREATE TABLE IF NOT EXISTS merch_payouts (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      amount_cents INTEGER NOT NULL,
+      stripe_transfer_id TEXT,
+      period_start TIMESTAMP NOT NULL,
+      period_end TIMESTAMP NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      initiated_by TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      completed_at TIMESTAMP
+    )`);
+
+    console.log('[migration] merch earnings payout tables ready');
+  } catch (migErr: any) {
+    console.log('[migration] merch earnings:', migErr.message);
+  }
+
   await seedSubscriptionPlans();
 
   // Ensure Stripe products/prices exist for all vertical plans (idempotent)

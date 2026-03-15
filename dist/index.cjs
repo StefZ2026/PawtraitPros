@@ -64,23 +64,31 @@ __export(schema_exports, {
   insertCustomerSessionSchema: () => insertCustomerSessionSchema,
   insertDailyPackSelectionSchema: () => insertDailyPackSelectionSchema,
   insertDogSchema: () => insertDogSchema,
+  insertMerchEarningsSchema: () => insertMerchEarningsSchema,
   insertMerchOrderItemSchema: () => insertMerchOrderItemSchema,
   insertMerchOrderSchema: () => insertMerchOrderSchema,
+  insertMerchPayoutSchema: () => insertMerchPayoutSchema,
   insertOrganizationSchema: () => insertOrganizationSchema,
   insertPortraitSchema: () => insertPortraitSchema,
   insertPortraitStyleSchema: () => insertPortraitStyleSchema,
+  insertReferralCommissionSchema: () => insertReferralCommissionSchema,
+  insertSmsQueueSchema: () => insertSmsQueueSchema,
   insertSubscriptionPlanSchema: () => insertSubscriptionPlanSchema,
   insertVisitPhotoSchema: () => insertVisitPhotoSchema,
+  merchEarnings: () => merchEarnings,
   merchOrderItems: () => merchOrderItems,
   merchOrders: () => merchOrders,
+  merchPayouts: () => merchPayouts,
   organizations: () => organizations,
   portraitStyles: () => portraitStyles,
   portraits: () => portraits,
+  referralCommissions: () => referralCommissions,
+  smsQueue: () => smsQueue,
   subscriptionPlans: () => subscriptionPlans,
   users: () => users,
   visitPhotos: () => visitPhotos
 });
-var import_drizzle_orm2, import_pg_core2, import_drizzle_zod, subscriptionPlans, organizations, dogs, portraitStyles, portraits, merchOrders, merchOrderItems, customerSessions, batchSessions, batchPhotos, dailyPackSelections, visitPhotos, insertSubscriptionPlanSchema, insertOrganizationSchema, insertDogSchema, insertPortraitStyleSchema, insertPortraitSchema, insertMerchOrderSchema, insertMerchOrderItemSchema, insertCustomerSessionSchema, insertBatchSessionSchema, insertBatchPhotoSchema, insertDailyPackSelectionSchema, insertVisitPhotoSchema;
+var import_drizzle_orm2, import_pg_core2, import_drizzle_zod, subscriptionPlans, organizations, dogs, portraitStyles, portraits, merchOrders, merchOrderItems, customerSessions, batchSessions, batchPhotos, dailyPackSelections, visitPhotos, referralCommissions, smsQueue, merchEarnings, merchPayouts, insertSubscriptionPlanSchema, insertOrganizationSchema, insertDogSchema, insertPortraitStyleSchema, insertPortraitSchema, insertMerchOrderSchema, insertMerchOrderItemSchema, insertCustomerSessionSchema, insertBatchSessionSchema, insertBatchPhotoSchema, insertDailyPackSelectionSchema, insertVisitPhotoSchema, insertReferralCommissionSchema, insertSmsQueueSchema, insertMerchEarningsSchema, insertMerchPayoutSchema;
 var init_schema = __esm({
   "shared/schema.ts"() {
     "use strict";
@@ -148,6 +156,12 @@ var init_schema = __esm({
       // "receipt" | "receipt_sms" | "receipt_sms_pod"
       notificationMode: (0, import_pg_core2.text)("notification_mode").default("both"),
       // "sms" | "email" | "both" — how customers are notified at departure
+      smsSendMethod: (0, import_pg_core2.text)("sms_send_method").default("native"),
+      // "native" (BGD's phone) — always native now
+      sendToken: (0, import_pg_core2.text)("send_token"),
+      // auth token for iOS Shortcut / Android companion app
+      portraitCadence: (0, import_pg_core2.text)("portrait_cadence"),
+      // "weekly" | "biweekly" — org-wide default for daycare portrait rotation (null = weekly)
       speciesHandled: (0, import_pg_core2.text)("species_handled"),
       // dogs, cats, both — must be explicitly chosen during onboarding
       onboardingCompleted: (0, import_pg_core2.boolean)("onboarding_completed").default(false).notNull(),
@@ -157,8 +171,7 @@ var init_schema = __esm({
       planId: (0, import_pg_core2.integer)("plan_id").references(() => subscriptionPlans.id),
       stripeCustomerId: (0, import_pg_core2.text)("stripe_customer_id"),
       stripeSubscriptionId: (0, import_pg_core2.text)("stripe_subscription_id"),
-      // stripeTestMode is managed via raw SQL (added by migration in seed.ts)
-      // Read via storage.getOrganization which adds it, defaults to false (live mode)
+      stripeTestMode: (0, import_pg_core2.boolean)("stripe_test_mode").default(false).notNull(),
       subscriptionStatus: (0, import_pg_core2.text)("subscription_status").default("trial"),
       // trial, active, past_due, canceled
       trialEndsAt: (0, import_pg_core2.timestamp)("trial_ends_at"),
@@ -167,6 +180,13 @@ var init_schema = __esm({
       additionalPetSlots: (0, import_pg_core2.integer)("additional_pet_slots").default(0).notNull(),
       pendingPlanId: (0, import_pg_core2.integer)("pending_plan_id"),
       billingCycleStart: (0, import_pg_core2.timestamp)("billing_cycle_start"),
+      referredByOrgId: (0, import_pg_core2.integer)("referred_by_org_id"),
+      // which org referred this customer (nullable)
+      referralStartDate: (0, import_pg_core2.timestamp)("referral_start_date"),
+      // when referral window started (first subscription payment)
+      stripeConnectAccountId: (0, import_pg_core2.text)("stripe_connect_account_id"),
+      // Stripe Connect Express account for receiving merch payouts
+      stripeConnectOnboardingComplete: (0, import_pg_core2.boolean)("stripe_connect_onboarding_complete").default(false),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
     dogs = (0, import_pg_core2.pgTable)("dogs", {
@@ -195,6 +215,8 @@ var init_schema = __esm({
       // "weekly" | "biweekly" | null (daycare — how often owner gets portrait updates)
       stayNights: (0, import_pg_core2.integer)("stay_nights"),
       // number of nights for boarding stay
+      portraitQueueDate: (0, import_pg_core2.text)("portrait_queue_date"),
+      // YYYY-MM-DD — when set to today, dog is in today's portrait queue. Null = not queued.
       nextPortraitDate: (0, import_pg_core2.text)("next_portrait_date"),
       // YYYY-MM-DD — when this dog is next due for auto-rotation
       lastPortraitStyleId: (0, import_pg_core2.integer)("last_portrait_style_id"),
@@ -253,6 +275,8 @@ var init_schema = __esm({
       // Printful variant ID
       quantity: (0, import_pg_core2.integer)("quantity").default(1).notNull(),
       priceCents: (0, import_pg_core2.integer)("price_cents").notNull(),
+      wholesaleCostCents: (0, import_pg_core2.integer)("wholesale_cost_cents"),
+      // Printful/Gelato wholesale cost per unit
       occasion: (0, import_pg_core2.text)("occasion"),
       // card occasion ID: "birthday", "valentines", etc.
       artworkUrl: (0, import_pg_core2.text)("artwork_url"),
@@ -317,6 +341,63 @@ var init_schema = __esm({
       sortOrder: (0, import_pg_core2.integer)("sort_order").default(0).notNull(),
       createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
     });
+    referralCommissions = (0, import_pg_core2.pgTable)("referral_commissions", {
+      id: (0, import_pg_core2.serial)("id").primaryKey(),
+      referrerOrgId: (0, import_pg_core2.integer)("referrer_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+      referredOrgId: (0, import_pg_core2.integer)("referred_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+      stripeInvoiceId: (0, import_pg_core2.text)("stripe_invoice_id").notNull(),
+      invoiceAmountCents: (0, import_pg_core2.integer)("invoice_amount_cents").notNull(),
+      commissionCents: (0, import_pg_core2.integer)("commission_cents").notNull(),
+      creditApplied: (0, import_pg_core2.boolean)("credit_applied").default(false).notNull(),
+      creditAppliedAt: (0, import_pg_core2.timestamp)("credit_applied_at"),
+      createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
+    });
+    smsQueue = (0, import_pg_core2.pgTable)("sms_queue", {
+      id: (0, import_pg_core2.serial)("id").primaryKey(),
+      organizationId: (0, import_pg_core2.integer)("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+      dogId: (0, import_pg_core2.integer)("dog_id").notNull().references(() => dogs.id, { onDelete: "cascade" }),
+      recipientPhone: (0, import_pg_core2.text)("recipient_phone").notNull(),
+      messageBody: (0, import_pg_core2.text)("message_body").notNull(),
+      imageUrl: (0, import_pg_core2.text)("image_url"),
+      // portrait image (Supabase Storage HTTPS URL)
+      pawfileUrl: (0, import_pg_core2.text)("pawfile_url"),
+      // link to pet's pawfile page
+      status: (0, import_pg_core2.text)("status").default("pending").notNull(),
+      // pending | claimed | sent | failed
+      claimedAt: (0, import_pg_core2.timestamp)("claimed_at"),
+      sentAt: (0, import_pg_core2.timestamp)("sent_at"),
+      error: (0, import_pg_core2.text)("error"),
+      createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
+    });
+    merchEarnings = (0, import_pg_core2.pgTable)("merch_earnings", {
+      id: (0, import_pg_core2.serial)("id").primaryKey(),
+      organizationId: (0, import_pg_core2.integer)("organization_id").notNull().references(() => organizations.id),
+      merchOrderId: (0, import_pg_core2.integer)("merch_order_id").notNull().references(() => merchOrders.id),
+      retailCents: (0, import_pg_core2.integer)("retail_cents").notNull(),
+      wholesaleCents: (0, import_pg_core2.integer)("wholesale_cents").notNull(),
+      marginCents: (0, import_pg_core2.integer)("margin_cents").notNull(),
+      businessShareCents: (0, import_pg_core2.integer)("business_share_cents").notNull(),
+      // 30% of margin
+      platformShareCents: (0, import_pg_core2.integer)("platform_share_cents").notNull(),
+      // 70% of margin
+      payoutId: (0, import_pg_core2.integer)("payout_id"),
+      // FK to merch_payouts, null until paid
+      createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull()
+    });
+    merchPayouts = (0, import_pg_core2.pgTable)("merch_payouts", {
+      id: (0, import_pg_core2.serial)("id").primaryKey(),
+      organizationId: (0, import_pg_core2.integer)("organization_id").notNull().references(() => organizations.id),
+      amountCents: (0, import_pg_core2.integer)("amount_cents").notNull(),
+      stripeTransferId: (0, import_pg_core2.text)("stripe_transfer_id"),
+      periodStart: (0, import_pg_core2.timestamp)("period_start").notNull(),
+      periodEnd: (0, import_pg_core2.timestamp)("period_end").notNull(),
+      status: (0, import_pg_core2.text)("status").default("pending").notNull(),
+      // pending, completed, failed
+      initiatedBy: (0, import_pg_core2.text)("initiated_by"),
+      // admin email
+      createdAt: (0, import_pg_core2.timestamp)("created_at").default(import_drizzle_orm2.sql`CURRENT_TIMESTAMP`).notNull(),
+      completedAt: (0, import_pg_core2.timestamp)("completed_at")
+    });
     insertSubscriptionPlanSchema = (0, import_drizzle_zod.createInsertSchema)(subscriptionPlans).omit({
       id: true,
       createdAt: true
@@ -361,6 +442,22 @@ var init_schema = __esm({
       createdAt: true
     });
     insertVisitPhotoSchema = (0, import_drizzle_zod.createInsertSchema)(visitPhotos).omit({
+      id: true,
+      createdAt: true
+    });
+    insertReferralCommissionSchema = (0, import_drizzle_zod.createInsertSchema)(referralCommissions).omit({
+      id: true,
+      createdAt: true
+    });
+    insertSmsQueueSchema = (0, import_drizzle_zod.createInsertSchema)(smsQueue).omit({
+      id: true,
+      createdAt: true
+    });
+    insertMerchEarningsSchema = (0, import_drizzle_zod.createInsertSchema)(merchEarnings).omit({
+      id: true,
+      createdAt: true
+    });
+    insertMerchPayoutSchema = (0, import_drizzle_zod.createInsertSchema)(merchPayouts).omit({
       id: true,
       createdAt: true
     });
@@ -679,6 +776,56 @@ var init_storage = __esm({
           }
         }
         return fixes;
+      }
+      // Referral Commissions
+      async createReferralCommission(data) {
+        await pool.query(
+          `INSERT INTO referral_commissions (referrer_org_id, referred_org_id, stripe_invoice_id, invoice_amount_cents, commission_cents)
+       VALUES ($1, $2, $3, $4, $5)`,
+          [data.referrerOrgId, data.referredOrgId, data.stripeInvoiceId, data.invoiceAmountCents, data.commissionCents]
+        );
+      }
+      async markReferralCreditApplied(id) {
+        await pool.query(
+          `UPDATE referral_commissions SET credit_applied = true, credit_applied_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [id]
+        );
+      }
+      async getReferralCommissions(referrerOrgId) {
+        if (referrerOrgId) {
+          const result2 = await pool.query(
+            `SELECT rc.*,
+                referrer.name as referrer_name,
+                referred.name as referred_name,
+                referred.subscription_status as referred_status,
+                referred.referral_start_date
+         FROM referral_commissions rc
+         JOIN organizations referrer ON rc.referrer_org_id = referrer.id
+         JOIN organizations referred ON rc.referred_org_id = referred.id
+         WHERE rc.referrer_org_id = $1
+         ORDER BY rc.created_at DESC`,
+            [referrerOrgId]
+          );
+          return result2.rows;
+        }
+        const result = await pool.query(
+          `SELECT rc.*,
+              referrer.name as referrer_name,
+              referred.name as referred_name,
+              referred.subscription_status as referred_status,
+              referred.referral_start_date
+       FROM referral_commissions rc
+       JOIN organizations referrer ON rc.referrer_org_id = referrer.id
+       JOIN organizations referred ON rc.referred_org_id = referred.id
+       ORDER BY rc.created_at DESC`
+        );
+        return result.rows;
+      }
+      async getActiveReferrers() {
+        const result = await pool.query(
+          `SELECT id, name FROM organizations WHERE subscription_status = 'active' AND is_active = true ORDER BY name`
+        );
+        return result.rows;
       }
     };
     storage = new DatabaseStorage();
@@ -1044,32 +1191,31 @@ function toPublicOrg(org) {
     createdAt: org.createdAt
   };
 }
-async function resolveOrgForUser(userId, userEmail, dogId) {
-  const userIsAdmin = userEmail === ADMIN_EMAIL;
-  if (dogId) {
-    const dog = await storage.getDog(dogId);
-    if (!dog || !dog.organizationId) {
-      return { org: null, error: "Pet not found", status: 404 };
-    }
+async function resolveOrg(userId, userEmail, opts = {}) {
+  const canAccess = (org2) => org2.ownerId === userId || userEmail === ADMIN_EMAIL;
+  if (opts.orgId) {
+    const id = typeof opts.orgId === "string" ? parseInt(opts.orgId) : opts.orgId;
+    if (isNaN(id)) return { org: null, error: "Invalid organization ID", status: 400 };
+    const org2 = await storage.getOrganization(id);
+    if (!org2) return { org: null, error: "Organization not found", status: 404 };
+    if (!canAccess(org2)) return { org: null, error: "Not authorized to access this organization", status: 403 };
+    return { org: org2 };
+  }
+  if (opts.dogId) {
+    const dogIdNum = typeof opts.dogId === "string" ? parseInt(opts.dogId) : opts.dogId;
+    if (isNaN(dogIdNum)) return { org: null, error: "Invalid pet ID", status: 400 };
+    const dog = await storage.getDog(dogIdNum);
+    if (!dog || !dog.organizationId) return { org: null, error: "Pet not found", status: 404 };
     const org2 = await storage.getOrganization(dog.organizationId);
-    if (!org2) {
-      return { org: null, error: "Organization not found", status: 404 };
-    }
-    if (userIsAdmin || org2.ownerId === userId) {
-      return { org: org2 };
-    }
-    return { org: null, error: "Not authorized to access this dog", status: 403 };
+    if (!org2) return { org: null, error: "Organization not found", status: 404 };
+    if (!canAccess(org2)) return { org: null, error: "Not authorized to access this pet's organization", status: 403 };
+    return { org: org2 };
   }
   const org = await storage.getOrganizationByOwner(userId);
-  if (org) {
-    return { org };
-  }
-  if (userIsAdmin) {
-    return { org: null, error: "Admin must specify an organization. Use the dashboard to manage a specific business.", status: 400 };
-  }
-  return { org: null, error: "You need to create an organization first", status: 400 };
+  if (org) return { org };
+  return { org: null, error: "No organization found. Please specify an organization.", status: 400 };
 }
-var import_express_rate_limit2, ADMIN_EMAIL, aiRateLimiter, apiRateLimiter, publicExpensiveRateLimiter, MAX_ADDITIONAL_SLOTS, MAX_EDITS_PER_IMAGE, isAdmin;
+var import_express_rate_limit2, ADMIN_EMAIL, ORG_ALLOWED_FIELDS, DOG_ALLOWED_FIELDS, aiRateLimiter, apiRateLimiter, publicExpensiveRateLimiter, MAX_ADDITIONAL_SLOTS, MAX_EDITS_PER_IMAGE, isAdmin;
 var init_helpers = __esm({
   "server/routes/helpers.ts"() {
     "use strict";
@@ -1079,6 +1225,65 @@ var init_helpers = __esm({
     init_subscription();
     init_supabase_storage();
     ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+    ORG_ALLOWED_FIELDS = [
+      "name",
+      "description",
+      "websiteUrl",
+      "logoUrl",
+      "contactName",
+      "contactEmail",
+      "contactPhone",
+      "socialFacebook",
+      "socialInstagram",
+      "socialTwitter",
+      "socialNextdoor",
+      "locationStreet",
+      "locationCity",
+      "locationState",
+      "locationZip",
+      "locationCountry",
+      "billingStreet",
+      "billingCity",
+      "billingState",
+      "billingZip",
+      "billingCountry",
+      "notes",
+      "isActive",
+      "planId",
+      "speciesHandled",
+      "onboardingCompleted",
+      "industryType",
+      "captureMode",
+      "deliveryMode",
+      "notificationMode",
+      "smsSendMethod",
+      "portraitCadence",
+      "subscriptionStatus",
+      "stripeCustomerId",
+      "stripeSubscriptionId",
+      "stripeTestMode",
+      "billingCycleStart",
+      "referredByOrgId"
+    ];
+    DOG_ALLOWED_FIELDS = [
+      "name",
+      "species",
+      "breed",
+      "age",
+      "description",
+      "ownerEmail",
+      "ownerPhone",
+      "checkedInAt",
+      "isAvailable",
+      "adoptionUrl",
+      "originalPhotoUrl",
+      "externalId",
+      "externalSource",
+      "tags",
+      "portraitQueueDate",
+      "visitFrequency",
+      "stayNights"
+    ];
     aiRateLimiter = (0, import_express_rate_limit2.default)({
       windowMs: 60 * 1e3,
       max: 10,
@@ -1269,9 +1474,6 @@ var init_stripeService = __esm({
           });
         }
       }
-      async getAddonPriceId(testMode) {
-        return this.getOrCreateAddonPriceId(testMode);
-      }
       async scheduleDowngrade(subscriptionId, newPriceId, testMode) {
         const stripe = getStripeClient(testMode);
         const addonPriceId = await this.getOrCreateAddonPriceId(testMode);
@@ -1389,8 +1591,8 @@ var init_pack_config = __esm({
         type: "celebrate",
         name: "Celebrate",
         description: "Seasonal favorites, cozy vibes & celebrations",
-        styleIds: [23, 22, 10, 19, 11]
-        // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party
+        styleIds: [23, 22, 10, 19, 11, 20]
+        // Holiday Spirit, Spring Flower Crown, Halloween Pumpkin, Cozy Cabin, Birthday Party, Autumn Leaves
       },
       artistic: {
         type: "artistic",
@@ -1403,8 +1605,8 @@ var init_pack_config = __esm({
         type: "fun",
         name: "Fun",
         description: "Costumes, adventures & bold characters",
-        styleIds: [14, 12, 17, 29, 30, 31]
-        // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party
+        styleIds: [14, 12, 17, 29, 30, 31, 16, 15]
+        // Superhero, Pirate Captain, Beach Day, Pool Party, Campfire, Sleepover Party, Garden Party, Country Cowboy
       }
     };
     CAT_PACKS = {
@@ -1441,9 +1643,9 @@ var init_semaphore = __esm({
     Semaphore = class {
       constructor(maxConcurrent) {
         this.maxConcurrent = maxConcurrent;
+        this.queue = [];
+        this.active = 0;
       }
-      queue = [];
-      active = 0;
       async acquire() {
         if (this.active < this.maxConcurrent) {
           this.active++;
@@ -1474,34 +1676,38 @@ var init_semaphore = __esm({
 });
 
 // server/gemini.ts
-function extractImageFromResponse(response) {
-  const part = response.candidates?.[0]?.content?.parts?.find(
-    (p) => p.inlineData
-  );
-  if (!part?.inlineData?.data) return null;
-  const mime = part.inlineData.mimeType || "image/png";
-  return `data:${mime};base64,${part.inlineData.data}`;
-}
 function parseBase64(dataUrl) {
   const data = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
   const mimeType = (dataUrl.match(/data:([^;]+);/) || [])[1] || "image/jpeg";
   return { mimeType, data };
 }
+async function urlToDataUri(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const contentType = response.headers.get("content-type") || "image/png";
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
+}
+function extractReplicateUrl(output) {
+  if (typeof output === "string") return output;
+  if (Array.isArray(output) && typeof output[0] === "string") return output[0];
+  if (output && typeof output === "object" && "url" in output) return output.url;
+  return null;
+}
 function isRetryableError(err) {
   const status = err?.status || err?.httpStatusCode || err?.code;
   if (status === 429 || status === 503) return true;
   const msg = String(err?.message || "").toLowerCase();
-  return msg.includes("resource_exhausted") || msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable");
+  return msg.includes("rate limit") || msg.includes("overloaded") || msg.includes("unavailable") || msg.includes("resource_exhausted");
 }
-async function callWithRetry(fn, label) {
-  const MAX_RETRIES = 3;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+async function callWithRetry(fn, label, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+      if (attempt < maxRetries && isRetryableError(err)) {
         const delay = Math.pow(2, attempt + 1) * 1e3 + Math.random() * 1e3;
-        console.warn(`[gemini] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
+        console.warn(`[flux] ${label} attempt ${attempt + 1} failed (${err?.message || err}), retrying in ${Math.round(delay)}ms...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
@@ -1510,79 +1716,174 @@ async function callWithRetry(fn, label) {
   }
   throw new Error(`${label}: all retries exhausted`);
 }
-async function generateImage(prompt, sourceImage) {
-  if (sourceImage) {
-    const result = await generateWithImage(prompt, sourceImage);
-    if (result) return result;
-    throw new Error("Image generation with reference photo returned no result. Please try again.");
+function buildFalPrompt(styleName) {
+  return `Create a ${styleName} scene using the EXACT dog from the first image. Note that the first dog does NOT have standard breed features so do not substitute or make this dog pretty. Ensure all ORIGINAL dog features are EXACTLY COPIED / PRESERVED (snout length and shape and slope, width of face (wide or narrow and fox-like), eye color and shape, ear shape and direction they point, fur color and texture, height)`;
+}
+async function generateWithFal(options) {
+  const prompt = buildFalPrompt(options.styleName);
+  console.log(`[fal] Generating "${options.styleName}" portrait via Nano Banana 2...`);
+  const submitRes = await fetch("https://queue.fal.run/fal-ai/nano-banana-2/edit", {
+    method: "POST",
+    headers: {
+      "Authorization": `Key ${FAL_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      prompt,
+      image_urls: [options.dogImageUrl, options.styleImageUrl]
+    })
+  });
+  if (!submitRes.ok) {
+    const errText = await submitRes.text();
+    throw new Error(`fal.ai submit failed (${submitRes.status}): ${errText}`);
   }
-  return generateTextOnly(prompt);
-}
-async function resizeForGemini(dataUri) {
-  const { mimeType, data } = parseBase64(dataUri);
-  const inputBuffer = Buffer.from(data, "base64");
-  const resized = await (0, import_sharp.default)(inputBuffer).resize(1024, 1024, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
-  return { mimeType: "image/jpeg", data: resized.toString("base64") };
-}
-async function generateWithImage(prompt, sourceImage) {
-  const { mimeType, data } = await resizeForGemini(sourceImage);
-  const enhancedPrompt = FIDELITY_PREFIX + prompt;
-  return geminiSemaphore.run(
-    () => callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
-        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE], imageConfig: { imageSize: "2K" } }
-      });
-      return extractImageFromResponse(response);
-    }, "generateWithImage")
-  );
-}
-async function generateTextOnly(prompt) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await geminiSemaphore.run(
-      () => callWithRetry(async () => {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-pro-image-preview",
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
-        });
-        return extractImageFromResponse(response);
-      }, "generateTextOnly")
+  const { request_id } = await submitRes.json();
+  console.log(`[fal] Queued request: ${request_id}`);
+  const deadline = Date.now() + 12e4;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const statusRes = await fetch(
+      `https://queue.fal.run/fal-ai/nano-banana-2/requests/${request_id}/status`,
+      { headers: { "Authorization": `Key ${FAL_KEY}` } }
     );
-    if (result) return result;
+    const statusData = await statusRes.json();
+    if (statusData.status === "COMPLETED") break;
+    if (statusData.status === "FAILED") {
+      throw new Error(`fal.ai generation failed: ${JSON.stringify(statusData)}`);
+    }
   }
-  throw new Error("Failed to generate image after retries");
+  const resultRes = await fetch(
+    `https://queue.fal.run/fal-ai/nano-banana-2/requests/${request_id}`,
+    { headers: { "Authorization": `Key ${FAL_KEY}` } }
+  );
+  if (!resultRes.ok) throw new Error(`fal.ai result fetch failed: ${resultRes.status}`);
+  const result = await resultRes.json();
+  const imageUrl = result.images?.[0]?.url;
+  if (!imageUrl) throw new Error("fal.ai returned no image in response");
+  console.log(`[fal] Portrait generated successfully`);
+  return urlToDataUri(imageUrl);
 }
-async function generateGroupPortrait(prompt, sourceImages) {
-  const resizedImages = await Promise.all(
-    sourceImages.map((img) => resizeForGemini(img))
+async function generateWithFlux(prompt, sourceImage) {
+  const enhancedPrompt = FLUX_PREFIX + prompt;
+  const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+    input: {
+      prompt: enhancedPrompt,
+      input_image: sourceImage,
+      aspect_ratio: "1:1"
+    }
+  });
+  const outputUrl = extractReplicateUrl(output);
+  if (!outputUrl) throw new Error("FLUX Kontext Pro returned no image output");
+  return urlToDataUri(outputUrl);
+}
+async function generateTextOnlyFlux(prompt) {
+  const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+    input: {
+      prompt,
+      aspect_ratio: "1:1"
+    }
+  });
+  const outputUrl = extractReplicateUrl(output);
+  if (!outputUrl) throw new Error("FLUX text-only generation returned no output");
+  return urlToDataUri(outputUrl);
+}
+function extractImageFromResponse(response) {
+  const part = response.candidates?.[0]?.content?.parts?.find(
+    (p) => p.inlineData
   );
-  const enhancedPrompt = GROUP_FIDELITY_PREFIX + prompt;
-  const parts = [{ text: enhancedPrompt }];
-  for (const { mimeType, data } of resizedImages) {
-    parts.push({ inlineData: { mimeType, data } });
+  if (!part?.inlineData?.data) return null;
+  const mime = part.inlineData.mimeType || "image/png";
+  return `data:${mime};base64,${part.inlineData.data}`;
+}
+async function generateWithGemini(prompt, sourceImage) {
+  const { mimeType, data } = parseBase64(sourceImage);
+  const enhancedPrompt = GEMINI_FIDELITY_PREFIX + prompt;
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-image-preview",
+    contents: [{ role: "user", parts: [{ text: enhancedPrompt }, { inlineData: { mimeType, data } }] }],
+    config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+  });
+  return extractImageFromResponse(response);
+}
+async function generateTextOnlyGemini(prompt) {
+  const response = await ai.models.generateContent({
+    model: "gemini-3-pro-image-preview",
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+  });
+  return extractImageFromResponse(response);
+}
+async function generateImage(prompt, sourceImage, falOptions) {
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+  if (FAL_KEY && falOptions?.dogImageUrl && falOptions?.styleImageUrl && falOptions?.styleName) {
+    try {
+      return await generationSemaphore.run(
+        () => callWithRetry(
+          () => generateWithFal(falOptions),
+          "generateWithFal"
+        )
+      );
+    } catch (falErr) {
+      console.error("[fal] Generation failed, falling back to FLUX/Gemini:", falErr.message);
+    }
   }
-  const result = await geminiSemaphore.run(
-    () => callWithRetry(async () => {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [{ role: "user", parts }],
-        config: {
-          responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE],
-          imageConfig: { imageSize: "2K" }
+  if (sourceImage) {
+    return generationSemaphore.run(
+      () => callWithRetry(async () => {
+        if (useFlux) {
+          try {
+            return await generateWithFlux(prompt, sourceImage);
+          } catch (fluxErr) {
+            console.error("[flux] Primary generation failed, falling back to Gemini:", fluxErr.message);
+            const geminiResult = await generateWithGemini(prompt, sourceImage);
+            if (geminiResult) return geminiResult;
+            throw new Error("Both FLUX and Gemini failed to generate image");
+          }
         }
-      });
-      return extractImageFromResponse(response);
-    }, "generateGroupPortrait")
+        const result = await generateWithGemini(prompt, sourceImage);
+        if (result) return result;
+        throw new Error("Image generation with reference photo returned no result. Please try again.");
+      }, "generateImage")
+    );
+  }
+  return generationSemaphore.run(
+    () => callWithRetry(async () => {
+      if (useFlux) {
+        try {
+          return await generateTextOnlyFlux(prompt);
+        } catch (fluxErr) {
+          console.error("[flux] Text-only generation failed, falling back to Gemini:", fluxErr.message);
+          const geminiResult = await generateTextOnlyGemini(prompt);
+          if (geminiResult) return geminiResult;
+          throw new Error("Both FLUX and Gemini failed for text-only generation");
+        }
+      }
+      const result = await generateTextOnlyGemini(prompt);
+      if (result) return result;
+      throw new Error("Failed to generate image after retries");
+    }, "generateTextOnly")
   );
-  if (!result) throw new Error("Group portrait generation returned no result");
-  return result;
 }
 async function editImage(currentImage, editPrompt) {
-  const { mimeType, data } = parseBase64(currentImage);
-  return geminiSemaphore.run(
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+  return generationSemaphore.run(
     () => callWithRetry(async () => {
+      if (useFlux) {
+        try {
+          const output = await replicate.run("black-forest-labs/flux-kontext-pro", {
+            input: {
+              prompt: `Edit this image: ${editPrompt}. Keep the same overall style and subject, just apply the requested modifications.`,
+              input_image: currentImage
+            }
+          });
+          const outputUrl = extractReplicateUrl(output);
+          if (!outputUrl) throw new Error("FLUX edit returned no output");
+          return urlToDataUri(outputUrl);
+        } catch (fluxErr) {
+          console.error("[flux] Edit failed, falling back to Gemini:", fluxErr.message);
+        }
+      }
+      const { mimeType, data } = parseBase64(currentImage);
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents: [{
@@ -1600,31 +1901,30 @@ async function editImage(currentImage, editPrompt) {
     }, "editImage")
   );
 }
-var import_genai, import_sharp, ai, geminiSemaphore, FIDELITY_PREFIX, GROUP_FIDELITY_PREFIX;
-var init_gemini = __esm({
-  "server/gemini.ts"() {
-    "use strict";
-    import_genai = require("@google/genai");
-    import_sharp = __toESM(require("sharp"), 1);
-    init_semaphore();
-    ai = new import_genai.GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY
-    });
-    geminiSemaphore = new Semaphore(10);
-    FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 YOU MUST DEPICT THIS EXACT ANIMAL.
-
-MANDATORY RULES (violating any rule = total failure):
-1. SINGLE ANIMAL ONLY \u2014 depict ONLY the one animal from the reference photo. Never add extra animals, companions, or duplicates to the scene.
-2. PHOTO OVERRIDES TEXT \u2014 if the text mentions a breed that doesn't match the photo, depict what you SEE in the photo. The photo is always the sole authority.
-3. EXACT COLORS AND PATTERNS \u2014 reproduce each color exactly where it appears on the body. White chest stays white, dark back stays dark, patches stay in the same locations and proportions. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT shift colors to match "typical breed" palettes or scene lighting.
-4. PRESERVE UNIQUE FEATURES \u2014 floppy ears stay floppy, perked ears stay perked. If ears are asymmetric (one up, one down; one folded, one straight), keep them asymmetric. Underbites, crooked tails, scars, heterochromia, unusual markings \u2014 reproduce them ALL exactly. Do NOT "fix" or normalize any feature to match breed standard.
-5. PRESERVE FACE AND BODY \u2014 match this animal's exact muzzle shape, eye color, ear shape and position, fur texture and length, and body proportions from the photo.
-6. PHOTOREALISTIC ANIMAL \u2014 the animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costume, and background \u2014 but the animal itself must always look like a genuine photograph of a real animal.
-
-Now apply the following artistic style to this exact animal:
-
-`;
-    GROUP_FIDELITY_PREFIX = `MULTIPLE REFERENCE PHOTOS ATTACHED \u2014 YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
+async function generateGroupPortrait(prompt, sourceImages) {
+  const useFlux = !!process.env.REPLICATE_API_TOKEN;
+  return generationSemaphore.run(
+    () => callWithRetry(async () => {
+      if (useFlux) {
+        try {
+          const input = {
+            prompt: FLUX_GROUP_PREFIX + prompt,
+            aspect_ratio: "1:1"
+          };
+          sourceImages.forEach((img, i) => {
+            const key = i === 0 ? "input_image" : `input_image_${i + 1}`;
+            input[key] = img;
+          });
+          const output = await replicate.run("black-forest-labs/flux-2-max", { input });
+          const outputUrl = extractReplicateUrl(output);
+          if (!outputUrl) throw new Error("FLUX.2 max group portrait returned no output");
+          return urlToDataUri(outputUrl);
+        } catch (fluxErr) {
+          console.error("[flux] Group portrait failed, falling back to Gemini:", fluxErr.message);
+        }
+      }
+      const parsedImages = sourceImages.map((img) => parseBase64(img));
+      const geminiGroupPrefix = `MULTIPLE REFERENCE PHOTOS ATTACHED \u2014 YOU MUST DEPICT ALL OF THESE EXACT ANIMALS TOGETHER IN ONE SCENE.
 
 MANDATORY RULES (violating any rule = total failure):
 1. DEPICT ALL ANIMALS \u2014 every reference photo represents a different animal. ALL of them must appear in the final image. Do not omit any.
@@ -1638,6 +1938,181 @@ MANDATORY RULES (violating any rule = total failure):
 Reference photos are provided in order. Now apply the following artistic style to ALL of these animals together:
 
 `;
+      const enhancedPrompt = geminiGroupPrefix + prompt;
+      const parts = [{ text: enhancedPrompt }];
+      for (const { mimeType, data } of parsedImages) {
+        parts.push({ inlineData: { mimeType, data } });
+      }
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [{ role: "user", parts }],
+        config: { responseModalities: [import_genai.Modality.TEXT, import_genai.Modality.IMAGE] }
+      });
+      const result = extractImageFromResponse(response);
+      if (!result) throw new Error("Group portrait generation returned no result");
+      return result;
+    }, "generateGroupPortrait")
+  );
+}
+var import_replicate, import_genai, FAL_KEY, replicate, ai, generationSemaphore, FLUX_PREFIX, FLUX_GROUP_PREFIX, GEMINI_FIDELITY_PREFIX;
+var init_gemini = __esm({
+  "server/gemini.ts"() {
+    "use strict";
+    import_replicate = __toESM(require("replicate"), 1);
+    import_genai = require("@google/genai");
+    init_semaphore();
+    FAL_KEY = process.env.FAL_KEY;
+    replicate = new import_replicate.default({
+      auth: process.env.REPLICATE_API_TOKEN
+    });
+    ai = new import_genai.GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY
+    });
+    generationSemaphore = new Semaphore(10);
+    FLUX_PREFIX = `CRITICAL: The reference photo is the ONLY authority for this animal's appearance. You MUST reproduce this EXACT individual animal \u2014 not a generic or idealized version of its breed.
+
+Study the reference photo carefully. Every facial feature, every marking, every proportion of THE ANIMAL ITSELF must match EXACTLY:
+- The precise shape and length of the muzzle/snout \u2014 not a breed-typical version
+- The exact angle, direction, and position of the ears \u2014 copy them precisely from the photo
+- Eye color, shape, size, and spacing \u2014 as they appear, not as they "should" look
+- Coat colors, patterns, and markings in their exact locations and proportions
+- Body build, size, and proportions
+
+IGNORE everything in the photo that is NOT the animal \u2014 collars, leashes, tags, toys, clothing, backgrounds. Only the animal's physical appearance matters. The scene, costume, and accessories come from the style prompt below, NOT from the reference photo.
+
+The photo is ground truth for the animal's appearance ONLY. If any physical feature of the animal in the generated image doesn't match the photo, it's wrong. Do NOT idealize, normalize, or "fix" any feature. Do NOT default to breed-standard appearance.
+
+Depict ONLY this one animal (no duplicates or extra animals).
+
+Now place this exact animal in the following scene:
+
+`;
+    FLUX_GROUP_PREFIX = `Multiple reference photos are provided. Each photo shows a different animal. Depict ALL of these exact animals together in one scene. For EACH animal, preserve its exact face, markings, coloring, ear shape, eye color, fur texture, and body proportions as seen in its reference photo. Position them so each is clearly visible. Place all of these animals together in the following scene:
+
+`;
+    GEMINI_FIDELITY_PREFIX = `REFERENCE PHOTO ATTACHED \u2014 YOU MUST DEPICT THIS EXACT ANIMAL.
+
+MANDATORY RULES (violating any rule = total failure):
+1. SINGLE ANIMAL ONLY \u2014 depict ONLY the one animal from the reference photo. Never add extra animals, companions, or duplicates to the scene.
+2. PHOTO OVERRIDES TEXT \u2014 if the text mentions a breed that doesn't match the photo, depict what you SEE in the photo. The photo is always the sole authority.
+3. EXACT COLORS AND PATTERNS \u2014 reproduce each color exactly where it appears on the body. White chest stays white, dark back stays dark, patches stay in the same locations and proportions. Do NOT simplify a multi-colored coat into one uniform tone. Do NOT shift colors to match "typical breed" palettes or scene lighting.
+4. PRESERVE UNIQUE FEATURES \u2014 floppy ears stay floppy, perked ears stay perked. If ears are asymmetric (one up, one down; one folded, one straight), keep them asymmetric. Underbites, crooked tails, scars, heterochromia, unusual markings \u2014 reproduce them ALL exactly. Do NOT "fix" or normalize any feature to match breed standard.
+5. PRESERVE FACE AND BODY \u2014 match this animal's exact muzzle shape, eye color, ear shape and position, fur texture and length, and body proportions from the photo.
+6. PHOTOREALISTIC ANIMAL \u2014 the animal must look like a real, living creature with photorealistic fur, natural eyes, and real anatomy. Apply the artistic style to the scene, costume, and background \u2014 but the animal itself must always look like a genuine photograph of a real animal.
+
+Now apply the following artistic style to this exact animal:
+
+`;
+  }
+});
+
+// server/websocket.ts
+function getIo() {
+  return io;
+}
+function setupWebSocket(httpServer2) {
+  io = new import_socket.Server(httpServer2, {
+    cors: {
+      origin: process.env.NODE_ENV === "production" ? ["https://pawtraitpros.com"] : ["http://localhost:5000", "http://localhost:5173"],
+      credentials: true
+    },
+    path: "/ws"
+  });
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token;
+      if (!token) {
+        return next(new Error("Authentication required"));
+      }
+      const supabaseUrl2 = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+      if (!supabaseUrl2 || !supabaseKey) {
+        return next(new Error("Server configuration error"));
+      }
+      const supabase2 = (0, import_supabase_js2.createClient)(supabaseUrl2, supabaseKey);
+      const { data: { user }, error } = await supabase2.auth.getUser(token);
+      if (error || !user) {
+        try {
+          const tokenResult = await pool.query(
+            "SELECT id FROM organizations WHERE send_token = $1 AND is_active = true",
+            [token]
+          );
+          if (tokenResult.rows.length > 0) {
+            socket.orgId = tokenResult.rows[0].id;
+            socket.isDevice = true;
+            return next();
+          }
+        } catch (dbErr) {
+          console.error("[websocket] sendToken lookup failed:", dbErr);
+        }
+        return next(new Error("Invalid token"));
+      }
+      socket.userId = user.id;
+      socket.userEmail = user.email;
+      next();
+    } catch (err) {
+      next(new Error("Authentication failed"));
+    }
+  });
+  io.on("connection", async (socket) => {
+    if (socket.isDevice) {
+      const orgId = socket.orgId;
+      socket.join(`org:${orgId}`);
+      io?.to(`org:${orgId}`).emit("phone:status", { online: true });
+      socket.emit("connected", { orgId, role: "device" });
+      socket.on("disconnect", () => {
+        io?.to(`org:${orgId}`).emit("phone:status", { online: false });
+      });
+      return;
+    }
+    const userId = socket.userId;
+    const userEmail = socket.userEmail;
+    try {
+      const isAdmin2 = userEmail === ADMIN_EMAIL5;
+      const org = await storage.getOrganizationByOwner(userId);
+      if (org) {
+        socket.join(`org:${org.id}`);
+        socket.emit("connected", { orgId: org.id, role: "owner" });
+      } else if (isAdmin2) {
+        socket.emit("connected", { role: "admin" });
+      } else {
+        socket.emit("connected", { role: "none" });
+      }
+      socket.on("join:org", async (orgId) => {
+        if (!isAdmin2) {
+          socket.emit("error", { message: "Not authorized" });
+          return;
+        }
+        socket.join(`org:${orgId}`);
+        socket.emit("joined", { orgId });
+      });
+      socket.on("phone:online", () => {
+        if (org) {
+          io?.to(`org:${org.id}`).emit("phone:status", { online: true });
+        }
+      });
+      socket.on("disconnect", () => {
+        if (org) {
+          io?.to(`org:${org.id}`).emit("phone:status", { online: false });
+        }
+      });
+    } catch (err) {
+      console.error("[websocket] Error on connection:", err);
+    }
+  });
+  console.log("[websocket] Socket.IO server initialized on /ws");
+  return io;
+}
+var import_socket, import_supabase_js2, io, ADMIN_EMAIL5;
+var init_websocket = __esm({
+  "server/websocket.ts"() {
+    "use strict";
+    import_socket = require("socket.io");
+    import_supabase_js2 = require("@supabase/supabase-js");
+    init_storage();
+    init_db();
+    io = null;
+    ADMIN_EMAIL5 = process.env.ADMIN_EMAIL;
   }
 });
 
@@ -1658,19 +2133,6 @@ function isTelnyxConfigured() {
 }
 function isSmsConfigured() {
   return isTwilioConfigured() || isTelnyxConfigured();
-}
-function recordSend(phone) {
-  const now = Date.now();
-  const timestamps = recentSends.get(phone) || [];
-  timestamps.push(now);
-  recentSends.set(phone, timestamps.filter((t) => now - t < RATE_WINDOW_MS));
-}
-function getRecentSendCount(phone) {
-  const now = Date.now();
-  const timestamps = recentSends.get(phone) || [];
-  const recent = timestamps.filter((t) => now - t < RATE_WINDOW_MS);
-  recentSends.set(phone, recent);
-  return recent.length;
 }
 function getRetryStatus(messageId) {
   return retryQueue.get(messageId);
@@ -1813,7 +2275,7 @@ async function sendSms(to, body, mediaUrl) {
   if (mediaUrl) {
     try {
       const imgBuffer = await fetchImageAsBuffer(mediaUrl);
-      const compressed = await (0, import_sharp4.default)(imgBuffer).jpeg({ quality: 75 }).toBuffer();
+      const compressed = await (0, import_sharp3.default)(imgBuffer).jpeg({ quality: 75 }).toBuffer();
       const fname = `mms-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
       const dataUri = `data:image/jpeg;base64,${compressed.toString("base64")}`;
       mediaUrl = await uploadToStorage(dataUri, "portraits", fname);
@@ -1823,37 +2285,6 @@ async function sendSms(to, body, mediaUrl) {
       return { success: false, error: `Failed to process portrait image: ${err.message}` };
     }
   }
-  const recentCount = getRecentSendCount(phone);
-  if (recentCount >= MAX_SENDS_BEFORE_DELAY) {
-    console.log(`[sms] ${recentCount} recent sends to ${phone}, queueing with ${DELAY_MS / 6e4}min delay`);
-    const queueId = `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const entry = { phone, body, mediaUrl, attempts: 0, status: "pending" };
-    retryQueue.set(queueId, entry);
-    setTimeout(async () => {
-      try {
-        console.log(`[sms] Sending delayed message ${queueId} to ${phone}`);
-        recordSend(phone);
-        const result = await sendViaTelnyx(phone, body, mediaUrl);
-        if (result.success && result.messageId) {
-          const deliveryStatus = await pollDeliveryStatus(result.messageId);
-          entry.status = deliveryStatus === "failed" ? "failed" : "delivered";
-          if (deliveryStatus === "failed" && entry.attempts < MAX_RETRY_ATTEMPTS) {
-            scheduleRetry(queueId, entry);
-          }
-        } else {
-          entry.status = "failed";
-          entry.lastError = result.error;
-        }
-        retryQueue.set(queueId, entry);
-      } catch (err) {
-        entry.status = "failed";
-        entry.lastError = err.message;
-        retryQueue.set(queueId, entry);
-      }
-    }, DELAY_MS);
-    return { success: true, queued: true, messageId: queueId };
-  }
-  recordSend(phone);
   if (isTelnyxConfigured()) {
     try {
       const result = await sendViaTelnyx(phone, body, mediaUrl);
@@ -1898,16 +2329,12 @@ async function sendSms(to, body, mediaUrl) {
   }
   return { success: false, error: errors.join("; ") };
 }
-var import_sharp4, recentSends, RATE_WINDOW_MS, MAX_SENDS_BEFORE_DELAY, DELAY_MS, retryQueue, MAX_RETRY_ATTEMPTS, RETRY_DELAY_MS;
+var import_sharp3, retryQueue, MAX_RETRY_ATTEMPTS, RETRY_DELAY_MS;
 var init_sms = __esm({
   "server/routes/sms.ts"() {
     "use strict";
-    import_sharp4 = __toESM(require("sharp"), 1);
+    import_sharp3 = __toESM(require("sharp"), 1);
     init_supabase_storage();
-    recentSends = /* @__PURE__ */ new Map();
-    RATE_WINDOW_MS = 60 * 60 * 1e3;
-    MAX_SENDS_BEFORE_DELAY = 3;
-    DELAY_MS = 10 * 60 * 1e3;
     retryQueue = /* @__PURE__ */ new Map();
     MAX_RETRY_ATTEMPTS = 3;
     RETRY_DELAY_MS = 15 * 60 * 1e3;
@@ -1919,15 +2346,88 @@ var init_sms = __esm({
           retryQueue.delete(id);
         }
       }
-      const now = Date.now();
-      const phones = Array.from(recentSends.keys());
-      for (const phone of phones) {
-        const timestamps = recentSends.get(phone);
-        const recent = timestamps.filter((t) => now - t < RATE_WINDOW_MS);
-        if (recent.length === 0) recentSends.delete(phone);
-        else recentSends.set(phone, recent);
-      }
     }, 30 * 60 * 1e3);
+  }
+});
+
+// server/routes/sms-queue-helper.ts
+var sms_queue_helper_exports = {};
+__export(sms_queue_helper_exports, {
+  enqueueNativeSms: () => enqueueNativeSms
+});
+async function enqueueNativeSms(org, dogIds, messageTemplate) {
+  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+  const defaultTemplate = "Check out {dogName}'s beautiful portrait from {orgName}! {link}";
+  const template = messageTemplate?.trim() || defaultTemplate;
+  const queued = [];
+  const errors = [];
+  for (const dogId of dogIds) {
+    const dog = await storage.getDog(dogId);
+    if (!dog || dog.organizationId !== org.id) {
+      errors.push({ dogId, error: "Dog not found or wrong org" });
+      continue;
+    }
+    if (!dog.ownerPhone) {
+      errors.push({ dogId, error: "No owner phone number" });
+      continue;
+    }
+    let petCode = dog.petCode;
+    if (!petCode) {
+      petCode = generatePetCode(dog.name);
+      await storage.updateDog(dog.id, { petCode });
+    }
+    const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
+    const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
+    const imageUrl = selectedPortrait?.generatedImageUrl?.startsWith("https://") ? selectedPortrait.generatedImageUrl : selectedPortrait ? `${appUrl}/api/portraits/${selectedPortrait.id}/image` : null;
+    const messageBody = template.replace(/\{dogName\}/g, dog.name).replace(/\{orgName\}/g, org.name).replace(/\{link\}/g, pawfileUrl);
+    let smsStatus = "pending";
+    let smsError = null;
+    if (isSmsConfigured()) {
+      try {
+        const smsResult = await sendSms(dog.ownerPhone, messageBody, imageUrl || void 0);
+        if (smsResult.success) {
+          smsStatus = "sent";
+        } else {
+          smsStatus = "failed";
+          smsError = smsResult.error || "Send failed";
+        }
+      } catch (smsErr) {
+        smsStatus = "failed";
+        smsError = smsErr.message;
+      }
+    } else {
+      smsStatus = "failed";
+      smsError = "SMS not configured";
+    }
+    const result = await pool.query(
+      `INSERT INTO sms_queue (organization_id, dog_id, recipient_phone, message_body, image_url, pawfile_url, status, ${smsStatus === "sent" ? "sent_at" : "error"})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, ${smsStatus === "sent" ? "CURRENT_TIMESTAMP" : "$8"}) RETURNING id`,
+      smsStatus === "sent" ? [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus] : [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus, smsError]
+    );
+    queued.push({ dogId: dog.id, queueId: result.rows[0].id });
+    if (smsStatus === "failed") {
+      errors.push({ dogId: dog.id, error: smsError || "Send failed" });
+    }
+  }
+  if (queued.length > 0) {
+    const io2 = getIo();
+    if (io2) {
+      io2.to(`org:${org.id}`).emit("delivery:update", {
+        count: queued.length,
+        orgId: org.id
+      });
+    }
+  }
+  return { queued, errors, totalQueued: queued.length };
+}
+var init_sms_queue_helper = __esm({
+  "server/routes/sms-queue-helper.ts"() {
+    "use strict";
+    init_db();
+    init_storage();
+    init_helpers();
+    init_websocket();
+    init_sms();
   }
 });
 
@@ -2036,73 +2536,6 @@ var init_email = __esm({
   }
 });
 
-// server/routes/delivery.ts
-async function deliverPortraitToOwner(dog, org) {
-  if (!dog.ownerPhone && !dog.ownerEmail) {
-    return { sent: false, error: "No owner contact info" };
-  }
-  let petCode = dog.petCode;
-  if (!petCode) {
-    petCode = generatePetCode(dog.name);
-    await storage.updateDog(dog.id, { petCode });
-  }
-  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
-  const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
-  const notifMode = org.notificationMode || "both";
-  const methods = [];
-  let sent = false;
-  const portraits2 = await storage.getPortraitsByDog(dog.id);
-  const latestPortrait = portraits2.length > 0 ? portraits2[0] : null;
-  const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith("https://") ? latestPortrait.generatedImageUrl : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : void 0;
-  const sourcePhotoUrl = dog.originalPhotoUrl?.startsWith("https://") ? dog.originalPhotoUrl : void 0;
-  if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
-    try {
-      const smsBody = `Hi from ${org.name}! We created a stunning portrait of ${dog.name} and it's ready for you. View it and order a keepsake: ${pawfileUrl}`;
-      const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
-      if (smsResult.success) {
-        methods.push("sms");
-        sent = true;
-      } else {
-        console.error(`[deliver] SMS failed for ${dog.name}:`, smsResult.error);
-      }
-    } catch (smsErr) {
-      console.error(`[deliver] SMS error:`, smsErr.message);
-    }
-  }
-  if ((notifMode === "email" || notifMode === "both") && dog.ownerEmail && isEmailConfigured()) {
-    try {
-      const { subject, html } = buildDepartureEmail(
-        org.name,
-        org.logoUrl,
-        dog.name,
-        pawfileUrl,
-        portraitImageUrl,
-        org.id,
-        sourcePhotoUrl
-      );
-      const emailResult = await sendEmail(dog.ownerEmail, subject, html, void 0, org.name);
-      if (emailResult.success) {
-        methods.push("email");
-        sent = true;
-      } else {
-        console.error(`[deliver] Email failed for ${dog.name}:`, emailResult.error);
-      }
-    } catch (emailErr) {
-      console.error(`[deliver] Email error:`, emailErr.message);
-    }
-  }
-  return sent ? { sent: true, method: methods.join("+") } : { sent: false, method: "link_only", error: "No notification channel available or all failed" };
-}
-var init_delivery = __esm({
-  "server/routes/delivery.ts"() {
-    "use strict";
-    init_storage();
-    init_sms();
-    init_email();
-    init_helpers();
-  }
-});
-
 // server/gelato-config.ts
 var gelato_config_exports = {};
 __export(gelato_config_exports, {
@@ -2155,7 +2588,10 @@ var init_gelato_config = __esm({
         name: "Flat Greeting Card \u2014 5\xD77",
         format: "flat",
         size: "5x7",
-        priceCents: 1500,
+        priceCents: 700,
+        // $7.00 per card (85% margin)
+        wholesaleCostCents: 101,
+        // $1.01 per card at min qty 10
         artworkFiles: [
           { type: "default", description: "Front artwork (print-ready PNG/JPG)" },
           { type: "back", description: "Back artwork (print-ready PNG/JPG)" }
@@ -2166,7 +2602,10 @@ var init_gelato_config = __esm({
         name: "Folded Greeting Card \u2014 5\xD77",
         format: "folded",
         size: "5x7",
-        priceCents: 2e3,
+        priceCents: 525,
+        // $5.25 per card (85% margin)
+        wholesaleCostCents: 79,
+        // $0.79 per card at min qty 25
         artworkFiles: [
           { type: "default", description: "Outside artwork \u2014 front cover + back when folded" },
           { type: "inside", description: "Inside artwork (greeting text spread)" }
@@ -2332,8 +2771,8 @@ function getApiKey2() {
   if (!key) throw new Error("GELATO_API_KEY env var is not set");
   return key;
 }
-async function gelatoFetch(baseUrl, path5, options = {}) {
-  const url = `${baseUrl}${path5}`;
+async function gelatoFetch(baseUrl, path6, options = {}) {
+  const url = `${baseUrl}${path6}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -2420,6 +2859,72 @@ var init_gelato = __esm({
   }
 });
 
+// server/routes/delivery.ts
+async function deliverPortraitToOwner(dog, org, messageTemplate) {
+  if (!dog.ownerPhone && !dog.ownerEmail) {
+    return { sent: false, error: "No owner contact info" };
+  }
+  let petCode = dog.petCode;
+  if (!petCode) {
+    petCode = generatePetCode(dog.name);
+    await storage.updateDog(dog.id, { petCode });
+  }
+  const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+  const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
+  const notifMode = org.notificationMode || "both";
+  const methods = [];
+  let sent = false;
+  const latestPortrait = await storage.getSelectedPortraitByDog(dog.id) || null;
+  const portraitImageUrl = latestPortrait?.generatedImageUrl?.startsWith("https://") ? latestPortrait.generatedImageUrl : latestPortrait ? `${appUrl}/api/portraits/${latestPortrait.id}/image` : void 0;
+  const sourcePhotoUrl = dog.originalPhotoUrl?.startsWith("https://") ? dog.originalPhotoUrl : void 0;
+  if ((notifMode === "sms" || notifMode === "both") && dog.ownerPhone && isSmsConfigured()) {
+    try {
+      const smsBody = messageTemplate ? messageTemplate.replace(/\{dogName\}/g, dog.name).replace(/\{orgName\}/g, org.name).replace(/\{link\}/g, pawfileUrl) : `Check out ${dog.name}'s beautiful portrait from ${org.name}! ${pawfileUrl}`;
+      const smsResult = await sendSms(dog.ownerPhone, smsBody, portraitImageUrl);
+      if (smsResult.success) {
+        methods.push("sms");
+        sent = true;
+      } else {
+        console.error(`[deliver] SMS failed for ${dog.name}:`, smsResult.error);
+      }
+    } catch (smsErr) {
+      console.error(`[deliver] SMS error:`, smsErr.message);
+    }
+  }
+  if ((notifMode === "email" || notifMode === "both") && dog.ownerEmail && isEmailConfigured()) {
+    try {
+      const { subject, html } = buildDepartureEmail(
+        org.name,
+        org.logoUrl,
+        dog.name,
+        pawfileUrl,
+        portraitImageUrl,
+        org.id,
+        sourcePhotoUrl
+      );
+      const emailResult = await sendEmail(dog.ownerEmail, subject, html, void 0, org.name);
+      if (emailResult.success) {
+        methods.push("email");
+        sent = true;
+      } else {
+        console.error(`[deliver] Email failed for ${dog.name}:`, emailResult.error);
+      }
+    } catch (emailErr) {
+      console.error(`[deliver] Email error:`, emailErr.message);
+    }
+  }
+  return sent ? { sent: true, method: methods.join("+") } : { sent: false, method: "link_only", error: "No notification channel available or all failed" };
+}
+var init_delivery = __esm({
+  "server/routes/delivery.ts"() {
+    "use strict";
+    init_storage();
+    init_sms();
+    init_email();
+    init_helpers();
+  }
+});
+
 // server/portrait-scheduler.ts
 var portrait_scheduler_exports = {};
 __export(portrait_scheduler_exports, {
@@ -2448,13 +2953,18 @@ async function processPortraitRotation() {
       const allStyles = await storage.getAllPortraitStyles();
       for (const dog of orgDogs) {
         try {
+          const checkedIn = dog.checkedInAt;
+          if (checkedIn !== today) {
+            console.log(`[scheduler] ${dog.name}: due but not checked in today (checkedInAt=${checkedIn}), skipping`);
+            continue;
+          }
           const species = dog.species || "dog";
           const packResult = await pool.query(
             `SELECT pack_type FROM daily_pack_selections WHERE organization_id = $1 AND date = $2 AND species = $3 LIMIT 1`,
             [orgId, today, species]
           );
           if (packResult.rows.length === 0) {
-            const nextDate2 = calculateNextPortraitDate(dog, today);
+            const nextDate2 = calculateNextPortraitDate(dog, today, org);
             await storage.advanceNextPortraitDate(dog.id, nextDate2);
             console.log(`[scheduler] ${dog.name}: no daily pack selected for org ${orgId}, bumped to ${nextDate2}`);
             continue;
@@ -2466,7 +2976,7 @@ async function processPortraitRotation() {
           const availableStyleIds = pack.styleIds.filter((id) => !usedStyleIds.includes(id));
           const stylePool = availableStyleIds.length > 0 ? availableStyleIds : pack.styleIds;
           if (stylePool.length === 0) {
-            const nextDate2 = calculateNextPortraitDate(dog, today);
+            const nextDate2 = calculateNextPortraitDate(dog, today, org);
             await storage.advanceNextPortraitDate(dog.id, nextDate2);
             console.log(`[scheduler] ${dog.name}: no styles available, bumped to ${nextDate2}`);
             continue;
@@ -2501,7 +3011,8 @@ async function processPortraitRotation() {
             isSelected: true
           });
           await storage.incrementOrgPortraitsUsed(orgId);
-          const nextDate = calculateNextPortraitDate(dog, today);
+          await storage.updateDog(dog.id, { portraitQueueDate: today });
+          const nextDate = calculateNextPortraitDate(dog, today, org);
           await storage.advanceNextPortraitDate(dog.id, nextDate);
           try {
             await deliverPortraitToOwner(dog, org);
@@ -2518,7 +3029,7 @@ async function processPortraitRotation() {
     isRunning = false;
   }
 }
-function calculateNextPortraitDate(dog, currentDate) {
+function calculateNextPortraitDate(dog, currentDate, org) {
   if (dog.stayNights) {
     let checkInDate;
     if (dog.checkedInAt) {
@@ -2527,7 +3038,7 @@ function calculateNextPortraitDate(dog, currentDate) {
       checkInDate = typeof dog.createdAt === "string" ? dog.createdAt.slice(0, 10) : dog.createdAt.toISOString().slice(0, 10);
     } else {
       console.warn(`[scheduler] Boarding dog ${dog.name} (${dog.id}) has no checkedInAt or createdAt \u2014 using daycare fallback`);
-      const preference2 = dog.updatePreference || "weekly";
+      const preference2 = org?.portraitCadence || "weekly";
       const daysToAdd2 = preference2 === "biweekly" ? 14 : 7;
       const next2 = new Date(currentDate);
       next2.setDate(next2.getDate() + daysToAdd2);
@@ -2537,7 +3048,7 @@ function calculateNextPortraitDate(dog, currentDate) {
     const nextDate = portraitDates.find((d) => d > currentDate);
     return nextDate || null;
   }
-  const preference = dog.updatePreference || "weekly";
+  const preference = org?.portraitCadence || "weekly";
   const daysToAdd = preference === "biweekly" ? 14 : 7;
   const next = new Date(currentDate);
   next.setDate(next.getDate() + daysToAdd);
@@ -2696,7 +3207,6 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 var import_express2 = __toESM(require("express"), 1);
-var import_crypto4 = __toESM(require("crypto"), 1);
 var import_helmet = __toESM(require("helmet"), 1);
 
 // server/auth.ts
@@ -2746,6 +3256,7 @@ var AuthStorage = class {
 var authStorage = new AuthStorage();
 
 // server/auth.ts
+init_db();
 var supabaseUrl = process.env.SUPABASE_URL;
 var supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 var supabase = (0, import_supabase_js.createClient)(supabaseUrl, supabaseServiceKey);
@@ -2789,6 +3300,30 @@ var isAuthenticated = async (req, res, next) => {
     return next();
   } catch (error) {
     return res.status(401).json({ message: "Unauthorized" });
+  }
+};
+var isDeviceAuthenticated = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Token required" });
+  }
+  const token = authHeader.substring(7);
+  if (!token || token.length < 32) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+  try {
+    const result = await pool.query(
+      "SELECT * FROM organizations WHERE send_token = $1 AND is_active = true",
+      [token]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: "Invalid or revoked token" });
+    }
+    req.deviceOrg = result.rows[0];
+    return next();
+  } catch (error) {
+    console.error("[device-auth] Error:", error);
+    return res.status(500).json({ message: "Authentication failed" });
   }
 };
 function registerAuthRoutes(app2) {
@@ -3056,10 +3591,21 @@ ${issues.join("\n")}`);
 }
 
 // server/routes/organizations.ts
+var import_crypto = __toESM(require("crypto"), 1);
 init_storage();
+init_db();
 init_subscription();
 init_helpers();
 function registerOrganizationRoutes(app2) {
+  app2.get("/api/organizations/active-referrers", isAuthenticated, async (req, res) => {
+    try {
+      const referrers = await storage.getActiveReferrers();
+      res.json(referrers);
+    } catch (error) {
+      console.error("Error fetching active referrers:", error);
+      res.status(500).json({ error: "Failed to fetch referrers" });
+    }
+  });
   app2.get("/api/my-organization", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -3071,11 +3617,12 @@ function registerOrganizationRoutes(app2) {
       if (synced) org = synced;
       const orgDogs = await storage.getDogsByOrganization(org.id);
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-      const { stripeCustomerId, stripeSubscriptionId, ...safeOrg } = org;
+      const { stripeCustomerId, stripeSubscriptionId, sendToken, ...safeOrg } = org;
       res.json({
         ...safeOrg,
         hasStripeAccount: !!stripeCustomerId,
         hasActiveSubscription: !!stripeSubscriptionId,
+        hasDeviceConnected: !!sendToken,
         ...computePetLimitInfo(org, plan, orgDogs.length)
       });
     } catch (error) {
@@ -3084,28 +3631,36 @@ function registerOrganizationRoutes(app2) {
     }
   });
   app2.post("/api/my-organization", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const existingOrg = await storage.getOrganizationByOwner(userId);
-      if (existingOrg) {
-        return res.status(400).json({ error: "You already have an organization" });
+    const MAX_RETRIES = 2;
+    const userId = req.user.claims.sub;
+    const existingOrg = await storage.getOrganizationByOwner(userId);
+    if (existingOrg) {
+      return res.status(400).json({ error: "You already have an organization" });
+    }
+    const { name, description, websiteUrl, logoUrl } = req.body;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const slug = await generateUniqueSlug(name);
+        const org = await storage.createOrganization({
+          name,
+          slug,
+          description,
+          websiteUrl,
+          logoUrl: logoUrl || null,
+          ownerId: userId,
+          subscriptionStatus: "inactive",
+          portraitsUsedThisMonth: 0
+        });
+        return res.status(201).json(org);
+      } catch (error) {
+        const err = error;
+        console.error(`[org] Create org attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, err?.message, err?.code, err?.detail, err?.constraint);
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        return res.status(500).json({ error: err?.message || "Failed to create organization" });
       }
-      const { name, description, websiteUrl, logoUrl } = req.body;
-      const slug = await generateUniqueSlug(name);
-      const org = await storage.createOrganization({
-        name,
-        slug,
-        description,
-        websiteUrl,
-        logoUrl: logoUrl || null,
-        ownerId: userId,
-        subscriptionStatus: "inactive",
-        portraitsUsedThisMonth: 0
-      });
-      res.status(201).json(org);
-    } catch (error) {
-      console.error("Error creating organization:", error);
-      res.status(500).json({ error: "Failed to create organization" });
     }
   });
   app2.patch("/api/my-organization", isAuthenticated, async (req, res) => {
@@ -3115,33 +3670,7 @@ function registerOrganizationRoutes(app2) {
       if (!org) {
         return res.status(404).json({ error: "No organization found" });
       }
-      const allowedFields = [
-        "name",
-        "description",
-        "websiteUrl",
-        "logoUrl",
-        "contactName",
-        "contactEmail",
-        "contactPhone",
-        "socialFacebook",
-        "socialInstagram",
-        "socialTwitter",
-        "socialNextdoor",
-        "billingStreet",
-        "billingCity",
-        "billingState",
-        "billingZip",
-        "billingCountry",
-        "locationStreet",
-        "locationCity",
-        "locationState",
-        "locationZip",
-        "locationCountry",
-        "speciesHandled",
-        "onboardingCompleted",
-        "industryType",
-        "notificationMode"
-      ];
+      const allowedFields = ORG_ALLOWED_FIELDS;
       const updates = {};
       for (const field of allowedFields) {
         if (req.body[field] !== void 0) {
@@ -3317,6 +3846,33 @@ function registerOrganizationRoutes(app2) {
       res.status(500).json({ error: "Failed to fetch business" });
     }
   });
+  app2.post("/api/my-organization/generate-send-token", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+      const token = import_crypto.default.randomBytes(24).toString("hex");
+      await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, org.id]);
+      res.json({ sendToken: token });
+    } catch (error) {
+      console.error("Error generating send token:", error.message);
+      res.status(500).json({ error: "Failed to generate token" });
+    }
+  });
+  app2.delete("/api/my-organization/revoke-send-token", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+      await pool.query("UPDATE organizations SET send_token = NULL WHERE id = $1", [org.id]);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error revoking send token:", error.message);
+      res.status(500).json({ error: "Failed to revoke token" });
+    }
+  });
 }
 
 // server/routes/plans-billing.ts
@@ -3364,17 +3920,11 @@ function registerPlansBillingRoutes(app2) {
         return res.status(400).json({ error: "Invalid plan selected" });
       }
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
       if (!orgId) {
         return res.status(400).json({ error: "Organization ID is required. Please try again from your dashboard." });
       }
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
-      if (!callerIsAdmin && org.ownerId !== userId) {
-        return res.status(403).json({ error: "You don't have access to this organization" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr });
       const orgCurrentMode = org.stripeTestMode ?? true;
       if (org.stripeCustomerId && orgCurrentMode !== testMode) {
         await storage.updateOrganizationStripeInfo(org.id, {
@@ -3432,14 +3982,14 @@ function registerPlansBillingRoutes(app2) {
       const metadataOrgId = session.metadata?.orgId ? parseInt(session.metadata.orgId) : null;
       const targetOrgId = metadataOrgId || (bodyOrgId ? parseInt(bodyOrgId) : null);
       if (!targetOrgId) {
-        return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
+        return res.status(404).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
       const org = await storage.getOrganization(targetOrgId);
       if (!org) {
-        return res.status(400).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
+        return res.status(404).json({ error: "Organization not found. Could not determine which organization this checkout belongs to." });
       }
-      const callerIsAdmin = req.user.claims.email === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
+      const callerEmail = req.user.claims.email;
+      if (org.ownerId !== userId && callerEmail !== ADMIN_EMAIL) {
         return res.status(403).json({ error: "Access denied" });
       }
       const sessionCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
@@ -3495,28 +4045,12 @@ function registerPlansBillingRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
       const { orgId: bodyOrgId } = req.body || {};
-      let org;
-      if (bodyOrgId) {
-        if (!callerIsAdmin) {
-          const ownerOrg = await storage.getOrganizationByOwner(userId);
-          if (!ownerOrg || ownerOrg.id !== parseInt(bodyOrgId)) {
-            return res.status(403).json({ error: "Access denied" });
-          }
-        }
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(400).json({ error: "No billing account found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr || "No billing account found" });
       const stripeState = await validateAndCleanStripeData(org.id);
       if (!stripeState.customerId) {
-        return res.status(400).json({ error: "No billing account found. If you previously had a subscription, it may have been canceled. Please choose a new plan." });
+        return res.status(404).json({ error: "No billing account found. If you previously had a subscription, it may have been canceled. Please choose a new plan." });
       }
       const refreshedOrg = await storage.getOrganization(org.id);
       const testMode = refreshedOrg?.stripeTestMode ?? true;
@@ -3536,22 +4070,8 @@ function registerPlansBillingRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      const reqOrgId = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let org;
-      if (reqOrgId) {
-        org = await storage.getOrganization(reqOrgId);
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr || "Organization not found" });
       let renewalDate = null;
       let pendingPlanName = null;
       if (org.stripeSubscriptionId) {
@@ -3591,7 +4111,7 @@ function registerPlansBillingRoutes(app2) {
       const plan = await storage.getSubscriptionPlan(planId);
       const org = await storage.getOrganization(orgId);
       if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
+        return res.status(404).json({ error: "Organization not found" });
       }
       const orgTestMode = org.stripeTestMode ?? true;
       const changePlanPrice = plan ? getEffectivePlanPrice(plan, orgTestMode) : null;
@@ -3599,8 +4119,7 @@ function registerPlansBillingRoutes(app2) {
         return res.status(400).json({ error: "Invalid plan selected" });
       }
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
+      if (org.ownerId !== userId && callerEmail !== ADMIN_EMAIL) {
         return res.status(403).json({ error: "Access denied" });
       }
       if (!org.stripeSubscriptionId) {
@@ -3608,7 +4127,7 @@ function registerPlansBillingRoutes(app2) {
       }
       const currentPlan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       if (!currentPlan) {
-        return res.status(400).json({ error: "Current plan not found" });
+        return res.status(404).json({ error: "Current plan not found" });
       }
       if (plan.id === currentPlan.id) {
         return res.status(400).json({ error: "You are already on this plan" });
@@ -3634,19 +4153,13 @@ function registerPlansBillingRoutes(app2) {
   app2.post("/api/stripe/cancel-plan-change", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user.claims.sub;
+      const callerEmail = req.user.claims.email;
       const { orgId } = req.body;
       if (!orgId) {
         return res.status(400).json({ error: "Organization ID is required" });
       }
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(400).json({ error: "Organization not found" });
-      }
-      const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      if (!callerIsAdmin && org.ownerId !== userId) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId });
+      if (!org) return res.status(orgSt || 400).json({ error: orgErr });
       if (!org.pendingPlanId) {
         return res.status(400).json({ error: "No pending plan change to cancel" });
       }
@@ -3671,22 +4184,8 @@ function registerPlansBillingRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
-      const reqOrgId = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let org;
-      if (reqOrgId) {
-        org = await storage.getOrganization(reqOrgId);
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(404).json({ error: "No organization found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr || "No organization found" });
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       res.json({
         currentSlots: org.additionalPetSlots || 0,
@@ -3704,28 +4203,15 @@ function registerPlansBillingRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const callerEmail = req.user.claims.email;
-      const callerIsAdmin = callerEmail && callerEmail === ADMIN_EMAIL;
       const { quantity, orgId: bodyOrgId } = req.body;
       if (typeof quantity !== "number" || quantity < 0 || quantity > 5 || !Number.isInteger(quantity)) {
         return res.status(400).json({ error: "Quantity must be an integer between 0 and 5" });
       }
-      let org;
-      if (bodyOrgId) {
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-        if (org && !callerIsAdmin && org.ownerId !== userId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      } else if (callerIsAdmin) {
-        return res.status(400).json({ error: "Admin must specify orgId" });
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) {
-        return res.status(404).json({ error: "No organization found" });
-      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, callerEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr || "No organization found" });
       const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
       if (!plan || plan.priceMonthly === 0) {
-        return res.status(403).json({ error: "Add-on pet slots are only available on paid plans. Please upgrade first." });
+        return res.status(400).json({ error: "Add-on pet slots are only available on paid plans. Please upgrade first." });
       }
       const stripeState = await validateAndCleanStripeData(org.id);
       if (!stripeState.subscriptionId) {
@@ -3760,6 +4246,7 @@ function registerPlansBillingRoutes(app2) {
 init_storage();
 init_db();
 init_pack_config();
+init_helpers();
 function registerPackRoutes(app2) {
   app2.get("/api/portrait-styles", async (req, res) => {
     try {
@@ -3793,16 +4280,9 @@ function registerPackRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const isAdmin2 = userEmail === process.env.ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId;
-      let orgId = null;
-      if (isAdmin2 && orgIdParam) {
-        orgId = parseInt(orgIdParam);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) return res.json(null);
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.json(null);
+      const orgId = org.id;
       const date = req.query.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const species = req.query.species || "dog";
       const result = await pool.query(
@@ -3822,14 +4302,8 @@ function registerPackRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const isAdmin2 = userEmail === process.env.ADMIN_EMAIL;
-      let org;
-      if (isAdmin2 && req.query.orgId) {
-        org = await storage.getOrganization(parseInt(req.query.orgId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(status || 404).json({ error });
       const date = req.query.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const species = req.query.species || "dog";
       await pool.query(
@@ -3846,14 +4320,8 @@ function registerPackRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const isAdmin2 = userEmail === process.env.ADMIN_EMAIL;
-      let org;
-      if (isAdmin2 && req.body.organizationId) {
-        org = await storage.getOrganization(parseInt(req.body.organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.body.organizationId || req.body.orgId });
+      if (!org) return res.status(status || 404).json({ error });
       const { packType, date, species } = req.body;
       if (!packType || !["celebrate", "fun", "artistic"].includes(packType)) {
         return res.status(400).json({ error: "Invalid packType. Must be celebrate, fun, or artistic." });
@@ -4559,10 +5027,9 @@ function registerDogRoutes(app2) {
   app2.get("/api/my-dogs", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user.claims.sub;
-      const org = await storage.getOrganizationByOwner(userId);
-      if (!org) {
-        return res.json([]);
-      }
+      const userEmail = req.user.claims.email;
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.json([]);
       const orgDogs = await storage.getDogsByOrganization(org.id);
       const dogsWithPortraits = await Promise.all(
         orgDogs.map(async (dog) => {
@@ -4610,6 +5077,9 @@ function registerDogRoutes(app2) {
         organizationName: org?.name || null,
         organizationLogoUrl: org?.logoUrl || null,
         organizationWebsiteUrl: org?.websiteUrl || null,
+        organizationContactPhone: org?.contactPhone || null,
+        organizationContactEmail: org?.contactEmail || null,
+        organizationIndustryType: org?.industryType || null,
         portrait: portrait || void 0,
         portraits: portraitsWithStyles
       });
@@ -4622,22 +5092,9 @@ function registerDogRoutes(app2) {
     try {
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      let orgId;
-      let org;
-      if (userIsAdmin && req.body.organizationId) {
-        orgId = req.body.organizationId;
-        org = await storage.getOrganization(orgId);
-        if (!org) {
-          return res.status(400).json({ error: "Organization not found" });
-        }
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-        if (!org) {
-          return res.status(400).json({ error: "You need to create an organization first" });
-        }
-        orgId = org.id;
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.body.organizationId });
+      if (!org) return res.status(status || 400).json({ error });
+      const orgId = org.id;
       if (!org.planId || org.subscriptionStatus === "inactive") {
         return res.status(403).json({ error: "Please select a plan before adding pets" });
       }
@@ -4646,7 +5103,7 @@ function registerDogRoutes(app2) {
         return res.status(403).json({ error: limitError });
       }
       const { originalPhotoUrl, generatedPortraitUrl, styleId, organizationId: _orgId, ...rawData } = req.body;
-      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "externalId", "externalSource", "tags"];
+      const allowedFields = DOG_ALLOWED_FIELDS;
       const dogData = {};
       for (const key of allowedFields) {
         if (rawData[key] !== void 0) dogData[key] = rawData[key];
@@ -4663,8 +5120,12 @@ function registerDogRoutes(app2) {
       if (dogData.breed && !isValidBreed(dogData.breed, dogData.species)) {
         return res.status(400).json({ error: "Please select a valid breed from the list" });
       }
+      const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       if (!dogData.checkedInAt) {
-        dogData.checkedInAt = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+        dogData.checkedInAt = today;
+      }
+      if (org.industryType === "groomer") {
+        dogData.portraitQueueDate = today;
       }
       const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
       res.status(201).json(dog);
@@ -4682,22 +5143,20 @@ function registerDogRoutes(app2) {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const dog = await storage.getDog(id);
       if (!dog) {
         return res.status(404).json({ error: "Pet not found" });
       }
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized to edit this dog" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
       const { selectedPortraitId, ...rawData } = req.body;
-      const allowedFields = ["name", "species", "breed", "age", "description", "ownerEmail", "ownerPhone", "checkedInAt", "isAvailable", "adoptionUrl", "originalPhotoUrl", "tags"];
+      const allowedFields = DOG_ALLOWED_FIELDS;
       const dogData = {};
       for (const key of allowedFields) {
         if (rawData[key] !== void 0) dogData[key] = rawData[key];
+      }
+      if (Object.keys(dogData).length === 0 && !selectedPortraitId) {
+        return res.json(dog);
       }
       if (dogData.name && containsInappropriateLanguage(dogData.name)) {
         return res.status(400).json({ error: "Please choose a family-friendly name" });
@@ -4711,7 +5170,7 @@ function registerDogRoutes(app2) {
           return res.status(400).json({ error: "Invalid portrait selection" });
         }
       }
-      const updatedDog = await storage.updateDog(id, dogData);
+      const updatedDog = Object.keys(dogData).length > 0 ? await storage.updateDog(id, dogData) : dog;
       if (selectedPortraitId) {
         await storage.selectPortraitForGallery(id, selectedPortraitId);
       }
@@ -4727,15 +5186,10 @@ function registerDogRoutes(app2) {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const dog = await storage.getDog(id);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
       const date = req.body.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       await storage.updateDog(id, { checkedInAt: date });
       res.json({ success: true, checkedInAt: date });
@@ -4744,18 +5198,70 @@ function registerDogRoutes(app2) {
       res.status(500).json({ error: "Failed to check in pet" });
     }
   });
+  app2.post("/api/dogs/:id/check-out", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+      const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const autoQueued = dog.visitFrequency === "occasional";
+      await storage.updateDog(id, {
+        checkedInAt: null,
+        ...autoQueued ? { portraitQueueDate: today } : {}
+      });
+      res.json({ success: true, checkedInAt: null, autoQueued });
+    } catch (error) {
+      console.error("Error checking out pet:", error);
+      res.status(500).json({ error: "Failed to check out pet" });
+    }
+  });
+  app2.post("/api/dogs/:id/queue-portrait", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+      const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      if (dog.checkedInAt !== today) {
+        return res.status(400).json({ error: "Pet must be checked in before adding to portrait queue" });
+      }
+      await storage.updateDog(id, { portraitQueueDate: today });
+      res.json({ success: true, portraitQueueDate: today });
+    } catch (error) {
+      console.error("Error queuing pet for portrait:", error);
+      res.status(500).json({ error: "Failed to queue pet for portrait" });
+    }
+  });
+  app2.post("/api/dogs/:id/dequeue-portrait", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const dog = await storage.getDog(id);
+      if (!dog) return res.status(404).json({ error: "Pet not found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
+      await storage.updateDog(id, { portraitQueueDate: null });
+      res.json({ success: true, portraitQueueDate: null });
+    } catch (error) {
+      console.error("Error dequeuing pet from portrait:", error);
+      res.status(500).json({ error: "Failed to dequeue pet from portrait" });
+    }
+  });
   app2.get("/api/organizations/:orgId/same-owner-suggestions", isAuthenticated, async (req, res) => {
     try {
       const orgId = parseInt(req.params.orgId);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || org.id !== orgId) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId });
+      if (!org) return res.status(status || 403).json({ error });
       const date = req.query.date || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const allDogs = await storage.getDogsByOrganization(orgId);
       const checkedIn = allDogs.filter((d) => {
@@ -4795,17 +5301,12 @@ function registerDogRoutes(app2) {
       const id = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const dog = await storage.getDog(id);
       if (!dog) {
         return res.status(404).json({ error: "Pet not found" });
       }
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized to delete this dog" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: id });
+      if (!org) return res.status(status || 403).json({ error });
       await storage.deleteDog(id);
       res.status(204).send();
     } catch (error) {
@@ -4846,15 +5347,10 @@ function registerDogRoutes(app2) {
       const dogId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const dog = await storage.getDog(dogId);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
       const visitDate = req.query.date;
       const photos = await storage.getVisitPhotos(dogId, visitDate);
       res.json(photos);
@@ -4868,19 +5364,10 @@ function registerDogRoutes(app2) {
       const dogId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const dog = await storage.getDog(dogId);
       if (!dog) return res.status(404).json({ error: "Pet not found" });
-      let org;
-      if (userIsAdmin) {
-        org = await storage.getOrganization(dog.organizationId);
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-        if (!org || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
       const { photo, caption } = req.body;
       if (!photo) return res.status(400).json({ error: "Photo data is required" });
       const industryType = org.industryType || "groomer";
@@ -4920,18 +5407,13 @@ function registerDogRoutes(app2) {
       const photoId = parseInt(req.params.photoId);
       const userId = req.user.claims.sub;
       const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
       const photos = await storage.getVisitPhotos(dogId);
       const photo = photos.find((p) => p.id === photoId);
       if (!photo) {
         return res.status(404).json({ error: "Photo not found" });
       }
-      if (!userIsAdmin) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || photo.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized" });
-        }
-      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
       await storage.deleteVisitPhoto(photoId);
       res.status(204).send();
     } catch (error) {
@@ -4942,15 +5424,17 @@ function registerDogRoutes(app2) {
 }
 
 // server/routes/portraits.ts
-var import_sharp3 = __toESM(require("sharp"), 1);
+var fs = __toESM(require("fs"), 1);
+var path = __toESM(require("path"), 1);
+var import_sharp2 = __toESM(require("sharp"), 1);
 init_storage();
 init_gemini();
 
 // server/generate-mockups.ts
-var import_sharp2 = __toESM(require("sharp"), 1);
+var import_sharp = __toESM(require("sharp"), 1);
 init_storage();
 init_supabase_storage();
-import_sharp2.default.cache(false);
+import_sharp.default.cache(false);
 var WIDTH = 1200;
 var HEIGHT = 630;
 var CREAM_BG = { r: 253, g: 250, b: 245 };
@@ -5008,14 +5492,14 @@ function pillSvg(text2, fontSize, bgColor, textColor, paddingX, paddingY) {
   return { svg: Buffer.from(svg), width, height };
 }
 async function resizeToFit(imageBuffer, maxW, maxH) {
-  return (0, import_sharp2.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "center" }).png().toBuffer();
+  return (0, import_sharp.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "center" }).png().toBuffer();
 }
 async function makeRoundedImage(imageBuffer, w, h, radius) {
   const resized = await resizeToFit(imageBuffer, w, h);
   const mask = Buffer.from(
     `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
   );
-  return (0, import_sharp2.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+  return (0, import_sharp.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
 }
 async function generateShowcaseMockup(orgId) {
   const org = await storage.getOrganization(orgId);
@@ -5041,10 +5525,10 @@ async function generateShowcaseMockup(orgId) {
   if (petCount === 0) throw new Error("No pets with portraits found");
   const petsToShow = dogsWithPortraits.slice(0, 4);
   const composites = [];
-  const bg = await (0, import_sharp2.default)({
+  const bg = await (0, import_sharp.default)({
     create: { width: WIDTH, height: HEIGHT, channels: 4, background: CREAM_BG }
   }).png().toBuffer();
-  const topBar = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
+  const topBar = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
   composites.push({ input: topBar, top: 0, left: 0 });
   const orgLogoSize = 70;
   let orgLogoWidth = 0;
@@ -5071,7 +5555,7 @@ async function generateShowcaseMockup(orgId) {
   for (let i = 0; i < petsToShow.length; i++) {
     const pet = petsToShow[i];
     const x = startX + i * (portraitW + 20);
-    const cardBg = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(portraitW, portraitAreaHeight, 12, "white"))).png().toBuffer();
+    const cardBg = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(portraitW, portraitAreaHeight, 12, "white"))).png().toBuffer();
     composites.push({ input: cardBg, top: portraitAreaTop, left: x });
     const rounded = await makeRoundedImage(pet.portraitBuffer, portraitW - 16, portraitImgH - 8, 8);
     composites.push({ input: rounded, top: portraitAreaTop + 8, left: x + 8 });
@@ -5084,7 +5568,7 @@ async function generateShowcaseMockup(orgId) {
   composites.push({ input: poweredByText, top: HEIGHT - 38, left: WIDTH - 370 });
   const ppLogo = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo.svg, top: HEIGHT - 48, left: WIDTH - 280 });
-  return (0, import_sharp2.default)(bg).composite(composites).png().toBuffer();
+  return (0, import_sharp.default)(bg).composite(composites).png().toBuffer();
 }
 async function generatePawfileMockup(dogId) {
   const dog = await storage.getDog(dogId);
@@ -5095,10 +5579,10 @@ async function generatePawfileMockup(dogId) {
   if (!portrait || !portrait.generatedImageUrl) throw new Error("No portrait found");
   const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
   const composites = [];
-  const bg = await (0, import_sharp2.default)({
+  const bg = await (0, import_sharp.default)({
     create: { width: WIDTH, height: HEIGHT, channels: 4, background: CREAM_BG }
   }).png().toBuffer();
-  const topBar = await (0, import_sharp2.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
+  const topBar = await (0, import_sharp.default)(Buffer.from(roundedRectSvg(WIDTH, 6, 0, `rgb(${ORANGE.r},${ORANGE.g},${ORANGE.b})`))).png().toBuffer();
   composites.push({ input: topBar, top: 0, left: 0 });
   const portraitW = 420;
   const portraitH = 480;
@@ -5141,7 +5625,7 @@ async function generatePawfileMockup(dogId) {
   composites.push({ input: poweredByText2, top: HEIGHT - 38, left: WIDTH - 370 });
   const ppLogo2 = pawtraitProsLogoSvg(40);
   composites.push({ input: ppLogo2.svg, top: HEIGHT - 48, left: WIDTH - 280 });
-  return (0, import_sharp2.default)(bg).composite(composites).png().toBuffer();
+  return (0, import_sharp.default)(bg).composite(composites).png().toBuffer();
 }
 
 // server/routes/portraits.ts
@@ -5150,7 +5634,7 @@ init_helpers();
 init_supabase_storage();
 
 // server/job-queue.ts
-var import_crypto = require("crypto");
+var import_crypto2 = require("crypto");
 var jobs = /* @__PURE__ */ new Map();
 var pendingQueue = [];
 var processing = 0;
@@ -5170,7 +5654,7 @@ function registerWorker(fn) {
   workerFn = fn;
 }
 function enqueue(type, payload, total = 1) {
-  const id = (0, import_crypto.randomUUID)();
+  const id = (0, import_crypto2.randomUUID)();
   const job = {
     id,
     type,
@@ -5219,3713 +5703,6 @@ function processNext() {
   });
   processNext();
 }
-
-// server/routes/portraits.ts
-import_sharp3.default.cache(false);
-var MAX_STYLES_PER_PET = 5;
-function registerPortraitRoutes(app2) {
-  registerWorker(async (job) => {
-    const p = job.payload;
-    if (job.type === "generate") {
-      const generatedImageRaw = await generateImage(p.prompt, p.originalImage || void 0);
-      let generatedImage = generatedImageRaw;
-      try {
-        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
-      }
-      let portraitRecord = p.existingPortrait ? { ...p.existingPortrait } : null;
-      if (p.dogId && p.styleId) {
-        if (p.existingPortrait) {
-          await storage.updatePortrait(p.existingPortrait.id, {
-            previousImageUrl: p.existingPortrait.generatedImageUrl || null,
-            generatedImageUrl: generatedImage
-          });
-          await storage.incrementPortraitEditCount(p.existingPortrait.id);
-          await storage.selectPortraitForGallery(p.dogId, p.existingPortrait.id);
-          portraitRecord = {
-            ...p.existingPortrait,
-            editCount: p.existingPortrait.editCount + 1,
-            generatedImageUrl: generatedImage,
-            previousImageUrl: p.existingPortrait.generatedImageUrl || null
-          };
-        } else {
-          portraitRecord = await storage.createPortrait({
-            dogId: p.dogId,
-            styleId: p.styleId,
-            generatedImageUrl: generatedImage
-          });
-          await storage.selectPortraitForGallery(p.dogId, portraitRecord.id);
-          await storage.incrementOrgPortraitsUsed(p.orgId);
-        }
-      }
-      return {
-        generatedImage,
-        dogName: p.dogName,
-        portraitId: portraitRecord?.id,
-        editCount: portraitRecord ? portraitRecord.editCount : null,
-        maxEdits: MAX_EDITS_PER_IMAGE,
-        isNewPortrait: p.isNewPortrait,
-        hasPreviousImage: !!portraitRecord?.previousImageUrl
-      };
-    }
-    if (job.type === "edit") {
-      const editedImageRaw = await editImage(p.imageForEdit, p.editPrompt);
-      let editedImage = editedImageRaw;
-      try {
-        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
-      }
-      let editCount = null;
-      if (p.portraitId) {
-        const existing = await storage.getPortrait(p.portraitId);
-        await storage.updatePortrait(p.portraitId, {
-          previousImageUrl: existing?.generatedImageUrl || null,
-          generatedImageUrl: editedImage
-        });
-        await storage.incrementPortraitEditCount(p.portraitId);
-        const updated = await storage.getPortrait(p.portraitId);
-        editCount = updated?.editCount ?? null;
-      }
-      return {
-        editedImage,
-        editCount,
-        maxEdits: MAX_EDITS_PER_IMAGE,
-        hasPreviousImage: true
-      };
-    }
-    if (job.type === "batch") {
-      let generatedImageUrl = await generateImage(p.prompt, p.originalPhotoUrl);
-      try {
-        const fname = `portrait-${p.dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-        generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
-      }
-      const portrait = await storage.createPortrait({
-        dogId: p.dogId,
-        styleId: p.styleId,
-        generatedImageUrl,
-        isSelected: true
-      });
-      await storage.incrementOrgPortraitsUsed(p.orgId);
-      if (p.needsPetCode) {
-        const petCode = generatePetCode(p.dogName);
-        await storage.updateDog(p.dogId, { petCode });
-      }
-      return {
-        dogId: p.dogId,
-        success: true,
-        portraitId: portrait.id,
-        generatedImageUrl
-      };
-    }
-    if (job.type === "group") {
-      const generatedImageRaw = await generateGroupPortrait(p.prompt, p.sourceImages);
-      let generatedImageUrl = generatedImageRaw;
-      try {
-        const fname = `group-portrait-${p.groupId}-${Date.now()}.png`;
-        generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
-      } catch (err) {
-        console.error("[storage-upload] Group portrait upload failed, using base64 fallback:", err);
-      }
-      const portraitIds = [];
-      for (const dogId of p.dogIds) {
-        const portrait = await storage.createPortrait({
-          dogId,
-          styleId: p.styleId,
-          generatedImageUrl,
-          groupId: p.groupId,
-          isSelected: false
-        });
-        portraitIds.push(portrait.id);
-        await storage.selectPortraitForGallery(dogId, portrait.id);
-        await storage.incrementOrgPortraitsUsed(p.orgId);
-      }
-      return {
-        generatedImageUrl,
-        groupId: p.groupId,
-        portraitIds,
-        dogIds: p.dogIds,
-        creditsUsed: p.dogIds.length
-      };
-    }
-    throw new Error(`Unknown job type: ${job.type}`);
-  });
-  app2.get("/api/portraits/:id/image", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const portrait = await storage.getPortrait(id);
-      if (!portrait || !portrait.generatedImageUrl) {
-        return res.status(404).send("Image not found");
-      }
-      const dataUri = portrait.generatedImageUrl;
-      if (!dataUri.startsWith("data:")) {
-        return res.redirect(dataUri);
-      }
-      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
-      if (!matches) {
-        return res.status(400).send("Invalid image data");
-      }
-      const contentType = matches[1];
-      const imageBuffer = Buffer.from(matches[2], "base64");
-      res.set({
-        "Content-Type": contentType,
-        "Content-Length": imageBuffer.length.toString(),
-        "Cache-Control": "public, max-age=86400"
-      });
-      res.send(imageBuffer);
-    } catch (error) {
-      console.error("Error serving portrait image:", error);
-      res.status(500).send("Error loading image");
-    }
-  });
-  app2.get("/api/portraits/:id/download", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const portrait = await storage.getPortrait(id);
-      if (!portrait || !portrait.generatedImageUrl) {
-        return res.status(404).send("Image not found");
-      }
-      const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
-      const dog = await storage.getDog(portrait.dogId);
-      if (!dog) {
-        res.set({ "Content-Type": "image/png", "Content-Disposition": "attachment; filename=portrait.png" });
-        return res.send(portraitBuffer);
-      }
-      const org = await storage.getOrganization(dog.organizationId);
-      if (!org || !org.logoUrl) {
-        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
-        return res.send(portraitBuffer);
-      }
-      let logoBuffer;
-      try {
-        logoBuffer = await fetchImageAsBuffer(org.logoUrl);
-      } catch {
-        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
-        return res.send(portraitBuffer);
-      }
-      const portraitMeta = await (0, import_sharp3.default)(portraitBuffer).metadata();
-      const pw = portraitMeta.width || 1024;
-      const ph = portraitMeta.height || 1024;
-      const logoSize = Math.max(48, Math.round(Math.min(pw, ph) * 0.08));
-      const margin = Math.round(logoSize * 0.4);
-      const resizedLogo = await (0, import_sharp3.default)(logoBuffer).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().png().toBuffer();
-      const circleSize = logoSize + 8;
-      const circleSvg = Buffer.from(
-        `<svg width="${circleSize}" height="${circleSize}"><circle cx="${circleSize / 2}" cy="${circleSize / 2}" r="${circleSize / 2}" fill="rgba(255,255,255,0.6)"/></svg>`
-      );
-      const logoBadge = await (0, import_sharp3.default)(circleSvg).composite([{ input: resizedLogo, gravity: "center" }]).png().toBuffer();
-      const result = await (0, import_sharp3.default)(portraitBuffer).composite([{
-        input: logoBadge,
-        top: ph - circleSize - margin,
-        left: pw - circleSize - margin
-      }]).png().toBuffer();
-      const filename = `${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`;
-      res.set({
-        "Content-Type": "image/png",
-        "Content-Length": result.length.toString(),
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "public, max-age=3600"
-      });
-      res.send(result);
-    } catch (error) {
-      console.error("Error serving watermarked portrait:", error);
-      res.status(500).send("Error loading image");
-    }
-  });
-  app2.get("/api/organizations/:id/logo", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const org = await storage.getOrganization(id);
-      if (!org || !org.logoUrl) {
-        return res.status(404).send("Logo not found");
-      }
-      const dataUri = org.logoUrl;
-      if (!dataUri.startsWith("data:")) {
-        return res.redirect(dataUri);
-      }
-      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
-      if (!matches) {
-        return res.status(400).send("Invalid logo data");
-      }
-      const contentType = matches[1];
-      const imageBuffer = Buffer.from(matches[2], "base64");
-      res.set({
-        "Content-Type": contentType,
-        "Content-Length": imageBuffer.length.toString(),
-        "Cache-Control": "public, max-age=86400"
-      });
-      res.send(imageBuffer);
-    } catch (error) {
-      console.error("Error serving org logo:", error);
-      res.status(500).send("Error loading logo");
-    }
-  });
-  app2.get("/api/business/:slug/og-image", async (req, res) => {
-    try {
-      const slug = req.params.slug;
-      const org = await storage.getOrganizationBySlug(slug);
-      if (!org) {
-        res.status(404).send("Organization not found");
-        return;
-      }
-      const imageBuffer = await generateShowcaseMockup(org.id);
-      res.set({
-        "Content-Type": "image/png",
-        "Content-Length": imageBuffer.length.toString(),
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      });
-      res.send(imageBuffer);
-    } catch (error) {
-      console.error("Error generating business OG image:", error);
-      res.status(500).send("Error generating preview");
-    }
-  });
-  app2.get("/api/pawfile/:id/og-image", async (req, res) => {
-    try {
-      const dogId = parseInt(req.params.id);
-      if (isNaN(dogId)) {
-        res.status(400).send("Invalid ID");
-        return;
-      }
-      const imageBuffer = await generatePawfileMockup(dogId);
-      res.set({
-        "Content-Type": "image/png",
-        "Content-Length": imageBuffer.length.toString(),
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      });
-      res.send(imageBuffer);
-    } catch (error) {
-      console.error("Error generating pawfile OG image:", error);
-      res.status(500).send("Error generating preview");
-    }
-  });
-  app2.get("/api/dogs/:dogId/portraits", isAuthenticated, async (req, res) => {
-    try {
-      const dogId = parseInt(req.params.dogId);
-      if (isNaN(dogId)) {
-        return res.status(400).json({ error: "Invalid pet ID" });
-      }
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      const dog = await storage.getDog(dogId);
-      if (!dog || !dog.organizationId) {
-        return res.status(404).json({ error: "Pet not found" });
-      }
-      if (!userIsAdmin) {
-        const userOrg = await storage.getOrganizationByOwner(userId);
-        if (!userOrg || userOrg.id !== dog.organizationId) {
-          return res.status(403).json({ error: "Access denied" });
-        }
-      }
-      const dogPortraits = await storage.getPortraitsByDog(dogId);
-      res.json(dogPortraits);
-    } catch (error) {
-      console.error("Error fetching portraits:", error);
-      res.status(500).json({ error: "Failed to fetch portraits" });
-    }
-  });
-  app2.post("/api/generate-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const { prompt, dogName, originalImage, dogId, styleId, organizationId } = req.body;
-      if (!prompt || typeof prompt !== "string") return res.status(400).json({ error: "Prompt is required" });
-      if (prompt.length > 2e3) {
-        return res.status(400).json({ error: "Invalid prompt. Maximum 2000 characters." });
-      }
-      if (dogName && (typeof dogName !== "string" || dogName.length > 100)) {
-        return res.status(400).json({ error: "Invalid dog name." });
-      }
-      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/") && !originalImage.startsWith("https://")) {
-        return res.status(400).json({ error: "Invalid image format." });
-      }
-      let resolvedImage = originalImage || null;
-      if (resolvedImage && !isDataUri(resolvedImage)) {
-        try {
-          const buf = await fetchImageAsBuffer(resolvedImage);
-          resolvedImage = `data:image/png;base64,${buf.toString("base64")}`;
-        } catch (err) {
-          console.error("[generate-portrait] Failed to fetch source image:", err);
-          return res.status(400).json({ error: "Could not load the source image. Please re-upload the photo." });
-        }
-      }
-      const sanitizedPrompt = sanitizeForPrompt(prompt);
-      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
-      let org;
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      if (userIsAdmin && organizationId && !dogId) {
-        const targetOrg = await storage.getOrganization(parseInt(organizationId));
-        if (!targetOrg) return res.status(404).json({ error: "Organization not found" });
-        org = targetOrg;
-      } else {
-        const resolved = await resolveOrgForUser(userId, userEmail, dogId ? parseInt(dogId) : void 0);
-        if (resolved.error) return res.status(resolved.status || 400).json({ error: resolved.error });
-        org = resolved.org;
-      }
-      if (org.subscriptionStatus === "canceled") {
-        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan to generate portraits." });
-      }
-      if (isTrialExpired(org)) {
-        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade to a paid plan to continue." });
-      }
-      if (!org.planId) {
-        return res.status(403).json({ error: "No plan selected. Please choose a plan before generating portraits." });
-      }
-      if (!dogId) {
-        const limitError = await checkDogLimit(org.id);
-        if (limitError) {
-          return res.status(403).json({ error: limitError });
-        }
-      }
-      let existingPortrait = null;
-      let isNewPortrait = false;
-      if (dogId && styleId) {
-        const parsedDogId = parseInt(dogId);
-        const parsedStyleId = parseInt(styleId);
-        existingPortrait = await storage.getPortraitByDogAndStyle(parsedDogId, parsedStyleId);
-        if (existingPortrait) {
-          if (existingPortrait.editCount >= MAX_EDITS_PER_IMAGE) {
-            return res.status(403).json({
-              error: `You've used all ${MAX_EDITS_PER_IMAGE} edits for this style. Try a different style!`,
-              editCount: existingPortrait.editCount,
-              maxEdits: MAX_EDITS_PER_IMAGE
-            });
-          }
-        } else {
-          isNewPortrait = true;
-          const existingPortraits = await storage.getPortraitsByDog(parsedDogId);
-          const uniqueStyles = new Set(existingPortraits.map((p) => p.styleId));
-          if (uniqueStyles.size >= MAX_STYLES_PER_PET) {
-            return res.status(403).json({
-              error: `This pet already has ${MAX_STYLES_PER_PET} styles. Edit an existing style or remove one first.`,
-              stylesUsed: uniqueStyles.size,
-              maxStyles: MAX_STYLES_PER_PET
-            });
-          }
-          const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-          if (plan && plan.monthlyPortraitCredits) {
-            const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
-            await storage.syncOrgCredits(org.id);
-            if (creditsUsed >= plan.monthlyPortraitCredits) {
-              if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
-                return res.status(403).json({
-                  error: `You've used all ${plan.monthlyPortraitCredits} monthly portrait credits. ${org.subscriptionStatus === "trial" ? "Upgrade to a paid plan for more credits." : "Credits reset at the start of your next billing cycle."}`,
-                  creditsUsed,
-                  creditsLimit: plan.monthlyPortraitCredits
-                });
-              }
-            }
-          }
-        }
-      }
-      const jobId = enqueue("generate", {
-        prompt: sanitizedPrompt,
-        originalImage: resolvedImage,
-        dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
-        dogId: dogId ? parseInt(dogId) : null,
-        styleId: styleId ? parseInt(styleId) : null,
-        orgId: org.id,
-        existingPortrait: existingPortrait ? {
-          id: existingPortrait.id,
-          editCount: existingPortrait.editCount,
-          generatedImageUrl: existingPortrait.generatedImageUrl
-        } : null,
-        isNewPortrait
-      });
-      res.status(202).json({ jobId });
-    } catch (error) {
-      console.error("[generate-portrait]", error);
-      res.status(500).json({ error: "Failed to start portrait generation. Please try again." });
-    }
-  });
-  app2.post("/api/generate-group-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const { dogIds, styleId } = req.body;
-      if (!Array.isArray(dogIds) || dogIds.length < 2 || dogIds.length > 5) {
-        return res.status(400).json({ error: "Please select 2-5 pets for a group portrait." });
-      }
-      if (!styleId || typeof styleId !== "number") {
-        return res.status(400).json({ error: "Style is required." });
-      }
-      const dogs2 = await Promise.all(dogIds.map((id) => storage.getDog(id)));
-      const missingIdx = dogs2.findIndex((d) => !d);
-      if (missingIdx !== -1) {
-        return res.status(404).json({ error: `Pet not found (id: ${dogIds[missingIdx]}).` });
-      }
-      const orgId = dogs2[0].organizationId;
-      if (!dogs2.every((d) => d.organizationId === orgId)) {
-        return res.status(400).json({ error: "All pets must belong to the same organization." });
-      }
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      if (!userIsAdmin) {
-        const { org: org2, error, status } = await resolveOrgForUser(userId, userEmail);
-        if (error) return res.status(status || 400).json({ error });
-        if (org2.id !== orgId) return res.status(403).json({ error: "Not authorized for this organization." });
-      }
-      const org = await storage.getOrganization(orgId);
-      if (!org) return res.status(404).json({ error: "Organization not found." });
-      if (org.subscriptionStatus === "canceled") {
-        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
-      }
-      if (isTrialExpired(org)) {
-        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade." });
-      }
-      if (!org.planId) {
-        return res.status(403).json({ error: "No plan selected. Please choose a plan first." });
-      }
-      const firstDog = dogs2[0];
-      const ownerEmail = firstDog.ownerEmail?.trim().toLowerCase() || null;
-      const ownerPhone = firstDog.ownerPhone?.replace(/\D/g, "") || null;
-      if (!ownerEmail && !ownerPhone) {
-        return res.status(400).json({ error: "The first pet has no owner contact info. Please add an email or phone." });
-      }
-      for (let i = 1; i < dogs2.length; i++) {
-        const d = dogs2[i];
-        const dEmail = d.ownerEmail?.trim().toLowerCase() || null;
-        const dPhone = d.ownerPhone?.replace(/\D/g, "") || null;
-        const emailMatch = ownerEmail && dEmail && ownerEmail === dEmail;
-        const phoneMatch = ownerPhone && dPhone && ownerPhone === dPhone;
-        if (!emailMatch && !phoneMatch) {
-          return res.status(400).json({ error: `${d.name} doesn't share an owner with ${firstDog.name}.` });
-        }
-      }
-      const noPhoto = dogs2.find((d) => !d.originalPhotoUrl);
-      if (noPhoto) {
-        return res.status(400).json({ error: `${noPhoto.name} has no photo. Please add a photo first.` });
-      }
-      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      const notCheckedIn = dogs2.find((d) => d.checkedInAt !== today);
-      if (notCheckedIn) {
-        return res.status(400).json({ error: `${notCheckedIn.name} is not checked in today.` });
-      }
-      const plan = await storage.getSubscriptionPlan(org.planId);
-      if (plan && plan.monthlyPortraitCredits) {
-        const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
-        const creditsNeeded = dogIds.length;
-        if (creditsUsed + creditsNeeded > plan.monthlyPortraitCredits) {
-          if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
-            return res.status(403).json({
-              error: `Group portrait needs ${creditsNeeded} credits but you only have ${plan.monthlyPortraitCredits - creditsUsed} remaining.`,
-              creditsUsed,
-              creditsLimit: plan.monthlyPortraitCredits,
-              creditsNeeded
-            });
-          }
-        }
-      }
-      const style = await storage.getPortraitStyle(styleId);
-      if (!style) return res.status(404).json({ error: "Style not found." });
-      const petNames = dogs2.map((d) => d.name).join(" and ");
-      const petBreeds = dogs2.map((d) => d.breed || "mixed breed").join(" and ");
-      const species = dogs2[0].species || "dog";
-      let prompt = style.promptTemplate.replace(/\{name\}/gi, petNames).replace(/\{breed\}/gi, petBreeds).replace(/\{species\}/gi, species);
-      prompt += `
-
-This is a GROUP portrait of ${dogs2.length} ${species}s together. Each reference photo shows one ${species}.`;
-      const sanitizedPrompt = sanitizeForPrompt(prompt);
-      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
-      const sourceImages = [];
-      for (const dog of dogs2) {
-        let imgUrl = dog.originalPhotoUrl;
-        if (!isDataUri(imgUrl)) {
-          try {
-            const buf = await fetchImageAsBuffer(imgUrl);
-            imgUrl = `data:image/png;base64,${buf.toString("base64")}`;
-          } catch (err) {
-            console.error(`[group-portrait] Failed to fetch photo for ${dog.name}:`, err);
-            return res.status(400).json({ error: `Could not load photo for ${dog.name}. Please re-upload.` });
-          }
-        }
-        sourceImages.push(imgUrl);
-      }
-      const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const jobId = enqueue("group", {
-        prompt: sanitizedPrompt,
-        sourceImages,
-        dogIds: dogIds.map(Number),
-        styleId,
-        orgId: org.id,
-        groupId
-      });
-      res.status(202).json({ jobId, groupId });
-    } catch (error) {
-      console.error("[generate-group-portrait]", error);
-      res.status(500).json({ error: "Failed to start group portrait generation. Please try again." });
-    }
-  });
-  app2.post("/api/edit-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const { currentImage, editPrompt, dogId, portraitId } = req.body;
-      if (!currentImage) return res.status(400).json({ error: "Current image is required" });
-      if (!editPrompt || typeof editPrompt !== "string") return res.status(400).json({ error: "Edit instructions are required" });
-      if (editPrompt.length > 500) return res.status(400).json({ error: "Edit instructions too long (max 500 characters)." });
-      const sanitizedEditPrompt = sanitizeForPrompt(editPrompt);
-      if (!sanitizedEditPrompt) return res.status(400).json({ error: "Edit instructions contain invalid characters." });
-      const { org, error, status } = await resolveOrgForUser(userId, userEmail, dogId ? parseInt(dogId) : void 0);
-      if (error) return res.status(status || 400).json({ error });
-      if (org.subscriptionStatus === "canceled") {
-        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
-      }
-      if (isTrialExpired(org)) {
-        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade to a paid plan to continue." });
-      }
-      if (portraitId) {
-        const portrait = await storage.getPortrait(parseInt(portraitId));
-        if (!portrait) return res.status(404).json({ error: "Portrait not found" });
-        const dog = await storage.getDog(portrait.dogId);
-        if (!dog || dog.organizationId !== org.id) {
-          return res.status(403).json({ error: "Not authorized to edit this portrait" });
-        }
-        if (portrait.editCount >= MAX_EDITS_PER_IMAGE) {
-          return res.status(403).json({
-            error: `You've used all ${MAX_EDITS_PER_IMAGE} edits for this portrait. Try a different style!`,
-            editCount: portrait.editCount,
-            maxEdits: MAX_EDITS_PER_IMAGE
-          });
-        }
-      }
-      let imageForEdit = currentImage;
-      if (!isDataUri(currentImage)) {
-        const buf = await fetchImageAsBuffer(currentImage);
-        imageForEdit = `data:image/png;base64,${buf.toString("base64")}`;
-      }
-      const jobId = enqueue("edit", {
-        imageForEdit,
-        editPrompt: sanitizedEditPrompt,
-        portraitId: portraitId ? parseInt(portraitId) : null
-      });
-      res.status(202).json({ jobId });
-    } catch (error) {
-      console.error("[edit-portrait]", error);
-      res.status(500).json({ error: "Failed to start portrait edit. Please try again." });
-    }
-  });
-  app2.post("/api/revert-portrait", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const { portraitId } = req.body;
-      if (!portraitId) return res.status(400).json({ error: "Portrait ID is required" });
-      const portrait = await storage.getPortrait(parseInt(portraitId));
-      if (!portrait) return res.status(404).json({ error: "Portrait not found" });
-      if (!portrait.previousImageUrl) return res.status(400).json({ error: "No previous image to revert to" });
-      const { error, status } = await resolveOrgForUser(userId, userEmail, portrait.dogId);
-      if (error) return res.status(status || 400).json({ error });
-      await storage.updatePortrait(portrait.id, {
-        generatedImageUrl: portrait.previousImageUrl,
-        previousImageUrl: null
-      });
-      res.json({
-        revertedImage: portrait.previousImageUrl,
-        portraitId: portrait.id,
-        editCount: portrait.editCount,
-        hasPreviousImage: false
-      });
-    } catch (error) {
-      console.error("[revert-portrait]", error);
-      res.status(500).json({ error: "Failed to revert portrait. Please try again." });
-    }
-  });
-}
-
-// server/routes/batch.ts
-init_storage();
-init_db();
-init_pack_config();
-init_delivery();
-init_helpers();
-function registerBatchRoutes(app2) {
-  app2.post("/api/generate-batch", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      const { dogIds, packType, styleId, organizationId } = req.body;
-      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
-        return res.status(400).json({ error: "dogIds array is required" });
-      }
-      if (!packType || !["celebrate", "fun", "artistic"].includes(packType)) {
-        return res.status(400).json({ error: "Invalid packType" });
-      }
-      let org;
-      if (userIsAdmin && organizationId) {
-        org = await storage.getOrganization(parseInt(organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
-      const allStyles = await storage.getAllPortraitStyles();
-      const jobIds = [];
-      const errors = [];
-      for (const dogId of dogIds) {
-        const dog = await storage.getDog(dogId);
-        if (!dog || dog.organizationId !== org.id) {
-          errors.push({ dogId, error: "Dog not found or wrong org" });
-          continue;
-        }
-        if (!dog.originalPhotoUrl) {
-          errors.push({ dogId, error: "No photo uploaded" });
-          continue;
-        }
-        const petSpecies = dog.species || "dog";
-        const packs = getPacks(petSpecies);
-        const pack = packs.find((p) => p.type === packType);
-        if (!pack) {
-          errors.push({ dogId, error: "Pack not found for species" });
-          continue;
-        }
-        const packStyles = pack.styleIds.map((id) => allStyles.find((s) => s.id === id)).filter(Boolean);
-        if (packStyles.length === 0) {
-          errors.push({ dogId, error: "No styles found for this pack" });
-          continue;
-        }
-        let style;
-        if (styleId) {
-          style = packStyles.find((s) => s.id === parseInt(styleId));
-          if (!style) {
-            errors.push({ dogId, error: "Selected style not in this pack" });
-            continue;
-          }
-        } else {
-          const usedStyleIds = await storage.getUsedStyleIdsForDog(dogId);
-          const availableStyles = packStyles.filter((s) => !usedStyleIds.includes(s.id));
-          if (availableStyles.length > 0) {
-            style = availableStyles[Math.floor(Math.random() * availableStyles.length)];
-          } else {
-            style = packStyles[Math.floor(Math.random() * packStyles.length)];
-          }
-        }
-        if (!style) {
-          errors.push({ dogId, error: "Could not select style" });
-          continue;
-        }
-        const species = dog.species || "dog";
-        const breed = dog.breed || species;
-        const prompt = sanitizeForPrompt(
-          style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
-        );
-        const jobId = enqueue("batch", {
-          dogId: dog.id,
-          dogName: dog.name,
-          prompt,
-          originalPhotoUrl: dog.originalPhotoUrl,
-          styleId: style.id,
-          orgId: org.id,
-          needsPetCode: !dog.petCode
-        });
-        jobIds.push({ dogId: dog.id, jobId });
-      }
-      res.status(202).json({
-        jobIds,
-        errors,
-        status: "generating",
-        totalQueued: jobIds.filter((j) => j.jobId).length
-      });
-    } catch (error) {
-      console.error("Error in batch generation:", error.message);
-      res.status(500).json({ error: "Batch generation failed" });
-    }
-  });
-  app2.post("/api/deliver-batch", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email || "";
-      const userIsAdmin = userEmail === ADMIN_EMAIL;
-      const { dogIds, organizationId } = req.body;
-      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
-        return res.status(400).json({ error: "dogIds array is required" });
-      }
-      let org;
-      if (userIsAdmin && organizationId) {
-        org = await storage.getOrganization(parseInt(organizationId));
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "No organization found" });
-      const results = [];
-      for (const dogId of dogIds) {
-        try {
-          const dog = await storage.getDog(dogId);
-          if (!dog || dog.organizationId !== org.id) {
-            results.push({ dogId, sent: false, error: "Dog not found" });
-            continue;
-          }
-          const result = await deliverPortraitToOwner(dog, org);
-          results.push({ dogId, ...result });
-        } catch (err) {
-          results.push({ dogId, sent: false, error: err.message });
-        }
-      }
-      res.json({ results, totalSent: results.filter((r) => r.sent).length });
-    } catch (error) {
-      console.error("Error in batch delivery:", error.message);
-      res.status(500).json({ error: "Batch delivery failed" });
-    }
-  });
-  app2.post("/api/batch/start", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
-      const { orgId: bodyOrgId } = req.body;
-      let orgId = null;
-      if (isAdminUser && bodyOrgId) {
-        orgId = parseInt(bodyOrgId);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const result = await pool.query(
-        `INSERT INTO batch_sessions (organization_id, staff_user_id, status, photo_count)
-         VALUES ($1, $2, 'uploading', 0) RETURNING id`,
-        [orgId, userId]
-      );
-      res.json({ batchId: result.rows[0].id, status: "uploading" });
-    } catch (error) {
-      console.error("Error starting batch session:", error);
-      res.status(500).json({ error: "Failed to start batch session" });
-    }
-  });
-  app2.post("/api/batch/:id/photos", isAuthenticated, async (req, res) => {
-    try {
-      const batchId = parseInt(req.params.id);
-      if (isNaN(batchId)) {
-        return res.status(400).json({ error: "Invalid batch ID" });
-      }
-      const userId = req.user.claims.sub;
-      const { photo } = req.body;
-      if (!photo) {
-        return res.status(400).json({ error: "Photo data is required" });
-      }
-      const batchResult = await pool.query(
-        `SELECT bs.*, o.owner_id FROM batch_sessions bs
-         JOIN organizations o ON o.id = bs.organization_id
-         WHERE bs.id = $1`,
-        [batchId]
-      );
-      if (batchResult.rows.length === 0) {
-        return res.status(404).json({ error: "Batch session not found" });
-      }
-      const batch = batchResult.rows[0];
-      if (batch.owner_id !== userId) {
-        const userEmail = req.user.claims.email;
-        if (userEmail !== process.env.ADMIN_EMAIL) {
-          return res.status(403).json({ error: "Not authorized to access this batch" });
-        }
-      }
-      if (batch.status !== "uploading" && batch.status !== "assigning") {
-        return res.status(400).json({ error: "Batch is no longer accepting photos" });
-      }
-      if (batch.photo_count >= 20) {
-        return res.status(400).json({ error: "Maximum 20 photos per batch" });
-      }
-      const photoResult = await pool.query(
-        `INSERT INTO batch_photos (batch_session_id, photo_url)
-         VALUES ($1, $2) RETURNING id`,
-        [batchId, photo]
-      );
-      await pool.query(
-        `UPDATE batch_sessions SET photo_count = photo_count + 1 WHERE id = $1`,
-        [batchId]
-      );
-      res.json({ photoId: photoResult.rows[0].id, photoCount: batch.photo_count + 1 });
-    } catch (error) {
-      console.error("Error uploading batch photo:", error);
-      res.status(500).json({ error: "Failed to upload photo" });
-    }
-  });
-  app2.patch("/api/batch/:id/photos/:photoId", isAuthenticated, async (req, res) => {
-    try {
-      const batchId = parseInt(req.params.id);
-      const photoId = parseInt(req.params.photoId);
-      const { dogId } = req.body;
-      if (isNaN(batchId) || isNaN(photoId)) {
-        return res.status(400).json({ error: "Invalid batch or photo ID" });
-      }
-      if (!dogId) {
-        return res.status(400).json({ error: "dogId is required" });
-      }
-      const batchResult = await pool.query(
-        `SELECT bs.organization_id, o.owner_id FROM batch_sessions bs
-         JOIN organizations o ON o.id = bs.organization_id
-         WHERE bs.id = $1`,
-        [batchId]
-      );
-      if (batchResult.rows.length === 0) {
-        return res.status(404).json({ error: "Batch session not found" });
-      }
-      const userId = req.user.claims.sub;
-      if (batchResult.rows[0].owner_id !== userId) {
-        const userEmail = req.user.claims.email;
-        if (userEmail !== process.env.ADMIN_EMAIL) {
-          return res.status(403).json({ error: "Not authorized to access this batch" });
-        }
-      }
-      const dog = await storage.getDog(parseInt(dogId));
-      if (!dog || dog.organizationId !== batchResult.rows[0].organization_id) {
-        return res.status(400).json({ error: "Dog not found or doesn't belong to this organization" });
-      }
-      await pool.query(
-        `UPDATE batch_photos SET dog_id = $1, assigned_at = CURRENT_TIMESTAMP
-         WHERE id = $2 AND batch_session_id = $3`,
-        [parseInt(dogId), photoId, batchId]
-      );
-      await pool.query(
-        `UPDATE batch_sessions SET status = 'assigning' WHERE id = $1 AND status = 'uploading'`,
-        [batchId]
-      );
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error assigning batch photo:", error);
-      res.status(500).json({ error: "Failed to assign photo" });
-    }
-  });
-  app2.post("/api/batch/:id/generate", isAuthenticated, async (req, res) => {
-    try {
-      const batchId = parseInt(req.params.id);
-      const { packType } = req.body;
-      if (isNaN(batchId)) {
-        return res.status(400).json({ error: "Invalid batch ID" });
-      }
-      const batchResult = await pool.query(
-        `SELECT bs.*, o.industry_type, o.id as org_id, o.owner_id FROM batch_sessions bs
-         JOIN organizations o ON o.id = bs.organization_id
-         WHERE bs.id = $1`,
-        [batchId]
-      );
-      if (batchResult.rows.length === 0) {
-        return res.status(404).json({ error: "Batch session not found" });
-      }
-      const batch = batchResult.rows[0];
-      const userId = req.user.claims.sub;
-      if (batch.owner_id !== userId) {
-        const userEmail = req.user.claims.email;
-        if (userEmail !== process.env.ADMIN_EMAIL) {
-          return res.status(403).json({ error: "Not authorized to access this batch" });
-        }
-      }
-      const photosResult = await pool.query(
-        `SELECT * FROM batch_photos WHERE batch_session_id = $1 AND dog_id IS NOT NULL ORDER BY id`,
-        [batchId]
-      );
-      if (photosResult.rows.length === 0) {
-        return res.status(400).json({ error: "No photos have been assigned to pets yet" });
-      }
-      await pool.query(
-        `UPDATE batch_sessions SET status = 'generating' WHERE id = $1`,
-        [batchId]
-      );
-      res.status(202).json({
-        batchId,
-        status: "generating",
-        assignedPhotos: photosResult.rows.length,
-        packType: packType || "celebrate",
-        message: `Generating portraits for ${photosResult.rows.length} photos. Check batch status for progress.`
-      });
-    } catch (error) {
-      console.error("Error generating batch portraits:", error);
-      res.status(500).json({ error: "Failed to start generation" });
-    }
-  });
-  app2.get("/api/batch/:id", isAuthenticated, async (req, res) => {
-    try {
-      const batchId = parseInt(req.params.id);
-      if (isNaN(batchId)) {
-        return res.status(400).json({ error: "Invalid batch ID" });
-      }
-      const batchResult = await pool.query(
-        `SELECT bs.*, o.owner_id FROM batch_sessions bs
-         JOIN organizations o ON o.id = bs.organization_id
-         WHERE bs.id = $1`,
-        [batchId]
-      );
-      if (batchResult.rows.length === 0) {
-        return res.status(404).json({ error: "Batch session not found" });
-      }
-      const userId = req.user.claims.sub;
-      if (batchResult.rows[0].owner_id !== userId) {
-        const userEmail = req.user.claims.email;
-        if (userEmail !== process.env.ADMIN_EMAIL) {
-          return res.status(403).json({ error: "Not authorized to access this batch" });
-        }
-      }
-      const photosResult = await pool.query(
-        `SELECT bp.id, bp.dog_id, bp.assigned_at, bp.created_at,
-                d.name as dog_name, d.breed as dog_breed
-         FROM batch_photos bp
-         LEFT JOIN dogs d ON d.id = bp.dog_id
-         WHERE bp.batch_session_id = $1
-         ORDER BY bp.id`,
-        [batchId]
-      );
-      res.json({
-        batch: batchResult.rows[0],
-        photos: photosResult.rows
-      });
-    } catch (error) {
-      console.error("Error fetching batch:", error);
-      res.status(500).json({ error: "Failed to fetch batch" });
-    }
-  });
-}
-
-// server/routes/merch.ts
-init_storage();
-init_db();
-init_stripeClient();
-
-// server/printful-config.ts
-var PRINTFUL_PRODUCTS = {
-  // --- UNFRAMED MATTE PRINT ---
-  print_8x10: {
-    variantId: 4463,
-    name: "Enhanced Matte Print \u2014 8\xD710",
-    category: "print",
-    size: "8x10",
-    priceCents: 4500
-    // $45.00
-  },
-  // --- MUGS ---
-  mug_11oz: {
-    variantId: 1320,
-    name: "White Glossy Mug \u2014 11 oz",
-    category: "mug",
-    size: "11oz",
-    priceCents: 3500
-    // $35.00
-  },
-  mug_15oz: {
-    variantId: 4830,
-    name: "White Glossy Mug \u2014 15 oz",
-    category: "mug",
-    size: "15oz",
-    priceCents: 4e3
-    // $40.00
-  },
-  // --- TOTE ---
-  tote_natural: {
-    variantId: 4533,
-    name: "All-Over Print Tote Bag",
-    category: "tote",
-    priceCents: 8500
-    // $85.00
-  },
-  // --- FRAMED PRINTS: 8×10 ---
-  frame_8x10_wood: {
-    variantId: 11790,
-    name: "Framed Poster 8\xD710 \u2014 Wood",
-    category: "frame",
-    size: "8x10",
-    frameColor: "wood",
-    priceCents: 13500
-    // $135.00
-  },
-  frame_8x10_black: {
-    variantId: 11789,
-    name: "Framed Poster 8\xD710 \u2014 Black",
-    category: "frame",
-    size: "8x10",
-    frameColor: "black",
-    priceCents: 13500
-  },
-  frame_8x10_white: {
-    variantId: 11791,
-    name: "Framed Poster 8\xD710 \u2014 White",
-    category: "frame",
-    size: "8x10",
-    frameColor: "white",
-    priceCents: 13500
-  },
-  // --- FRAMED PRINTS: 11×14 ---
-  frame_11x14_wood: {
-    variantId: 11793,
-    name: "Framed Poster 11\xD714 \u2014 Wood",
-    category: "frame",
-    size: "11x14",
-    frameColor: "wood",
-    priceCents: 16900
-    // $169.00
-  },
-  frame_11x14_black: {
-    variantId: 11792,
-    name: "Framed Poster 11\xD714 \u2014 Black",
-    category: "frame",
-    size: "11x14",
-    frameColor: "black",
-    priceCents: 16900
-  },
-  frame_11x14_white: {
-    variantId: 11794,
-    name: "Framed Poster 11\xD714 \u2014 White",
-    category: "frame",
-    size: "11x14",
-    frameColor: "white",
-    priceCents: 16900
-  },
-  // --- FRAMED PRINTS: 12×16 ---
-  frame_12x16_wood: {
-    variantId: 11796,
-    name: "Framed Poster 12\xD716 \u2014 Wood",
-    category: "frame",
-    size: "12x16",
-    frameColor: "wood",
-    priceCents: 20900
-    // $209.00
-  },
-  frame_12x16_black: {
-    variantId: 11795,
-    name: "Framed Poster 12\xD716 \u2014 Black",
-    category: "frame",
-    size: "12x16",
-    frameColor: "black",
-    priceCents: 20900
-  },
-  frame_12x16_white: {
-    variantId: 11797,
-    name: "Framed Poster 12\xD716 \u2014 White",
-    category: "frame",
-    size: "12x16",
-    frameColor: "white",
-    priceCents: 20900
-  }
-};
-function getProductsByCategory(category) {
-  return Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === category);
-}
-function getProduct(key) {
-  return PRINTFUL_PRODUCTS[key];
-}
-function getFrameSizes() {
-  return [...new Set(
-    Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === "frame" && p.size).map((p) => p.size)
-  )];
-}
-function getFrameColors(size) {
-  return Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === "frame" && p.size === size && p.frameColor).map((p) => p.frameColor);
-}
-
-// server/printful.ts
-var PRINTFUL_BASE = "https://api.printful.com";
-var PRINTFUL_STORE_ID = "17752122";
-function getApiKey() {
-  const key = process.env.PRINTFUL_API_KEY;
-  if (!key) throw new Error("PRINTFUL_API_KEY env var is not set");
-  return key;
-}
-async function printfulFetch(path5, options = {}) {
-  const url = `${PRINTFUL_BASE}${path5}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Authorization": `Bearer ${getApiKey()}`,
-      "Content-Type": "application/json",
-      "X-PF-Store-Id": PRINTFUL_STORE_ID,
-      ...options.headers
-    }
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const errorMsg = data?.result || data?.error?.message || `Printful API error ${response.status}`;
-    throw new Error(`Printful ${response.status}: ${errorMsg}`);
-  }
-  return data;
-}
-async function createOrder(recipient, items, externalId) {
-  const body = {
-    recipient,
-    items,
-    packing_slip: {
-      email: "hello@pawtraitpros.com",
-      phone: "",
-      message: "Thank you for your Pawtrait Pros order! Your pet's portrait was created with love.",
-      logo_url: ""
-      // TODO: add Pawtrait Pros logo URL once hosted
-    }
-  };
-  if (externalId) {
-    body.external_id = externalId;
-  }
-  const data = await printfulFetch("/orders", {
-    method: "POST",
-    body: JSON.stringify(body)
-  });
-  return data.result;
-}
-async function confirmOrder(orderId) {
-  const data = await printfulFetch(`/orders/${orderId}/confirm`, {
-    method: "POST"
-  });
-  return data.result;
-}
-async function getOrder(orderId) {
-  const data = await printfulFetch(`/orders/${orderId}`);
-  return data.result;
-}
-async function estimateShipping(recipient, items) {
-  const data = await printfulFetch("/shipping/rates", {
-    method: "POST",
-    body: JSON.stringify({ recipient, items })
-  });
-  return data.result;
-}
-function buildOrderItem(variantId, quantity, imageUrl) {
-  return {
-    variant_id: variantId,
-    quantity,
-    files: [
-      {
-        type: "default",
-        url: imageUrl
-      }
-    ]
-  };
-}
-
-// server/routes/merch.ts
-init_email();
-init_helpers();
-init_gelato_config();
-
-// server/card-artwork.ts
-var import_sharp5 = __toESM(require("sharp"), 1);
-init_supabase_storage();
-init_gelato_config();
-import_sharp5.default.cache(false);
-function roundedRectSvg2(w, h, r, fill) {
-  return `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="${fill}"/></svg>`;
-}
-function textSvg2(text2, fontSize, color, maxWidth, fontWeight = "bold", align = "start") {
-  const escaped = text2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const anchor = align === "middle" ? "middle" : "start";
-  const x = align === "middle" ? maxWidth / 2 : 0;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${Math.round(fontSize * 1.5)}">
-    <text x="${x}" y="${fontSize}" font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${escaped}</text>
-  </svg>`;
-  return Buffer.from(svg);
-}
-function multiLineTextSvg(lines, fontSize, color, maxWidth, fontWeight = "normal", lineHeight = 1.6, align = "middle") {
-  const anchor = align === "middle" ? "middle" : "start";
-  const x = align === "middle" ? maxWidth / 2 : 0;
-  const totalHeight = Math.round(fontSize * lineHeight * lines.length);
-  const escapedLines = lines.map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
-  const tspans = escapedLines.map((l, i) => `<tspan x="${x}" dy="${i === 0 ? fontSize : Math.round(fontSize * lineHeight)}">${l}</tspan>`).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${totalHeight + 20}">
-    <text font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${tspans}</text>
-  </svg>`;
-  return Buffer.from(svg);
-}
-function decorativeBorderSvg(w, h, color, thickness, radius) {
-  const inset = thickness / 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-    <rect x="${inset}" y="${inset}" width="${w - thickness}" height="${h - thickness}" rx="${radius}" ry="${radius}" fill="none" stroke="${color}" stroke-width="${thickness}"/>
-  </svg>`;
-  return Buffer.from(svg);
-}
-async function resizeToFit2(imageBuffer, maxW, maxH) {
-  return (0, import_sharp5.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "top" }).png().toBuffer();
-}
-async function makeRoundedImage2(imageBuffer, w, h, radius) {
-  const resized = await resizeToFit2(imageBuffer, w, h);
-  const mask = Buffer.from(
-    `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
-  );
-  return (0, import_sharp5.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
-}
-async function generateFlatCardArtwork(portraitUrl, occasion, petName, orgName) {
-  const { width: W, height: H } = CARD_DIMENSIONS.flat_front;
-  const { primary, secondary, textColor } = occasion.templateColors;
-  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
-  const composites = [];
-  const bg = await (0, import_sharp5.default)({
-    create: { width: W, height: H, channels: 4, background: hexToRgb(secondary) }
-  }).png().toBuffer();
-  composites.push({ input: decorativeBorderSvg(W, H, primary, 16, 24), top: 0, left: 0 });
-  composites.push({ input: decorativeBorderSvg(W - 60, H - 60, primary, 4, 16), top: 30, left: 30 });
-  const greetingText = textSvg2(occasion.greetingText, 72, textColor, W - 120, "bold", "middle");
-  composites.push({ input: greetingText, top: 80, left: 60 });
-  const portraitW = W - 200;
-  const portraitH = H - 550;
-  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitW, portraitH, 20);
-  const portraitLeft = Math.round((W - portraitW) / 2);
-  composites.push({ input: roundedPortrait, top: 220, left: portraitLeft });
-  const nameText = textSvg2(petName, 52, textColor, W - 120, "bold", "middle");
-  composites.push({ input: nameText, top: 220 + portraitH + 30, left: 60 });
-  const fromText = textSvg2(`from ${orgName}`, 24, primary, W - 120, "normal", "middle");
-  composites.push({ input: fromText, top: H - 80, left: 60 });
-  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
-}
-async function generateFlatCardBack(orgName) {
-  const { width: W, height: H } = CARD_DIMENSIONS.flat_back;
-  const composites = [];
-  const bg = await (0, import_sharp5.default)({
-    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
-  }).png().toBuffer();
-  const orgText = textSvg2(orgName, 32, "#666666", W - 200, "normal", "middle");
-  composites.push({ input: orgText, top: Math.round(H / 2) - 40, left: 100 });
-  const poweredText = textSvg2("Powered by Pawtrait Pros", 22, "#999999", W - 200, "normal", "middle");
-  composites.push({ input: poweredText, top: Math.round(H / 2) + 10, left: 100 });
-  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
-}
-async function generateFoldedOutsideArtwork(portraitUrl, occasion, petName, orgName) {
-  const { width: W, height: H } = CARD_DIMENSIONS.folded_outside;
-  const { primary, secondary, textColor } = occasion.templateColors;
-  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
-  const composites = [];
-  const bg = await (0, import_sharp5.default)({
-    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
-  }).png().toBuffer();
-  const halfH = Math.round(H / 2);
-  const frontBg = await (0, import_sharp5.default)(Buffer.from(roundedRectSvg2(W, halfH, 0, secondary))).png().toBuffer();
-  composites.push({ input: frontBg, top: 0, left: 0 });
-  composites.push({ input: decorativeBorderSvg(W - 40, halfH - 40, primary, 4, 12), top: 20, left: 20 });
-  const greetingText = textSvg2(occasion.greetingText, 42, textColor, W - 120, "bold", "middle");
-  composites.push({ input: greetingText, top: 30, left: 60 });
-  const portraitSize = halfH - 200;
-  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitSize, portraitSize, 16);
-  composites.push({ input: roundedPortrait, top: 95, left: Math.round((W - portraitSize) / 2) });
-  const nameText = textSvg2(petName, 34, textColor, W - 120, "bold", "middle");
-  composites.push({ input: nameText, top: 95 + portraitSize + 10, left: 60 });
-  const backTop = halfH;
-  const orgText = textSvg2(orgName, 28, "#666666", W - 200, "normal", "middle");
-  composites.push({ input: orgText, top: backTop + Math.round(halfH / 2) - 30, left: 100 });
-  const poweredText = textSvg2("Powered by Pawtrait Pros", 20, "#999999", W - 200, "normal", "middle");
-  composites.push({ input: poweredText, top: backTop + Math.round(halfH / 2) + 10, left: 100 });
-  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
-}
-async function generateFoldedInsideArtwork(occasion, petName) {
-  const { width: W, height: H } = CARD_DIMENSIONS.folded_inside;
-  const { primary, textColor } = occasion.templateColors;
-  const composites = [];
-  const bg = await (0, import_sharp5.default)({
-    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
-  }).png().toBuffer();
-  const halfH = Math.round(H / 2);
-  const lineSvg = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W - 200}" height="4"><rect x="0" y="0" width="${W - 200}" height="4" rx="2" ry="2" fill="${primary}" opacity="0.3"/></svg>`
-  );
-  composites.push({ input: lineSvg, top: halfH - 20, left: 100 });
-  const greetingTop = halfH + 80;
-  const greetingText = textSvg2(occasion.greetingText, 64, textColor, W - 160, "bold", "middle");
-  composites.push({ input: greetingText, top: greetingTop, left: 80 });
-  const personalizedSub = occasion.subText.replace(/\b(your|you)\b/gi, petName + "'s");
-  const subLines = wrapText(personalizedSub, 35);
-  const subText = multiLineTextSvg(subLines, 32, primary, W - 160, "normal", 1.6, "middle");
-  composites.push({ input: subText, top: greetingTop + 110, left: 80 });
-  const heartSvg = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="${primary}" opacity="0.4">
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-    </svg>`
-  );
-  composites.push({ input: heartSvg, top: greetingTop + 280, left: Math.round(W / 2) - 20 });
-  return (0, import_sharp5.default)(bg).composite(composites).png().toBuffer();
-}
-function hexToRgb(hex) {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return { r: 255, g: 255, b: 255 };
-  return {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  };
-}
-function wrapText(text2, maxCharsPerLine) {
-  const words = text2.split(" ");
-  const lines = [];
-  let currentLine = "";
-  for (const word of words) {
-    if (currentLine.length + word.length + 1 > maxCharsPerLine && currentLine.length > 0) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = currentLine ? `${currentLine} ${word}` : word;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-  return lines;
-}
-function bufferToDataUri(buffer, mimeType = "image/png") {
-  return `data:${mimeType};base64,${buffer.toString("base64")}`;
-}
-
-// server/routes/merch.ts
-init_supabase_storage();
-function registerMerchRoutes(app2) {
-  const previewCache = /* @__PURE__ */ new Map();
-  const PREVIEW_CACHE_TTL = 15 * 60 * 1e3;
-  const PREVIEW_CACHE_MAX = 50;
-  function getCachedPreview(key) {
-    const entry = previewCache.get(key);
-    if (!entry) return null;
-    if (Date.now() - entry.timestamp > PREVIEW_CACHE_TTL) {
-      previewCache.delete(key);
-      return null;
-    }
-    return entry.buffer;
-  }
-  function setCachedPreview(key, buffer) {
-    if (previewCache.size >= PREVIEW_CACHE_MAX) {
-      const oldest = [...previewCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-      if (oldest) previewCache.delete(oldest[0]);
-    }
-    previewCache.set(key, { buffer, timestamp: Date.now() });
-  }
-  app2.get("/api/merch/products", async (req, res) => {
-    try {
-      res.json({
-        frames: getProductsByCategory("frame"),
-        mugs: getProductsByCategory("mug"),
-        totes: getProductsByCategory("tote"),
-        frameSizes: getFrameSizes(),
-        frameColors: getFrameColors("8x10")
-        // all sizes have same colors
-      });
-    } catch (error) {
-      console.error("Error fetching merch products:", error);
-      res.status(500).json({ error: "Failed to fetch merch products" });
-    }
-  });
-  app2.post("/api/merch/estimate", isAuthenticated, async (req, res) => {
-    try {
-      const { items, address } = req.body;
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: "At least one item is required" });
-      }
-      if (!address || !address.address1 || !address.city || !address.state_code || !address.zip || !address.country_code) {
-        return res.status(400).json({ error: "Complete shipping address is required" });
-      }
-      const recipient = {
-        name: address.name || "Customer",
-        address1: address.address1,
-        city: address.city,
-        state_code: address.state_code,
-        zip: address.zip,
-        country_code: address.country_code
-      };
-      const printfulItems = items.map((item) => {
-        const product = getProduct(item.productKey);
-        if (!product) throw new Error(`Unknown product: ${item.productKey}`);
-        return { variant_id: product.variantId, quantity: item.quantity || 1 };
-      });
-      const rates = await estimateShipping(recipient, printfulItems);
-      res.json({ rates });
-    } catch (error) {
-      console.error("Error estimating shipping:", error);
-      res.status(500).json({ error: "Failed to estimate shipping" });
-    }
-  });
-  app2.post("/api/merch/checkout", publicExpensiveRateLimiter, async (req, res) => {
-    try {
-      const { items, customer, address, imageUrl, portraitId, dogId, orgId, sessionToken } = req.body;
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: "At least one item is required" });
-      }
-      if (!customer?.name || !address?.address1 || !address?.city || !address?.state_code || !address?.zip) {
-        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
-      }
-      if (!imageUrl) {
-        return res.status(400).json({ error: "Image URL is required for printing" });
-      }
-      if (!orgId) {
-        return res.status(400).json({ error: "Organization ID is required" });
-      }
-      let subtotalCents = 0;
-      const validatedItems = [];
-      for (const item of items) {
-        const isCard = item.productKey.startsWith("card_");
-        const printfulProduct = isCard ? null : getProduct(item.productKey);
-        const gelatoProduct = isCard ? getGelatoProduct(item.productKey) : null;
-        if (!printfulProduct && !gelatoProduct) {
-          return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
-        }
-        const priceCents = printfulProduct?.priceCents || gelatoProduct?.priceCents || 0;
-        const qty = item.quantity || 1;
-        subtotalCents += priceCents * qty;
-        validatedItems.push({
-          productKey: item.productKey,
-          variantId: printfulProduct?.variantId || 0,
-          quantity: qty,
-          priceCents,
-          occasion: isCard ? item.occasion || void 0 : void 0
-        });
-      }
-      const recipient = {
-        name: customer.name,
-        address1: address.address1,
-        city: address.city,
-        state_code: address.state_code,
-        zip: address.zip,
-        country_code: address.country_code || "US",
-        email: customer.email,
-        phone: customer.phone
-      };
-      let shippingCents = 0;
-      try {
-        const printfulShippingItems = validatedItems.filter((i) => !i.productKey.startsWith("card_")).map((i) => ({ variant_id: i.variantId, quantity: i.quantity }));
-        if (printfulShippingItems.length === 0) throw new Error("No Printful items for shipping estimate");
-        const rates = await estimateShipping(recipient, printfulShippingItems);
-        if (rates.length > 0) {
-          shippingCents = Math.round(parseFloat(rates[0].rate) * 100);
-        }
-      } catch (shippingErr) {
-        console.warn("[merch] Shipping estimate failed, proceeding with $0:", shippingErr.message);
-      }
-      const totalCents = subtotalCents + shippingCents;
-      const orderResult = await pool.query(
-        `INSERT INTO merch_orders (
-          organization_id, dog_id, portrait_id,
-          customer_name, customer_email, customer_phone,
-          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
-          total_cents, shipping_cents, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        RETURNING id`,
-        [
-          orgId,
-          dogId || null,
-          portraitId || null,
-          customer.name,
-          customer.email || null,
-          customer.phone || null,
-          address.address1,
-          address.city,
-          address.state_code,
-          address.zip,
-          address.country_code || "US",
-          totalCents,
-          shippingCents,
-          "awaiting_payment"
-        ]
-      );
-      const merchOrderId = orderResult.rows[0].id;
-      for (const item of validatedItems) {
-        await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, occasion)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.occasion || null]
-        );
-      }
-      const org = await storage.getOrganization(parseInt(orgId));
-      const testMode = org?.stripeTestMode;
-      const stripe = getStripeClient(testMode);
-      const lineItems = validatedItems.map((item) => {
-        const printfulProduct = getProduct(item.productKey);
-        const gelatoProduct = getGelatoProduct(item.productKey);
-        const occasion = item.occasion ? getOccasion(item.occasion) : null;
-        let displayName = printfulProduct?.name || gelatoProduct?.name || item.productKey;
-        if (occasion) displayName = `${occasion.name} ${displayName}`;
-        return {
-          price_data: {
-            currency: "usd",
-            product_data: { name: displayName },
-            unit_amount: item.priceCents
-          },
-          quantity: item.quantity
-        };
-      });
-      if (shippingCents > 0) {
-        lineItems.push({
-          price_data: {
-            currency: "usd",
-            product_data: { name: "Shipping" },
-            unit_amount: shippingCents
-          },
-          quantity: 1
-        });
-      }
-      const baseUrl = process.env.APP_URL || (process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000");
-      const successUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=success&session_id={CHECKOUT_SESSION_ID}` : `${baseUrl}/order-complete?session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=canceled` : `${baseUrl}/`;
-      const checkoutSession = await stripe.checkout.sessions.create({
-        mode: "payment",
-        line_items: lineItems,
-        customer_email: customer.email || void 0,
-        metadata: {
-          merchOrderId: String(merchOrderId),
-          imageUrl,
-          orgId: String(orgId),
-          dogId: dogId ? String(dogId) : "",
-          portraitId: portraitId ? String(portraitId) : ""
-        },
-        success_url: successUrl,
-        cancel_url: cancelUrl
-      });
-      await pool.query(
-        `UPDATE merch_orders SET stripe_payment_intent_id = $1 WHERE id = $2`,
-        [checkoutSession.id, merchOrderId]
-      );
-      res.json({
-        checkoutUrl: checkoutSession.url,
-        orderId: merchOrderId,
-        sessionId: checkoutSession.id,
-        totalCents,
-        shippingCents,
-        subtotalCents
-      });
-    } catch (error) {
-      console.error("Error creating merch checkout:", error);
-      res.status(500).json({ error: "Failed to create checkout" });
-    }
-  });
-  app2.post("/api/merch/confirm-checkout", publicExpensiveRateLimiter, async (req, res) => {
-    try {
-      const { sessionId } = req.body;
-      if (!sessionId) {
-        return res.status(400).json({ error: "Session ID is required" });
-      }
-      const orderResult = await pool.query(
-        `SELECT * FROM merch_orders WHERE stripe_payment_intent_id = $1`,
-        [sessionId]
-      );
-      if (orderResult.rows.length === 0) {
-        return res.status(404).json({ error: "Order not found for this session" });
-      }
-      const order = orderResult.rows[0];
-      if (order.status !== "awaiting_payment") {
-        return res.json({
-          orderId: order.id,
-          status: order.status,
-          totalCents: order.total_cents,
-          alreadyProcessed: true
-        });
-      }
-      const org = await storage.getOrganization(order.organization_id);
-      const stripe = getStripeClient(org?.stripeTestMode);
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
-      if (session.payment_status !== "paid") {
-        return res.status(402).json({ error: "Payment not completed", paymentStatus: session.payment_status });
-      }
-      await pool.query(
-        `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
-        [order.id]
-      );
-      const itemsResult = await pool.query(
-        `SELECT * FROM merch_order_items WHERE order_id = $1`,
-        [order.id]
-      );
-      const imageUrl = session.metadata?.imageUrl;
-      if (!imageUrl) {
-        console.error(`[merch] No imageUrl in session metadata for order ${order.id}`);
-        return res.json({ orderId: order.id, status: "paid", warning: "Fulfillment pending \u2014 missing image URL" });
-      }
-      const printfulRows = itemsResult.rows.filter((item) => !item.product_key.startsWith("card_"));
-      const gelatoRows = itemsResult.rows.filter((item) => item.product_key.startsWith("card_"));
-      const recipient = {
-        name: order.customer_name,
-        address1: order.shipping_street,
-        city: order.shipping_city,
-        state_code: order.shipping_state,
-        zip: order.shipping_zip,
-        country_code: order.shipping_country || "US",
-        email: order.customer_email,
-        phone: order.customer_phone
-      };
-      let printfulOrderId = null;
-      let gelatoOrderId = null;
-      if (printfulRows.length > 0) {
-        try {
-          const printfulItems = printfulRows.map(
-            (item) => buildOrderItem(item.variant_id, item.quantity, imageUrl)
-          );
-          const printfulOrder = await createOrder(recipient, printfulItems, String(order.id));
-          printfulOrderId = printfulOrder.id;
-          await pool.query(
-            `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
-            [String(printfulOrder.id), printfulOrder.status, order.id]
-          );
-          try {
-            await confirmOrder(printfulOrder.id);
-            await pool.query(
-              `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
-              [order.id]
-            );
-          } catch (confirmErr) {
-            console.warn(`[merch] Printful auto-confirm failed for order ${order.id}:`, confirmErr.message);
-          }
-        } catch (printfulErr) {
-          console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
-          await pool.query(
-            `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
-            [order.id]
-          );
-        }
-      }
-      if (gelatoRows.length > 0) {
-        try {
-          const { createGelatoOrder: createGelatoOrder2, buildCardOrderItem: buildCardOrderItem2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
-          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
-          const petName = dogResult?.name || "Your Pet";
-          const orgName = org?.name || "Pawtrait Pros";
-          const gelatoItems = [];
-          for (let i = 0; i < gelatoRows.length; i++) {
-            const item = gelatoRows[i];
-            const product = getGelatoProduct(item.product_key);
-            const occasion = item.occasion ? getOccasion(item.occasion) : null;
-            let files;
-            if (occasion) {
-              const format = product?.format || "flat";
-              console.log(`[merch] Generating ${occasion.id} ${format} card artwork for order ${order.id}`);
-              if (format === "flat") {
-                const frontBuf = await generateFlatCardArtwork(imageUrl, occasion, petName, orgName);
-                const backBuf = await generateFlatCardBack(orgName);
-                const frontUrl = await uploadToStorage(bufferToDataUri(frontBuf), "portraits", `card-${order.id}-${i}-front.png`);
-                const backUrl = await uploadToStorage(bufferToDataUri(backBuf), "portraits", `card-${order.id}-${i}-back.png`);
-                files = [{ type: "default", url: frontUrl }, { type: "back", url: backUrl }];
-                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [frontUrl, item.id]);
-              } else {
-                const outsideBuf = await generateFoldedOutsideArtwork(imageUrl, occasion, petName, orgName);
-                const insideBuf = await generateFoldedInsideArtwork(occasion, petName);
-                const outsideUrl = await uploadToStorage(bufferToDataUri(outsideBuf), "portraits", `card-${order.id}-${i}-outside.png`);
-                const insideUrl = await uploadToStorage(bufferToDataUri(insideBuf), "portraits", `card-${order.id}-${i}-inside.png`);
-                files = [{ type: "default", url: outsideUrl }, { type: "inside", url: insideUrl }];
-                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [outsideUrl, item.id]);
-              }
-            } else {
-              files = [{ type: "default", url: imageUrl }];
-            }
-            gelatoItems.push(buildCardOrderItem2(
-              product?.productUid || item.product_key,
-              item.quantity,
-              files,
-              `item-${order.id}-${i}`
-            ));
-          }
-          const nameParts = (order.customer_name || "Customer").split(" ");
-          const gelatoAddress = {
-            firstName: nameParts[0] || "Customer",
-            lastName: nameParts.slice(1).join(" ") || "",
-            addressLine1: order.shipping_street,
-            city: order.shipping_city,
-            state: order.shipping_state,
-            postCode: order.shipping_zip,
-            country: order.shipping_country || "US",
-            email: order.customer_email,
-            phone: order.customer_phone
-          };
-          const gelatoOrder = await createGelatoOrder2(
-            gelatoItems,
-            gelatoAddress,
-            `pp-${order.id}`,
-            `org-${order.organization_id}`
-          );
-          gelatoOrderId = gelatoOrder.id;
-          if (!printfulOrderId) {
-            await pool.query(
-              `UPDATE merch_orders SET printful_order_id = $1, status = 'submitted' WHERE id = $2`,
-              [`gelato:${gelatoOrder.id}`, order.id]
-            );
-          }
-          console.log(`[merch] Gelato order ${gelatoOrder.id} created for merch order ${order.id}`);
-        } catch (gelatoErr) {
-          console.error(`[merch] Gelato order failed for paid order ${order.id}:`, gelatoErr.message);
-          if (!printfulOrderId) {
-            await pool.query(
-              `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
-              [order.id]
-            );
-          }
-        }
-      }
-      if (order.customer_email && isEmailConfigured()) {
-        try {
-          const itemDescriptions = itemsResult.rows.map((item) => {
-            const product = getProduct(item.product_key);
-            return `${product?.name || item.product_key} x${item.quantity}`;
-          });
-          const orgName = org?.name || "Pawtrait Pros";
-          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
-          const dogName = dogResult?.name || "your pet";
-          const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
-          let attachments;
-          if (order.portrait_id) {
-            try {
-              const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
-              const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
-              if (downloadRes.ok) {
-                const buffer = Buffer.from(await downloadRes.arrayBuffer());
-                attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
-              }
-            } catch (dlErr) {
-              console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
-            }
-          }
-          await sendEmail(order.customer_email, subject, html, attachments, orgName);
-          console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
-        } catch (emailErr) {
-          console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
-        }
-      }
-      const finalStatus = printfulOrderId || gelatoOrderId ? "confirmed" : "paid_fulfillment_pending";
-      res.json({
-        orderId: order.id,
-        printfulOrderId,
-        gelatoOrderId,
-        totalCents: order.total_cents,
-        status: finalStatus
-      });
-    } catch (error) {
-      console.error("Error confirming merch checkout:", error);
-      res.status(500).json({ error: "Failed to confirm checkout" });
-    }
-  });
-  app2.get("/api/merch/order/:id", isAuthenticated, async (req, res) => {
-    try {
-      const orderId = parseInt(req.params.id);
-      if (isNaN(orderId)) {
-        return res.status(400).json({ error: "Invalid order ID" });
-      }
-      const orderResult = await pool.query(
-        `SELECT * FROM merch_orders WHERE id = $1`,
-        [orderId]
-      );
-      if (orderResult.rows.length === 0) {
-        return res.status(404).json({ error: "Order not found" });
-      }
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email;
-      if (userEmail !== ADMIN_EMAIL) {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (!org || orderResult.rows[0].organization_id !== org.id) {
-          return res.status(403).json({ error: "Not authorized to view this order" });
-        }
-      }
-      const itemsResult = await pool.query(
-        `SELECT * FROM merch_order_items WHERE order_id = $1`,
-        [orderId]
-      );
-      const items = itemsResult.rows.map((item) => ({
-        ...item,
-        product: getProduct(item.product_key)
-      }));
-      res.json({ order: orderResult.rows[0], items });
-    } catch (error) {
-      console.error("Error fetching merch order:", error);
-      res.status(500).json({ error: "Failed to fetch order" });
-    }
-  });
-  app2.get("/api/merch/orders", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let orgId = null;
-      if (isAdminUser && orgIdParam) {
-        orgId = orgIdParam;
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const ordersResult = await pool.query(
-        `SELECT mo.*,
-          (SELECT json_agg(json_build_object(
-            'id', moi.id,
-            'product_key', moi.product_key,
-            'variant_id', moi.variant_id,
-            'quantity', moi.quantity,
-            'price_cents', moi.price_cents
-          )) FROM merch_order_items moi WHERE moi.order_id = mo.id) as items
-        FROM merch_orders mo
-        WHERE mo.organization_id = $1
-        ORDER BY mo.created_at DESC`,
-        [orgId]
-      );
-      res.json({ orders: ordersResult.rows });
-    } catch (error) {
-      console.error("Error fetching merch orders:", error);
-      res.status(500).json({ error: "Failed to fetch orders" });
-    }
-  });
-  app2.post("/api/merch/order/:id/sync", isAuthenticated, async (req, res) => {
-    try {
-      const email = req.user.claims.email;
-      if (email !== ADMIN_EMAIL) {
-        return res.status(403).json({ error: "Admin only" });
-      }
-      const orderId = parseInt(req.params.id);
-      const orderResult = await pool.query(
-        `SELECT printful_order_id FROM merch_orders WHERE id = $1`,
-        [orderId]
-      );
-      if (orderResult.rows.length === 0) {
-        return res.status(404).json({ error: "Order not found" });
-      }
-      const printfulOrderId = orderResult.rows[0].printful_order_id;
-      if (!printfulOrderId) {
-        return res.status(400).json({ error: "Order has no Printful order ID" });
-      }
-      const printfulOrder = await getOrder(parseInt(printfulOrderId));
-      await pool.query(
-        `UPDATE merch_orders SET printful_status = $1 WHERE id = $2`,
-        [printfulOrder.status, orderId]
-      );
-      res.json({ orderId, printfulStatus: printfulOrder.status, printfulOrder });
-    } catch (error) {
-      console.error("Error syncing merch order:", error);
-      res.status(500).json({ error: "Failed to sync order" });
-    }
-  });
-  app2.get("/api/gelato/products", async (_req, res) => {
-    try {
-      res.json({ cards: getAllGelatoProducts() });
-    } catch (error) {
-      console.error("Error fetching Gelato products:", error);
-      res.status(500).json({ error: "Failed to fetch card products" });
-    }
-  });
-  app2.get("/api/gelato/availability", async (_req, res) => {
-    const available = !!process.env.GELATO_API_KEY;
-    const month = (/* @__PURE__ */ new Date()).getMonth();
-    const occasions = sortOccasionsForDisplay(month);
-    res.json({ available, occasions });
-  });
-  app2.get("/api/cards/occasions", async (_req, res) => {
-    const month = (/* @__PURE__ */ new Date()).getMonth();
-    res.json({ occasions: sortOccasionsForDisplay(month) });
-  });
-  app2.post("/api/cards/preview", publicExpensiveRateLimiter, async (req, res) => {
-    try {
-      const { portraitId, occasion: occasionId, format, petName } = req.body;
-      if (!portraitId || !occasionId) {
-        return res.status(400).json({ error: "portraitId and occasion are required" });
-      }
-      const occasion = getOccasion(occasionId);
-      if (!occasion) {
-        return res.status(400).json({ error: `Unknown occasion: ${occasionId}` });
-      }
-      const cardFormat = format || "flat";
-      const cacheKey = `${portraitId}-${occasionId}-${cardFormat}`;
-      const cached = getCachedPreview(cacheKey);
-      if (cached) {
-        res.set("Content-Type", "image/png");
-        res.set("Cache-Control", "public, max-age=900");
-        return res.send(cached);
-      }
-      const portrait = await storage.getPortrait(portraitId);
-      if (!portrait || !portrait.generatedImageUrl) {
-        return res.status(404).json({ error: "Portrait not found" });
-      }
-      const name = petName || "Your Pet";
-      let orgName = "Your Business";
-      try {
-        if (portrait.dogId) {
-          const dog = await storage.getDog(portrait.dogId);
-          if (dog?.organizationId) {
-            const org = await storage.getOrganization(dog.organizationId);
-            if (org?.name) orgName = org.name;
-          }
-        }
-      } catch (e) {
-      }
-      let previewBuf;
-      const { default: sharpLib } = await import("sharp");
-      if (cardFormat === "folded") {
-        const fullSpread = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
-        const meta = await sharpLib(fullSpread).metadata();
-        const halfH = Math.round((meta.height || 2100) / 2);
-        previewBuf = await sharpLib(fullSpread).extract({ left: 0, top: 0, width: meta.width || 1500, height: halfH }).png().toBuffer();
-      } else {
-        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, orgName);
-      }
-      const preview = await sharpLib(previewBuf).resize(600, null, { fit: "inside" }).png().toBuffer();
-      setCachedPreview(cacheKey, preview);
-      res.set("Content-Type", "image/png");
-      res.set("Cache-Control", "public, max-age=900");
-      res.send(preview);
-    } catch (error) {
-      console.error("Error generating card preview:", error);
-      res.status(500).json({ error: "Failed to generate preview" });
-    }
-  });
-  app2.post("/api/gelato/order", publicExpensiveRateLimiter, async (req, res) => {
-    try {
-      const { items, customer, address, artworkUrls } = req.body;
-      if (!items || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: "At least one card item is required" });
-      }
-      if (!customer?.name || !address?.address1 || !address?.city || !address?.state || !address?.zip) {
-        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
-      }
-      if (!artworkUrls || !Array.isArray(artworkUrls) || artworkUrls.length === 0) {
-        return res.status(400).json({ error: "Artwork URL(s) are required" });
-      }
-      const { getGelatoProduct: getGelatoCardProduct } = await Promise.resolve().then(() => (init_gelato_config(), gelato_config_exports));
-      const { createGelatoOrder: createGelatoOrder2, buildCardOrderItem: buildCardOrderItem2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
-      let subtotalCents = 0;
-      const gelatoItems = [];
-      const dbItems = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const product = getGelatoCardProduct(item.productKey);
-        if (!product) {
-          return res.status(400).json({ error: `Unknown card product: ${item.productKey}` });
-        }
-        const qty = item.quantity || 1;
-        subtotalCents += product.priceCents * qty;
-        const files = artworkUrls.map((url, idx) => ({
-          type: idx === 0 ? "default" : "back",
-          url
-        }));
-        gelatoItems.push(
-          buildCardOrderItem2(product.productUid, qty, files, `item-${i}`)
-        );
-        dbItems.push({
-          productKey: item.productKey,
-          quantity: qty,
-          priceCents: product.priceCents
-        });
-      }
-      const nameParts = customer.name.trim().split(/\s+/);
-      const firstName = nameParts[0] || "Customer";
-      const lastName = nameParts.slice(1).join(" ") || "";
-      const orgId = req.body.orgId || null;
-      const orderResult = await pool.query(
-        `INSERT INTO merch_orders (
-          organization_id, dog_id, portrait_id,
-          customer_name, customer_email, customer_phone,
-          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
-          total_cents, shipping_cents, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        RETURNING id`,
-        [
-          orgId,
-          req.body.dogId || null,
-          req.body.portraitId || null,
-          customer.name,
-          customer.email || null,
-          customer.phone || null,
-          address.address1,
-          address.city,
-          address.state,
-          address.zip,
-          address.country || "US",
-          subtotalCents,
-          0,
-          "pending"
-        ]
-      );
-      const merchOrderId = orderResult.rows[0].id;
-      for (const item of dbItems) {
-        await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [merchOrderId, item.productKey, 0, item.quantity, item.priceCents]
-        );
-      }
-      try {
-        const gelatoOrder = await createGelatoOrder2(
-          gelatoItems,
-          {
-            firstName,
-            lastName,
-            addressLine1: address.address1,
-            city: address.city,
-            state: address.state,
-            postCode: address.zip,
-            country: address.country || "US",
-            email: customer.email,
-            phone: customer.phone
-          },
-          `gelato-${merchOrderId}`,
-          `customer-${merchOrderId}`
-        );
-        await pool.query(
-          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
-          [gelatoOrder.id, gelatoOrder.fulfillmentStatus, merchOrderId]
-        );
-        res.json({
-          orderId: merchOrderId,
-          gelatoOrderId: gelatoOrder.id,
-          totalCents: subtotalCents,
-          status: "submitted"
-        });
-      } catch (gelatoErr) {
-        console.error(`[gelato] Order creation failed for merch_order ${merchOrderId}:`, gelatoErr.message);
-        await pool.query(
-          `UPDATE merch_orders SET status = 'failed', printful_status = $1 WHERE id = $2`,
-          [gelatoErr.message, merchOrderId]
-        );
-        res.status(500).json({ error: "Failed to submit card order", orderId: merchOrderId });
-      }
-    } catch (error) {
-      console.error("Error creating Gelato order:", error);
-      res.status(500).json({ error: "Failed to create card order" });
-    }
-  });
-  app2.get("/api/gelato/discover-products", isAuthenticated, async (req, res) => {
-    const email = req.user.claims.email;
-    if (email !== ADMIN_EMAIL) {
-      return res.status(403).json({ error: "Admin only" });
-    }
-    try {
-      const { searchCardProducts: searchCardProducts2, searchFoldedCardProducts: searchFoldedCardProducts2, listCatalogs: listCatalogs2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
-      const catalogs = await listCatalogs2();
-      const flatCards = await searchCardProducts2();
-      const foldedCards = await searchFoldedCardProducts2();
-      res.json({ catalogs, flatCards, foldedCards });
-    } catch (error) {
-      console.error("Error discovering Gelato products:", error);
-      res.status(500).json({ error: "Failed to discover products" });
-    }
-  });
-}
-
-// server/routes/customer-sessions.ts
-var import_crypto2 = __toESM(require("crypto"), 1);
-init_storage();
-init_db();
-init_sms();
-init_helpers();
-function registerCustomerSessionRoutes(app2) {
-  app2.post("/api/customer-session", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdminUser = email === ADMIN_EMAIL;
-      const { dogId, portraitId, packType, customerPhone, orgId: bodyOrgId } = req.body;
-      if (!dogId || !portraitId) {
-        return res.status(400).json({ error: "dogId and portraitId are required" });
-      }
-      let orgId = null;
-      if (isAdminUser && bodyOrgId) {
-        orgId = parseInt(bodyOrgId);
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const dog = await storage.getDog(parseInt(dogId));
-      if (!dog || dog.organizationId !== orgId) {
-        return res.status(400).json({ error: "Dog not found or doesn't belong to your organization" });
-      }
-      let token = "";
-      let attempts = 0;
-      while (attempts < 10) {
-        token = import_crypto2.default.randomBytes(4).toString("hex");
-        const existing = await pool.query("SELECT id FROM customer_sessions WHERE token = $1", [token]);
-        if (existing.rows.length === 0) break;
-        attempts++;
-      }
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
-      await pool.query(
-        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, pack_type, customer_phone, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [token, orgId, parseInt(dogId), parseInt(portraitId), packType || null, customerPhone || null, expiresAt.toISOString()]
-      );
-      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
-      const orderUrl = `${host}/order/${token}`;
-      console.log(`[customer-session] Created session ${token} for org ${orgId}, dog ${dogId}`);
-      res.json({
-        token,
-        orderUrl,
-        expiresAt: expiresAt.toISOString()
-      });
-    } catch (error) {
-      console.error("Error creating customer session:", error);
-      res.status(500).json({ error: "Failed to create customer session" });
-    }
-  });
-  app2.post("/api/customer-session/from-code", publicExpensiveRateLimiter, async (req, res) => {
-    try {
-      const { petCode } = req.body;
-      if (!petCode) {
-        return res.status(400).json({ error: "petCode is required" });
-      }
-      const dogResult = await pool.query(
-        `SELECT d.*, p.id as portrait_id, p.generated_image_url
-         FROM dogs d
-         LEFT JOIN portraits p ON p.dog_id = d.id AND p.is_selected = true
-         WHERE d.pet_code = $1`,
-        [petCode.toUpperCase()]
-      );
-      if (dogResult.rows.length === 0) {
-        return res.status(404).json({ error: "Pet not found" });
-      }
-      const dog = dogResult.rows[0];
-      if (!dog.portrait_id) {
-        return res.status(400).json({ error: "No portrait available for this pet" });
-      }
-      let token = "";
-      let attempts = 0;
-      while (attempts < 10) {
-        token = import_crypto2.default.randomBytes(4).toString("hex");
-        const existing = await pool.query("SELECT id FROM customer_sessions WHERE token = $1", [token]);
-        if (existing.rows.length === 0) break;
-        attempts++;
-      }
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
-      await pool.query(
-        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, expires_at)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [token, dog.organization_id, dog.id, dog.portrait_id, expiresAt.toISOString()]
-      );
-      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
-      res.json({
-        token,
-        orderUrl: `${host}/order/${token}`,
-        expiresAt: expiresAt.toISOString()
-      });
-    } catch (error) {
-      console.error("Error creating customer session from code:", error);
-      res.status(500).json({ error: "Failed to create session" });
-    }
-  });
-  app2.get("/api/customer-session/:token", async (req, res) => {
-    try {
-      const { token } = req.params;
-      if (!token || token.length !== 8) {
-        return res.status(400).json({ error: "Invalid session token" });
-      }
-      const sessionResult = await pool.query(
-        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
-                d.name as dog_name, d.breed as dog_breed, d.species as dog_species,
-                p.generated_image_url as portrait_image, p.style_id as portrait_style_id
-         FROM customer_sessions cs
-         JOIN organizations o ON o.id = cs.organization_id
-         JOIN dogs d ON d.id = cs.dog_id
-         JOIN portraits p ON p.id = cs.portrait_id
-         WHERE cs.token = $1`,
-        [token]
-      );
-      if (sessionResult.rows.length === 0) {
-        return res.status(404).json({ error: "Session not found" });
-      }
-      const session = sessionResult.rows[0];
-      if (session.expires_at && new Date(session.expires_at) < /* @__PURE__ */ new Date()) {
-        return res.status(410).json({ error: "This order link has expired" });
-      }
-      const alternatesResult = await pool.query(
-        `SELECT id, generated_image_url, style_id FROM portraits
-         WHERE dog_id = $1 AND generated_image_url IS NOT NULL AND id != $2
-         ORDER BY created_at DESC LIMIT 5`,
-        [session.dog_id, session.portrait_id]
-      );
-      res.json({
-        token: session.token,
-        orgId: session.organization_id,
-        orgName: session.org_name,
-        orgLogo: session.org_logo,
-        dogId: session.dog_id,
-        dogName: session.dog_name,
-        dogBreed: session.dog_breed,
-        dogSpecies: session.dog_species,
-        portraitImage: session.portrait_image,
-        portraitId: session.portrait_id,
-        packType: session.pack_type,
-        expiresAt: session.expires_at,
-        alternatePortraits: alternatesResult.rows.map((p) => ({
-          id: p.id,
-          imageUrl: p.generated_image_url,
-          styleId: p.style_id
-        }))
-      });
-    } catch (error) {
-      console.error("Error fetching customer session:", error);
-      res.status(500).json({ error: "Failed to load order page" });
-    }
-  });
-  app2.get("/api/customer-session/:token/receipt", async (req, res) => {
-    try {
-      const { token } = req.params;
-      const sessionResult = await pool.query(
-        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
-                d.name as dog_name
-         FROM customer_sessions cs
-         JOIN organizations o ON o.id = cs.organization_id
-         JOIN dogs d ON d.id = cs.dog_id
-         WHERE cs.token = $1`,
-        [token]
-      );
-      if (sessionResult.rows.length === 0) {
-        return res.status(404).json({ error: "Session not found" });
-      }
-      const session = sessionResult.rows[0];
-      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
-      const orderUrl = `${host}/order/${token}`;
-      res.json({
-        orgName: session.org_name,
-        orgLogo: session.org_logo,
-        dogName: session.dog_name,
-        orderUrl,
-        token,
-        expiresAt: session.expires_at
-      });
-    } catch (error) {
-      console.error("Error generating receipt:", error);
-      res.status(500).json({ error: "Failed to generate receipt" });
-    }
-  });
-  app2.post("/api/customer-session/:token/send-sms", isAuthenticated, async (req, res) => {
-    try {
-      const { token } = req.params;
-      const { phone } = req.body;
-      if (!phone) {
-        return res.status(400).json({ error: "Phone number is required" });
-      }
-      const sessionResult = await pool.query(
-        `SELECT cs.*, o.name as org_name, d.name as dog_name
-         FROM customer_sessions cs
-         JOIN organizations o ON o.id = cs.organization_id
-         JOIN dogs d ON d.id = cs.dog_id
-         WHERE cs.token = $1`,
-        [token]
-      );
-      if (sessionResult.rows.length === 0) {
-        return res.status(404).json({ error: "Session not found" });
-      }
-      const session = sessionResult.rows[0];
-      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
-      const orderUrl = `${host}/order/${token}`;
-      const message = `Hi from ${session.org_name}! ${session.dog_name}'s portrait is ready. View it & order prints here: ${orderUrl}`;
-      if (!isSmsConfigured()) {
-        return res.status(503).json({ error: "SMS service is not configured" });
-      }
-      const formattedPhone = formatPhoneNumber(phone);
-      const result = await sendSms(formattedPhone, message);
-      if (!result.success) {
-        throw new Error(result.error || "Failed to send SMS");
-      }
-      await pool.query(
-        `UPDATE customer_sessions SET customer_phone = $1 WHERE token = $2`,
-        [formattedPhone, token]
-      );
-      res.json({ success: true, message: "SMS sent" });
-    } catch (error) {
-      console.error("Error sending customer session SMS:", error);
-      res.status(500).json({ error: "Failed to send SMS" });
-    }
-  });
-}
-
-// server/routes/admin.ts
-var import_zod2 = require("zod");
-init_storage();
-init_stripeClient();
-init_subscription();
-init_helpers();
-function registerAdminRoutes(app2) {
-  app2.post("/api/admin/organizations", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const { name, description, websiteUrl } = req.body;
-      if (!name) {
-        return res.status(400).json({ error: "Organization name is required" });
-      }
-      const slug = await generateUniqueSlug(name);
-      const org = await storage.createOrganization({
-        name,
-        slug,
-        description: description || "",
-        websiteUrl: websiteUrl || "",
-        ownerId: null,
-        subscriptionStatus: "inactive",
-        portraitsUsedThisMonth: 0
-      });
-      res.status(201).json(org);
-    } catch (error) {
-      console.error("Error creating organization (admin):", error);
-      res.status(500).json({ error: "Failed to create organization" });
-    }
-  });
-  app2.get("/api/admin/organizations", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const orgs = await storage.getAllOrganizations();
-      const allPlans = await storage.getAllSubscriptionPlans();
-      const planMap = new Map(allPlans.map((p) => [p.id, p]));
-      const orgsWithStats = await Promise.all(
-        orgs.map(async (org) => {
-          const dogs2 = await storage.getDogsByOrganization(org.id);
-          let portraitCount = 0;
-          for (const dog of dogs2) {
-            const portraits2 = await storage.getPortraitsByDog(dog.id);
-            portraitCount += portraits2.length;
-          }
-          const plan = org.planId ? planMap.get(org.planId) : null;
-          const planName = plan ? plan.name.toLowerCase() : "none";
-          const planPriceCents = plan ? plan.priceMonthly : 0;
-          const addonSlots = org.additionalPetSlots || 0;
-          const addonRevenueCents = addonSlots * 300;
-          const totalRevenueCents = (org.subscriptionStatus === "active" ? planPriceCents : 0) + (org.subscriptionStatus === "active" ? addonRevenueCents : 0);
-          return {
-            ...org,
-            dogCount: dogs2.length,
-            portraitCount,
-            planName,
-            planPriceCents,
-            addonRevenueCents,
-            totalRevenueCents
-          };
-        })
-      );
-      res.json(orgsWithStats);
-    } catch (error) {
-      console.error("Error fetching admin organizations:", error);
-      res.status(500).json({ error: "Failed to fetch organizations" });
-    }
-  });
-  app2.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const orgs = await storage.getAllOrganizations();
-      const dogs2 = await storage.getAllDogs();
-      let totalPortraits = 0;
-      for (const dog of dogs2) {
-        const portraits2 = await storage.getPortraitsByDog(dog.id);
-        totalPortraits += portraits2.length;
-      }
-      const activeSubscriptions = orgs.filter((o) => o.subscriptionStatus === "active").length;
-      const pastDue = orgs.filter((o) => o.subscriptionStatus === "past_due").length;
-      const allPlans = await storage.getAllSubscriptionPlans();
-      const planMap = new Map(allPlans.map((p) => [p.id, p]));
-      const planDistribution = {};
-      for (const plan of allPlans) {
-        const key = plan.name.toLowerCase() === "free trial" ? "trial" : plan.name.toLowerCase();
-        planDistribution[key] = orgs.filter((o) => o.planId === plan.id).length;
-      }
-      planDistribution.trial = (planDistribution.trial || 0) + orgs.filter((o) => !o.planId && o.subscriptionStatus === "trial").length;
-      planDistribution.inactive = orgs.filter((o) => o.subscriptionStatus === "inactive" || o.subscriptionStatus === "canceled").length;
-      const monthlyRevenue = orgs.reduce((sum, o) => {
-        if (o.subscriptionStatus === "active" && o.planId) {
-          const plan = planMap.get(o.planId);
-          const planRev = plan ? plan.priceMonthly / 100 : 0;
-          const addonRev = (o.additionalPetSlots || 0) * 3;
-          return sum + planRev + addonRev;
-        }
-        return sum;
-      }, 0);
-      res.json({
-        totalOrgs: orgs.length,
-        totalDogs: dogs2.length,
-        totalPortraits,
-        activeSubscriptions,
-        pastDue,
-        monthlyRevenue,
-        planDistribution
-      });
-    } catch (error) {
-      console.error("Error fetching admin stats:", error);
-      res.status(500).json({ error: "Failed to fetch stats" });
-    }
-  });
-  app2.get("/api/admin/organizations/:id/dogs", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const orgId = parseInt(req.params.id);
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const orgDogs = await storage.getDogsByOrganization(orgId);
-      const dogsWithPortraits = await Promise.all(
-        orgDogs.map(async (dog) => {
-          const portrait = await storage.getSelectedPortraitByDog(dog.id);
-          if (portrait) {
-            const style = await storage.getPortraitStyle(portrait.styleId);
-            return { ...dog, portrait: { ...portrait, style } };
-          }
-          return dog;
-        })
-      );
-      res.json(dogsWithPortraits);
-    } catch (error) {
-      console.error("Error fetching org dogs:", error);
-      res.status(500).json({ error: "Failed to fetch dogs" });
-    }
-  });
-  app2.post("/api/admin/organizations/:id/dogs", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const orgId = parseInt(req.params.id);
-      const org = await storage.getOrganization(orgId);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      if (!org.planId || org.subscriptionStatus === "inactive") {
-        return res.status(403).json({ error: "This organization needs a plan before pets can be added" });
-      }
-      const limitError = await checkDogLimit(orgId);
-      if (limitError) {
-        return res.status(403).json({ error: limitError });
-      }
-      const { originalPhotoUrl, generatedPortraitUrl, styleId, ...dogData } = req.body;
-      if (dogData.name && containsInappropriateLanguage(dogData.name)) {
-        return res.status(400).json({ error: "Please choose a family-friendly name" });
-      }
-      if (dogData.breed && !isValidBreed(dogData.breed, dogData.species)) {
-        return res.status(400).json({ error: "Please select a valid breed from the list" });
-      }
-      const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
-      res.status(201).json(dog);
-    } catch (error) {
-      if (error instanceof import_zod2.z.ZodError) {
-        return res.status(400).json({ error: error.errors });
-      }
-      console.error("Error creating pet for org:", error);
-      res.status(500).json({ error: "Failed to save pet" });
-    }
-  });
-  app2.get("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      let org = await storage.getOrganization(id);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const synced = await storage.syncOrgCredits(id);
-      if (synced) org = synced;
-      const dogs2 = await storage.getDogsByOrganization(id);
-      const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
-      res.json({
-        ...org,
-        dogCount: dogs2.length,
-        ...computePetLimitInfo(org, plan, dogs2.length)
-      });
-    } catch (error) {
-      console.error("Error fetching organization:", error);
-      res.status(500).json({ error: "Failed to fetch organization" });
-    }
-  });
-  app2.post("/api/admin/organizations/:id/select-plan", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { planId } = req.body;
-      if (!planId) {
-        return res.status(400).json({ error: "Plan ID is required" });
-      }
-      const plan = await storage.getSubscriptionPlan(planId);
-      if (!plan) {
-        return res.status(400).json({ error: "Invalid plan" });
-      }
-      const org = await storage.getOrganization(id);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const isFreeTrialPlan = plan.priceMonthly === 0 && (plan.trialDays ?? 0) > 0;
-      if (isFreeTrialPlan && !canStartFreeTrial(org)) {
-        return res.status(400).json({ error: "This organization has already used its free trial." });
-      }
-      const trialEndsAt = plan.trialDays ? new Date(Date.now() + plan.trialDays * 24 * 60 * 60 * 1e3) : null;
-      const isNewPlan = org.planId !== plan.id;
-      const orgUpdate = {
-        planId: plan.id,
-        subscriptionStatus: isFreeTrialPlan ? "trial" : "active"
-      };
-      if (isNewPlan) {
-        orgUpdate.billingCycleStart = org.billingCycleStart || org.createdAt || /* @__PURE__ */ new Date();
-      }
-      if (trialEndsAt) {
-        orgUpdate.trialEndsAt = trialEndsAt;
-      }
-      await storage.updateOrganization(id, orgUpdate);
-      if (isFreeTrialPlan) {
-        await markFreeTrialUsed(id);
-      }
-      await storage.syncOrgCredits(id);
-      const updated = await storage.getOrganization(id);
-      res.json(updated);
-    } catch (error) {
-      console.error("Error selecting plan for organization:", error);
-      res.status(500).json({ error: "Failed to select plan" });
-    }
-  });
-  app2.patch("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const org = await storage.getOrganization(id);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const allowedFields = [
-        "name",
-        "description",
-        "websiteUrl",
-        "logoUrl",
-        "contactName",
-        "contactEmail",
-        "contactPhone",
-        "socialFacebook",
-        "socialInstagram",
-        "socialTwitter",
-        "socialNextdoor",
-        "locationStreet",
-        "locationCity",
-        "locationState",
-        "locationZip",
-        "locationCountry",
-        "billingStreet",
-        "billingCity",
-        "billingState",
-        "billingZip",
-        "billingCountry",
-        "notes",
-        "isActive",
-        "planId",
-        "speciesHandled",
-        "onboardingCompleted",
-        "subscriptionStatus",
-        "stripeCustomerId",
-        "stripeSubscriptionId",
-        "stripeTestMode",
-        "billingCycleStart"
-      ];
-      const updates = {};
-      for (const field of allowedFields) {
-        if (req.body[field] !== void 0) {
-          updates[field] = req.body[field];
-        }
-      }
-      if (updates.planId !== void 0) {
-        if (updates.planId !== null) {
-          const plan = await storage.getSubscriptionPlan(updates.planId);
-          if (!plan) {
-            return res.status(400).json({ error: "Invalid plan selected" });
-          }
-        }
-      }
-      if (updates.logoUrl !== void 0 && updates.logoUrl !== null) {
-        const MAX_LOGO_LENGTH = 5e5;
-        if (typeof updates.logoUrl !== "string" || updates.logoUrl.length > MAX_LOGO_LENGTH) {
-          return res.status(400).json({ error: "Logo data too large or invalid" });
-        }
-      }
-      if (updates.name && updates.name !== org.name) {
-        updates.slug = await generateUniqueSlug(updates.name, id);
-      }
-      const stripeFields = {};
-      for (const key of ["stripeCustomerId", "stripeSubscriptionId", "subscriptionStatus", "stripeTestMode"]) {
-        if (updates[key] !== void 0) {
-          stripeFields[key] = updates[key];
-          if (key !== "subscriptionStatus") delete updates[key];
-        }
-      }
-      await storage.updateOrganization(id, updates);
-      if (Object.keys(stripeFields).length > 0) {
-        await storage.updateOrganizationStripeInfo(id, stripeFields);
-      }
-      const result = await storage.getOrganization(id);
-      res.json(result);
-    } catch (error) {
-      console.error("Error updating organization:", error);
-      res.status(500).json({ error: "Failed to update organization" });
-    }
-  });
-  app2.delete("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const org = await storage.getOrganization(id);
-      if (!org) {
-        return res.status(404).json({ error: "Organization not found" });
-      }
-      const dogs2 = await storage.getDogsByOrganization(id);
-      for (const dog of dogs2) {
-        await storage.deleteDog(dog.id);
-      }
-      await storage.deleteOrganization(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting organization:", error);
-      res.status(500).json({ error: "Failed to delete organization" });
-    }
-  });
-  app2.get("/api/admin/data-integrity", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const allOrgs = await storage.getAllOrganizations();
-      const issues = [];
-      for (const org of allOrgs) {
-        const orgDogs = await storage.getDogsByOrganization(org.id);
-        const dogCount = orgDogs.length;
-        if (!org.planId && dogCount > 0) {
-          issues.push({
-            type: "no_plan",
-            severity: "critical",
-            orgId: org.id,
-            orgName: org.name,
-            dogCount,
-            message: `Has ${dogCount} pet(s) but no plan assigned`
-          });
-        }
-        if (!org.planId && org.subscriptionStatus === "trial") {
-          issues.push({
-            type: "trial_no_plan",
-            severity: "critical",
-            orgId: org.id,
-            orgName: org.name,
-            message: `Status is "trial" but no plan assigned`
-          });
-        }
-        if (org.planId && dogCount > 0) {
-          const plan = await storage.getSubscriptionPlan(org.planId);
-          if (plan?.dogsLimit) {
-            const effectiveLimit = plan.dogsLimit + (org.additionalPetSlots || 0);
-            if (dogCount > effectiveLimit) {
-              issues.push({
-                type: "over_limit",
-                severity: "warning",
-                orgId: org.id,
-                orgName: org.name,
-                dogCount,
-                petLimit: effectiveLimit,
-                planName: plan.name,
-                message: `Has ${dogCount} pet(s) but limit is ${effectiveLimit}`
-              });
-            }
-          }
-        }
-      }
-      res.json({
-        totalOrgs: allOrgs.length,
-        issueCount: issues.length,
-        issues
-      });
-    } catch (error) {
-      console.error("Error checking data integrity:", error);
-      res.status(500).json({ error: "Failed to check data integrity" });
-    }
-  });
-  app2.post("/api/admin/sync-stripe", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const allOrgs = await storage.getAllOrganizations();
-      const orgsWithStripe = allOrgs.filter((o) => o.stripeSubscriptionId);
-      const results = [];
-      for (const org of orgsWithStripe) {
-        try {
-          const stripe = getStripeClient(org.stripeTestMode);
-          const sub = await stripe.subscriptions.retrieve(org.stripeSubscriptionId);
-          const newStatus = mapStripeStatusToInternal(sub.status, org.subscriptionStatus);
-          const priceId = sub.items?.data?.[0]?.price?.id;
-          const matchedPlan = priceId ? STRIPE_PLAN_PRICE_MAP[priceId] : void 0;
-          const updates = {};
-          const changes = [];
-          if (newStatus !== org.subscriptionStatus) {
-            updates.subscriptionStatus = newStatus;
-            changes.push(`status: ${org.subscriptionStatus} \u2192 ${newStatus}`);
-          }
-          if (matchedPlan && matchedPlan.id !== org.planId) {
-            updates.planId = matchedPlan.id;
-            changes.push(`plan: ${org.planId} \u2192 ${matchedPlan.id} (${matchedPlan.name})`);
-          }
-          if (newStatus === "canceled") {
-            if (org.additionalPetSlots && org.additionalPetSlots > 0) {
-              updates.additionalPetSlots = 0;
-              changes.push(`add-on slots: ${org.additionalPetSlots} \u2192 0`);
-            }
-          }
-          const subAny = sub;
-          if (sub.status === "active" && subAny.current_period_start) {
-            const periodStart = new Date(subAny.current_period_start * 1e3);
-            const existingStart = org.billingCycleStart;
-            if (!existingStart || existingStart.getTime() !== periodStart.getTime()) {
-              updates.billingCycleStart = periodStart;
-              changes.push(`billing cycle: updated to ${periodStart.toISOString()}`);
-            }
-          }
-          if (changes.length > 0) {
-            if (updates.subscriptionStatus) {
-              await storage.updateOrganizationStripeInfo(org.id, {
-                subscriptionStatus: updates.subscriptionStatus,
-                stripeSubscriptionId: org.stripeSubscriptionId
-              });
-              delete updates.subscriptionStatus;
-            }
-            if (Object.keys(updates).length > 0) {
-              await storage.updateOrganization(org.id, updates);
-            }
-            results.push(`${org.name} (id ${org.id}): ${changes.join(", ")}`);
-          }
-        } catch (stripeErr) {
-          results.push(`${org.name} (id ${org.id}): ERROR - ${stripeErr.message}`);
-        }
-      }
-      res.json({
-        message: `Synced ${orgsWithStripe.length} org(s) with Stripe`,
-        orgsChecked: orgsWithStripe.length,
-        changes: results
-      });
-    } catch (error) {
-      console.error("Error syncing Stripe data:", error);
-      res.status(500).json({ error: "Failed to sync Stripe data" });
-    }
-  });
-  app2.post("/api/admin/recalculate-credits", isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const results = await storage.recalculateAllOrgCredits();
-      res.json({
-        message: `Recalculated credits for ${results.length} organization(s)`,
-        changes: results
-      });
-    } catch (error) {
-      console.error("Error recalculating credits:", error);
-      res.status(500).json({ error: "Failed to recalculate credits" });
-    }
-  });
-}
-
-// server/routes/sms-routes.ts
-var import_express_rate_limit3 = __toESM(require("express-rate-limit"), 1);
-init_sms();
-function registerSmsRoutes(app2) {
-  const smsRateLimiter = (0, import_express_rate_limit3.default)({
-    windowMs: 60 * 1e3,
-    max: 5,
-    message: { error: "Too many texts sent. Please wait a minute." },
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => req.user?.claims?.sub || "anonymous"
-  });
-  app2.post("/api/send-sms", isAuthenticated, smsRateLimiter, async (req, res) => {
-    try {
-      const { to, message, mediaUrl } = req.body;
-      if (!to || !message) {
-        return res.status(400).json({ error: "Phone number and message are required" });
-      }
-      const cleaned = to.replace(/[\s\-().]/g, "");
-      if (!/^\+?1?\d{10,15}$/.test(cleaned)) {
-        return res.status(400).json({ error: "Please enter a valid phone number" });
-      }
-      if (!isSmsConfigured()) {
-        return res.status(503).json({ error: "SMS service is not configured" });
-      }
-      const phone = formatPhoneNumber(cleaned);
-      const result = await sendSms(phone, message, mediaUrl || void 0);
-      if (result.queued) {
-        return res.json({ success: true, queued: true, messageId: result.messageId });
-      }
-      if (result.retrying) {
-        return res.json({ success: false, retrying: true, messageId: result.messageId, error: result.error });
-      }
-      if (!result.success) {
-        return res.status(500).json({ error: result.error || "Failed to send text message" });
-      }
-      res.json({ success: true, delivered: result.delivered, messageId: result.messageId });
-    } catch (error) {
-      console.error("SMS send error:", error);
-      res.status(500).json({ error: "Failed to send text message" });
-    }
-  });
-  app2.get("/api/sms-status/:messageId", isAuthenticated, (req, res) => {
-    const { messageId } = req.params;
-    const entry = getRetryStatus(messageId);
-    if (!entry) {
-      return res.json({ status: "unknown" });
-    }
-    res.json({
-      status: entry.status,
-      error: entry.lastError
-    });
-  });
-}
-
-// server/routes/instagram.ts
-var import_crypto3 = __toESM(require("crypto"), 1);
-init_storage();
-init_db();
-init_helpers();
-var AYRSHARE_API_URL = "https://api.ayrshare.com/api";
-function getAyrshareHeaders(profileKey) {
-  const headers = {
-    "Authorization": `Bearer ${process.env.AYRSHARE_API_KEY}`,
-    "Content-Type": "application/json"
-  };
-  if (profileKey) {
-    headers["Profile-Key"] = profileKey;
-  }
-  return headers;
-}
-(async () => {
-  try {
-    await pool.query(`
-      ALTER TABLE organizations
-        ADD COLUMN IF NOT EXISTS ayrshare_profile_key TEXT,
-        ADD COLUMN IF NOT EXISTS instagram_access_token TEXT,
-        ADD COLUMN IF NOT EXISTS instagram_user_id TEXT,
-        ADD COLUMN IF NOT EXISTS instagram_username TEXT,
-        ADD COLUMN IF NOT EXISTS instagram_page_id TEXT,
-        ADD COLUMN IF NOT EXISTS instagram_token_expires_at TIMESTAMP
-    `);
-    console.log("[instagram] DB columns ready (Ayrshare mode)");
-  } catch (e) {
-    console.warn("[instagram] Could not add columns:", e.message);
-  }
-})();
-var GRAPH_API = "https://graph.instagram.com";
-var GRAPH_API_V = "https://graph.instagram.com/v21.0";
-var IG_APP_ID = process.env.INSTAGRAM_APP_ID;
-var IG_APP_SECRET = process.env.INSTAGRAM_APP_SECRET;
-var imageCache = /* @__PURE__ */ new Map();
-var MAX_IMAGE_CACHE_SIZE = 50;
-var ALLOWED_IMAGE_TYPES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, entry] of imageCache) {
-    if (now > entry.expiresAt) {
-      imageCache.delete(token);
-    }
-  }
-}, 2 * 60 * 1e3);
-function storePublicImage(base64DataUri) {
-  const matches = base64DataUri.match(/^data:(image\/\w+);base64,(.+)$/s);
-  if (!matches) throw new Error("Invalid base64 image data");
-  const contentType = matches[1];
-  if (!ALLOWED_IMAGE_TYPES.has(contentType)) throw new Error(`Unsupported image type: ${contentType}`);
-  const buffer = Buffer.from(matches[2], "base64");
-  const token = import_crypto3.default.randomUUID();
-  if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
-    const oldestKey = imageCache.keys().next().value;
-    if (oldestKey) imageCache.delete(oldestKey);
-  }
-  imageCache.set(token, {
-    data: buffer,
-    contentType,
-    expiresAt: Date.now() + 10 * 60 * 1e3
-    // 10 min TTL
-  });
-  const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
-  return `${host}/api/public-image/${token}`;
-}
-async function getOrgForUser(req, orgIdParam) {
-  const userId = req.user.claims.sub;
-  const email = req.user.claims.email;
-  const isAdmin2 = email === ADMIN_EMAIL;
-  if (isAdmin2 && orgIdParam) {
-    return storage.getOrganization(orgIdParam);
-  }
-  return storage.getOrganizationByOwner(userId);
-}
-function verifyMetaSignedRequest(signedRequest) {
-  if (!IG_APP_SECRET) return null;
-  const [sig, payload] = signedRequest.split(".");
-  if (!sig || !payload) return null;
-  const expectedSig = import_crypto3.default.createHmac("sha256", IG_APP_SECRET).update(payload).digest("base64url");
-  try {
-    if (!import_crypto3.default.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
-  } catch {
-    return null;
-  }
-  return JSON.parse(Buffer.from(payload, "base64url").toString());
-}
-function registerInstagramRoutes(app2) {
-  app2.get("/api/instagram/status", isAuthenticated, async (req, res) => {
-    const apiKey = process.env.AYRSHARE_API_KEY;
-    if (!apiKey) return res.json({ connected: false });
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let org;
-      if (isAdmin2 && orgIdParam) {
-        org = await storage.getOrganization(orgIdParam);
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.json({ connected: false });
-      const result = await pool.query(
-        "SELECT ayrshare_profile_key, instagram_username FROM organizations WHERE id = $1",
-        [org.id]
-      );
-      const profileKey = result.rows[0]?.ayrshare_profile_key;
-      const userRes = await fetch(`${AYRSHARE_API_URL}/user`, {
-        headers: getAyrshareHeaders(profileKey)
-      });
-      const userData = await userRes.json();
-      const connected = Array.isArray(userData.activeSocialAccounts) && userData.activeSocialAccounts.includes("instagram");
-      const username = userData.displayNames?.instagram || result.rows[0]?.instagram_username || null;
-      if (connected && username && username !== result.rows[0]?.instagram_username) {
-        await pool.query("UPDATE organizations SET instagram_username = $1 WHERE id = $2", [username, org.id]);
-      }
-      res.json({ connected, username, orgId: org.id });
-    } catch (error) {
-      console.error("[instagram] Status error:", error);
-      res.json({ connected: false });
-    }
-  });
-  app2.get("/api/instagram/connect", isAuthenticated, async (req, res) => {
-    const apiKey = process.env.AYRSHARE_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Instagram integration not configured" });
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let orgId = null;
-      if (isAdmin2 && orgIdParam) {
-        orgId = orgIdParam;
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) return res.status(400).json({ error: "No organization found" });
-      const result = await pool.query(
-        "SELECT ayrshare_profile_key FROM organizations WHERE id = $1",
-        [orgId]
-      );
-      let profileKey = result.rows[0]?.ayrshare_profile_key;
-      if (!profileKey) {
-        const org = await storage.getOrganization(orgId);
-        const profileRes = await fetch(`${AYRSHARE_API_URL}/profiles`, {
-          method: "POST",
-          headers: getAyrshareHeaders(),
-          body: JSON.stringify({
-            title: `PP-Org-${orgId}-${(org?.name || "Unknown").replace(/[^a-zA-Z0-9 ]/g, "").substring(0, 30)}`
-          })
-        });
-        const profileData = await profileRes.json();
-        if (profileData.profileKey) {
-          profileKey = profileData.profileKey;
-          await pool.query(
-            "UPDATE organizations SET ayrshare_profile_key = $1 WHERE id = $2",
-            [profileKey, orgId]
-          );
-          console.log(`[instagram] Created Ayrshare profile for org ${orgId}: ${profileKey}`);
-        } else {
-          console.error("[instagram] Failed to create Ayrshare profile:", profileData);
-          return res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(profileData.message || "profile_creation_failed"));
-        }
-      }
-      const privateKey = process.env.AYRSHARE_PRIVATE_KEY;
-      const domain = process.env.AYRSHARE_DOMAIN;
-      if (!privateKey || !domain) {
-        console.error("[instagram] Missing AYRSHARE_PRIVATE_KEY or AYRSHARE_DOMAIN env vars");
-        return res.redirect("/settings?instagram=error&detail=missing_ayrshare_config");
-      }
-      const jwtRes = await fetch(`${AYRSHARE_API_URL}/profiles/generateJWT`, {
-        method: "POST",
-        headers: getAyrshareHeaders(),
-        body: JSON.stringify({
-          domain,
-          privateKey: privateKey.replace(/\\n/g, "\n"),
-          profileKey,
-          redirect: `https://pawtraitpros.com/settings?instagram=connected`,
-          allowedSocial: ["instagram"]
-        })
-      });
-      const jwtData = await jwtRes.json();
-      if (jwtData.url) {
-        console.log(`[instagram] Redirecting org ${orgId} to Ayrshare Social Connect`);
-        return res.redirect(jwtData.url);
-      } else {
-        console.error("[instagram] JWT generation failed:", jwtData);
-        return res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(jwtData.message || "jwt_failed"));
-      }
-    } catch (error) {
-      console.error("[instagram] Connect error:", error);
-      res.redirect("/settings?instagram=error&detail=connect_failed");
-    }
-  });
-  app2.post("/api/instagram/post", isAuthenticated, async (req, res) => {
-    const apiKey = process.env.AYRSHARE_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Instagram integration not configured" });
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const { dogId, caption, image, orgId: bodyOrgId } = req.body;
-      let imageToUpload;
-      let fileName;
-      let description;
-      let org;
-      let defaultCaption;
-      if (image && bodyOrgId) {
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-        if (!org) return res.status(404).json({ error: "Organization not found" });
-        if (!isAdmin2) {
-          const userOrg = await storage.getOrganizationByOwner(userId);
-          if (!userOrg || userOrg.id !== org.id) {
-            return res.status(403).json({ error: "You don't have access to this organization" });
-          }
-        }
-        imageToUpload = image;
-        fileName = `showcase-${org.id}-${Date.now()}.png`;
-        description = `Showcase from ${org.name}`;
-        defaultCaption = caption || `Check out the adorable pets at ${org.name}! #petportrait #pawtraitpros`;
-      } else if (dogId) {
-        const dog = await storage.getDog(parseInt(dogId));
-        if (!dog) return res.status(404).json({ error: "Dog not found" });
-        org = await storage.getOrganization(dog.organizationId);
-        if (!org) return res.status(404).json({ error: "Organization not found" });
-        if (!isAdmin2) {
-          const userOrg = await storage.getOrganizationByOwner(userId);
-          if (!userOrg || userOrg.id !== org.id) {
-            return res.status(403).json({ error: "You don't have access to this organization" });
-          }
-        }
-        const portrait = await storage.getSelectedPortraitByDog(dog.id);
-        if (!portrait || !portrait.generatedImageUrl) {
-          return res.status(400).json({ error: "No portrait found for this pet" });
-        }
-        imageToUpload = portrait.generatedImageUrl;
-        fileName = `portrait-${dog.id}-${Date.now()}.png`;
-        description = `Pawtrait of ${dog.name}`;
-        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-        const host = req.headers["x-forwarded-host"] || req.headers["host"] || "pawtraitpros.com";
-        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ""}View their full portrait at ${proto}://${host}/pawfile/${dog.id}
-
-#petportrait #pawtraitpros`;
-      } else {
-        return res.status(400).json({ error: "dogId or image+orgId is required" });
-      }
-      const result = await pool.query(
-        "SELECT ayrshare_profile_key FROM organizations WHERE id = $1",
-        [org.id]
-      );
-      const profileKey = result.rows[0]?.ayrshare_profile_key;
-      console.log(`[instagram] Uploading image for org ${org.id} to Ayrshare`);
-      const uploadRes = await fetch(`${AYRSHARE_API_URL}/media/upload`, {
-        method: "POST",
-        headers: getAyrshareHeaders(),
-        body: JSON.stringify({
-          file: imageToUpload,
-          fileName,
-          description
-        })
-      });
-      const uploadData = await uploadRes.json();
-      if (!uploadData.url) {
-        console.error("[instagram] Upload failed:", uploadData);
-        throw new Error(uploadData.message || "Failed to upload image");
-      }
-      console.log(`[instagram] Uploaded: ${uploadData.url}`);
-      const postRes = await fetch(`${AYRSHARE_API_URL}/post`, {
-        method: "POST",
-        headers: getAyrshareHeaders(profileKey),
-        body: JSON.stringify({
-          post: defaultCaption,
-          platforms: ["instagram"],
-          mediaUrls: [uploadData.url]
-        })
-      });
-      const postData = await postRes.json();
-      if (postData.status === "error") {
-        console.error("[instagram] Post failed:", postData);
-        throw new Error(postData.message || "Failed to post to Instagram");
-      }
-      const igPost = postData.postIds?.find((p) => p.platform === "instagram");
-      console.log(`[instagram] Posted to Instagram for org ${org.id} via Ayrshare`);
-      res.json({
-        success: true,
-        mediaId: igPost?.id || postData.id,
-        postUrl: igPost?.postUrl || null
-      });
-    } catch (error) {
-      console.error("[instagram] Post error:", error);
-      res.status(500).json({ error: "Failed to post to Instagram" });
-    }
-  });
-  app2.delete("/api/instagram/disconnect", isAuthenticated, async (req, res) => {
-    const apiKey = process.env.AYRSHARE_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Instagram integration not configured" });
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let org;
-      if (isAdmin2 && orgIdParam) {
-        org = await storage.getOrganization(orgIdParam);
-      } else {
-        org = await storage.getOrganizationByOwner(userId);
-      }
-      if (!org) return res.status(404).json({ error: "Organization not found" });
-      const result = await pool.query(
-        "SELECT ayrshare_profile_key FROM organizations WHERE id = $1",
-        [org.id]
-      );
-      const profileKey = result.rows[0]?.ayrshare_profile_key;
-      if (profileKey) {
-        await fetch(`${AYRSHARE_API_URL}/profiles/social`, {
-          method: "DELETE",
-          headers: getAyrshareHeaders(profileKey),
-          body: JSON.stringify({ platform: "instagram" })
-        });
-      }
-      await pool.query(
-        `UPDATE organizations SET instagram_username = NULL, instagram_user_id = NULL, instagram_access_token = NULL WHERE id = $1`,
-        [org.id]
-      );
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[instagram] Disconnect error:", error);
-      res.status(500).json({ error: "Failed to disconnect Instagram" });
-    }
-  });
-  app2.get("/api/admin/instagram-debug", isAuthenticated, async (req, res) => {
-    const email = req.user.claims.email;
-    if (email !== ADMIN_EMAIL) return res.status(403).json({ error: "Admin only" });
-    const apiKey = process.env.AYRSHARE_API_KEY;
-    if (!apiKey) return res.json({ error: "AYRSHARE_API_KEY not set" });
-    try {
-      const userRes = await fetch(`${AYRSHARE_API_URL}/user`, {
-        headers: { "Authorization": `Bearer ${apiKey}` }
-      });
-      const userData = await userRes.json();
-      const profilesRes = await fetch(`${AYRSHARE_API_URL}/profiles`, {
-        headers: { "Authorization": `Bearer ${apiKey}` }
-      });
-      const profilesData = await profilesRes.json();
-      res.json({
-        ayrshare_user: userData,
-        profiles: profilesData,
-        env: {
-          hasApiKey: !!apiKey,
-          hasDomain: !!process.env.AYRSHARE_DOMAIN,
-          hasPrivateKey: !!process.env.AYRSHARE_PRIVATE_KEY
-        }
-      });
-    } catch (e) {
-      res.json({ error: e.message });
-    }
-  });
-  app2.get("/api/public-image/:token", (req, res) => {
-    const entry = imageCache.get(req.params.token);
-    if (!entry || Date.now() > entry.expiresAt) {
-      imageCache.delete(req.params.token);
-      return res.status(404).json({ error: "Image not found or expired" });
-    }
-    res.set("Content-Type", entry.contentType);
-    res.set("Cache-Control", "public, max-age=600");
-    res.send(entry.data);
-  });
-  app2.get("/api/instagram-native/status", isAuthenticated, async (req, res) => {
-    try {
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      const org = await getOrgForUser(req, orgIdParam);
-      if (!org) return res.json({ connected: false });
-      const result = await pool.query(
-        "SELECT instagram_access_token, instagram_user_id, instagram_username, instagram_token_expires_at FROM organizations WHERE id = $1",
-        [org.id]
-      );
-      const row = result.rows[0];
-      if (!row?.instagram_access_token || !row?.instagram_user_id) {
-        return res.json({ connected: false });
-      }
-      if (row.instagram_token_expires_at && new Date(row.instagram_token_expires_at) < /* @__PURE__ */ new Date()) {
-        return res.json({ connected: false, reason: "token_expired" });
-      }
-      const expiresAt = row.instagram_token_expires_at ? new Date(row.instagram_token_expires_at) : null;
-      const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
-      if (expiresAt && expiresAt < sevenDaysFromNow && IG_APP_SECRET) {
-        try {
-          const refreshRes = await fetch(
-            `${GRAPH_API}/refresh_access_token?grant_type=ig_refresh_token&access_token=${row.instagram_access_token}`
-          );
-          const refreshData = await refreshRes.json();
-          if (refreshData.access_token) {
-            const newExpires = new Date(Date.now() + (refreshData.expires_in || 5184e3) * 1e3);
-            await pool.query(
-              "UPDATE organizations SET instagram_access_token = $1, instagram_token_expires_at = $2 WHERE id = $3",
-              [refreshData.access_token, newExpires.toISOString(), org.id]
-            );
-            console.log(`[instagram-native] Token refreshed for org ${org.id}`);
-          }
-        } catch (refreshErr) {
-          console.warn("[instagram-native] Token refresh failed:", refreshErr);
-        }
-      }
-      const verifyRes = await fetch(`${GRAPH_API_V}/me?fields=user_id,username&access_token=${row.instagram_access_token}`);
-      const verifyData = await verifyRes.json();
-      if (verifyData.error) {
-        console.warn("[instagram-native] Token invalid:", verifyData.error.message);
-        return res.json({ connected: false, reason: "token_invalid" });
-      }
-      if (verifyData.username && verifyData.username !== row.instagram_username) {
-        await pool.query("UPDATE organizations SET instagram_username = $1 WHERE id = $2", [verifyData.username, org.id]);
-      }
-      res.json({ connected: true, username: verifyData.username || row.instagram_username, orgId: org.id });
-    } catch (error) {
-      console.error("[instagram-native] Status error:", error);
-      res.json({ connected: false });
-    }
-  });
-  app2.get("/api/instagram-native/connect", isAuthenticated, async (req, res) => {
-    if (!IG_APP_ID || !IG_APP_SECRET) {
-      return res.redirect("/settings?instagram=error&detail=missing_instagram_config");
-    }
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      let orgId = null;
-      if (isAdmin2 && orgIdParam) {
-        orgId = orgIdParam;
-      } else {
-        const org = await storage.getOrganizationByOwner(userId);
-        if (org) orgId = org.id;
-      }
-      if (!orgId) return res.redirect("/settings?instagram=error&detail=no_organization");
-      const statePayload = JSON.stringify({ orgId, ts: Date.now() });
-      const stateHmac = import_crypto3.default.createHmac("sha256", IG_APP_SECRET).update(statePayload).digest("hex");
-      const state = Buffer.from(JSON.stringify({ p: statePayload, s: stateHmac })).toString("base64url");
-      const redirectUri = `${process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000"}/api/instagram-native/callback`;
-      const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${IG_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_business_basic,instagram_business_content_publish&response_type=code&state=${state}`;
-      console.log(`[instagram-native] Redirecting org ${orgId} to Facebook OAuth`);
-      res.redirect(authUrl);
-    } catch (error) {
-      console.error("[instagram-native] Connect error:", error);
-      res.redirect("/settings?instagram=error&detail=connect_failed");
-    }
-  });
-  app2.get("/api/instagram-native/callback", async (req, res) => {
-    const { code, state, error: oauthError } = req.query;
-    if (oauthError) {
-      console.error("[instagram-native] OAuth denied:", oauthError);
-      return res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(oauthError));
-    }
-    if (!code || !state) {
-      return res.redirect("/settings?instagram=error&detail=missing_code_or_state");
-    }
-    try {
-      const stateOuter = JSON.parse(Buffer.from(state, "base64url").toString());
-      const expectedHmac = import_crypto3.default.createHmac("sha256", IG_APP_SECRET).update(stateOuter.p).digest("hex");
-      if (!import_crypto3.default.timingSafeEqual(Buffer.from(stateOuter.s, "hex"), Buffer.from(expectedHmac, "hex"))) {
-        return res.redirect("/settings?instagram=error&detail=invalid_state");
-      }
-      const stateData = JSON.parse(stateOuter.p);
-      const orgId = stateData.orgId;
-      if (!orgId) throw new Error("No orgId in state");
-      const redirectUri = `${process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000"}/api/instagram-native/callback`;
-      const cleanCode = code.replace(/#_$/, "");
-      console.log(`[instagram-native] Token exchange: client_id=${IG_APP_ID}, redirect_uri=${redirectUri}, code_length=${cleanCode.length}`);
-      const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: IG_APP_ID,
-          client_secret: IG_APP_SECRET,
-          grant_type: "authorization_code",
-          redirect_uri: redirectUri,
-          code: cleanCode
-        }).toString()
-      });
-      const tokenData = await tokenRes.json();
-      if (tokenData.error_type || tokenData.error) {
-        console.error("[instagram-native] Token exchange error:", JSON.stringify(tokenData));
-        console.error("[instagram-native] Used redirect_uri:", redirectUri);
-        console.error("[instagram-native] Used client_id:", IG_APP_ID);
-        throw new Error(tokenData.error_message || tokenData.error?.message || "Token exchange failed");
-      }
-      const shortLivedToken = tokenData.access_token;
-      const longTokenRes = await fetch(
-        `${GRAPH_API}/access_token?grant_type=ig_exchange_token&client_secret=${IG_APP_SECRET}&access_token=${shortLivedToken}`
-      );
-      const longTokenData = await longTokenRes.json();
-      if (longTokenData.error) {
-        console.error("[instagram-native] Long-lived token error:", longTokenData.error);
-        throw new Error(longTokenData.error.message || "Long-lived token exchange failed");
-      }
-      const longLivedToken = longTokenData.access_token;
-      const expiresIn = longTokenData.expires_in || 5184e3;
-      const igProfileRes = await fetch(`${GRAPH_API_V}/me?fields=user_id,username&access_token=${longLivedToken}`);
-      const igProfileData = await igProfileRes.json();
-      const igUserId = igProfileData.id;
-      const igUsername = igProfileData.username || null;
-      console.log(`[instagram-native] Profile: id=${igUserId}, username=${igUsername}`);
-      const expiresAt = new Date(Date.now() + expiresIn * 1e3);
-      await pool.query(
-        `UPDATE organizations SET
-          instagram_access_token = $1,
-          instagram_user_id = $2,
-          instagram_username = $3,
-          instagram_page_id = $4,
-          instagram_token_expires_at = $5
-        WHERE id = $6`,
-        [longLivedToken, igUserId, igUsername, null, expiresAt.toISOString(), orgId]
-      );
-      console.log(`[instagram-native] Connected org ${orgId}: @${igUsername} (IG ID: ${igUserId})`);
-      res.redirect("/settings?instagram=connected");
-    } catch (error) {
-      console.error("[instagram-native] Callback error:", error);
-      res.redirect("/settings?instagram=error&detail=callback_failed");
-    }
-  });
-  app2.post("/api/instagram-native/post", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const email = req.user.claims.email;
-      const isAdmin2 = email === ADMIN_EMAIL;
-      const { dogId, caption, image, orgId: bodyOrgId } = req.body;
-      let imageToPost;
-      let org;
-      let defaultCaption;
-      if (image && bodyOrgId) {
-        org = await storage.getOrganization(parseInt(bodyOrgId));
-        if (!org) return res.status(404).json({ error: "Organization not found" });
-        if (!isAdmin2) {
-          const userOrg = await storage.getOrganizationByOwner(userId);
-          if (!userOrg || userOrg.id !== org.id) {
-            return res.status(403).json({ error: "You don't have access to this organization" });
-          }
-        }
-        imageToPost = image;
-        defaultCaption = caption || `Check out the adorable pets at ${org.name}! #petportrait #pawtraitpros`;
-      } else if (dogId) {
-        const dog = await storage.getDog(parseInt(dogId));
-        if (!dog) return res.status(404).json({ error: "Dog not found" });
-        org = await storage.getOrganization(dog.organizationId);
-        if (!org) return res.status(404).json({ error: "Organization not found" });
-        if (!isAdmin2) {
-          const userOrg = await storage.getOrganizationByOwner(userId);
-          if (!userOrg || userOrg.id !== org.id) {
-            return res.status(403).json({ error: "You don't have access to this organization" });
-          }
-        }
-        const portrait = await storage.getSelectedPortraitByDog(dog.id);
-        if (!portrait || !portrait.generatedImageUrl) {
-          return res.status(400).json({ error: "No portrait found for this pet" });
-        }
-        imageToPost = portrait.generatedImageUrl;
-        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-        const host = req.headers["x-forwarded-host"] || req.headers["host"] || "pawtraitpros.com";
-        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ""}View their full portrait at ${proto}://${host}/pawfile/${dog.id}
-
-#petportrait #pawtraitpros`;
-      } else {
-        return res.status(400).json({ error: "dogId or image+orgId is required" });
-      }
-      const result = await pool.query(
-        "SELECT instagram_access_token, instagram_user_id FROM organizations WHERE id = $1",
-        [org.id]
-      );
-      const token = result.rows[0]?.instagram_access_token;
-      const igUserId = result.rows[0]?.instagram_user_id;
-      if (!token || !igUserId) {
-        return res.status(400).json({ error: "Instagram not connected. Please connect Instagram first." });
-      }
-      const imageUrl = storePublicImage(imageToPost);
-      console.log(`[instagram-native] Posting for org ${org.id}, image URL: ${imageUrl}`);
-      console.log(`[instagram-native] Creating container: user=${igUserId}, image_url=${imageUrl}`);
-      const containerRes = await fetch(`${GRAPH_API_V}/${igUserId}/media`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_url: imageUrl,
-          caption: defaultCaption,
-          access_token: token
-        })
-      });
-      const containerText = await containerRes.text();
-      console.log(`[instagram-native] Container response (${containerRes.status}): ${containerText}`);
-      const containerData = JSON.parse(containerText);
-      if (containerData.error) {
-        console.error("[instagram-native] Container creation error:", JSON.stringify(containerData.error));
-        throw new Error(containerData.error.message || "Failed to create media container");
-      }
-      const containerId = containerData.id;
-      console.log(`[instagram-native] Container created: ${containerId}`);
-      let ready = false;
-      for (let i = 0; i < 15; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 2e3));
-        const statusRes = await fetch(
-          `${GRAPH_API_V}/${containerId}?fields=status_code&access_token=${token}`
-        );
-        const statusData = await statusRes.json();
-        if (statusData.status_code === "FINISHED") {
-          ready = true;
-          break;
-        }
-        if (statusData.status_code === "ERROR") {
-          throw new Error("Instagram rejected the image. It may be too large or in an unsupported format.");
-        }
-      }
-      if (!ready) {
-        throw new Error("Image processing timed out. Please try again.");
-      }
-      console.log(`[instagram-native] Publishing container ${containerId} for user ${igUserId}`);
-      const publishRes = await fetch(`${GRAPH_API_V}/${igUserId}/media_publish`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          creation_id: containerId,
-          access_token: token
-        })
-      });
-      const publishText = await publishRes.text();
-      console.log(`[instagram-native] Publish response (${publishRes.status}): ${publishText}`);
-      const publishData = JSON.parse(publishText);
-      if (publishData.error) {
-        console.error("[instagram-native] Publish error:", JSON.stringify(publishData.error));
-        throw new Error(publishData.error.message || "Failed to publish to Instagram");
-      }
-      console.log(`[instagram-native] Published to Instagram: ${publishData.id}`);
-      const tokenFromUrl = imageUrl.split("/").pop();
-      if (tokenFromUrl) imageCache.delete(tokenFromUrl);
-      res.json({
-        success: true,
-        mediaId: publishData.id,
-        postUrl: null
-        // Graph API doesn't return permalink directly
-      });
-    } catch (error) {
-      console.error("[instagram-native] Post error:", error);
-      res.status(500).json({ error: "Failed to post to Instagram" });
-    }
-  });
-  app2.delete("/api/instagram-native/disconnect", isAuthenticated, async (req, res) => {
-    try {
-      const orgIdParam = req.query.orgId ? parseInt(req.query.orgId) : null;
-      const org = await getOrgForUser(req, orgIdParam);
-      if (!org) return res.status(404).json({ error: "Organization not found" });
-      await pool.query(
-        `UPDATE organizations SET
-          instagram_access_token = NULL,
-          instagram_user_id = NULL,
-          instagram_username = NULL,
-          instagram_page_id = NULL,
-          instagram_token_expires_at = NULL
-        WHERE id = $1`,
-        [org.id]
-      );
-      console.log(`[instagram-native] Disconnected org ${org.id}`);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[instagram-native] Disconnect error:", error);
-      res.status(500).json({ error: "Failed to disconnect Instagram" });
-    }
-  });
-  app2.post("/api/instagram-native/data-deletion", async (req, res) => {
-    try {
-      const { signed_request } = req.body;
-      if (!signed_request || !IG_APP_SECRET) {
-        return res.status(400).json({ error: "Invalid request" });
-      }
-      const data = verifyMetaSignedRequest(signed_request);
-      if (!data) {
-        return res.status(403).json({ error: "Invalid signature" });
-      }
-      const fbUserId = data.user_id;
-      if (fbUserId) {
-        await pool.query(
-          `UPDATE organizations SET
-            instagram_access_token = NULL,
-            instagram_user_id = NULL,
-            instagram_username = NULL,
-            instagram_page_id = NULL,
-            instagram_token_expires_at = NULL
-          WHERE instagram_user_id = $1`,
-          [String(fbUserId)]
-        );
-        console.log(`[instagram-native] Data deletion processed for FB user ${fbUserId}`);
-      }
-      const confirmationCode = import_crypto3.default.randomUUID();
-      res.json({
-        url: `https://pawtraitpros.com/privacy`,
-        confirmation_code: confirmationCode
-      });
-    } catch (error) {
-      console.error("[instagram-native] Data deletion error:", error);
-      res.status(500).json({ error: "Failed to process data deletion" });
-    }
-  });
-  app2.post("/api/instagram-native/deauthorize", async (req, res) => {
-    try {
-      const { signed_request } = req.body;
-      if (!signed_request) {
-        return res.status(400).json({ error: "Invalid request" });
-      }
-      const data = verifyMetaSignedRequest(signed_request);
-      if (!data) {
-        return res.status(403).json({ error: "Invalid signature" });
-      }
-      const fbUserId = data.user_id;
-      if (fbUserId) {
-        await pool.query(
-          `UPDATE organizations SET
-            instagram_access_token = NULL,
-            instagram_user_id = NULL,
-            instagram_username = NULL,
-            instagram_page_id = NULL,
-            instagram_token_expires_at = NULL
-          WHERE instagram_user_id = $1`,
-          [String(fbUserId)]
-        );
-        console.log(`[instagram-native] Deauthorized FB user ${fbUserId}`);
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error("[instagram-native] Deauthorize error:", error);
-      res.status(500).json({ error: "Failed to process deauthorization" });
-    }
-  });
-}
-
-// server/routes/gdpr.ts
-init_storage();
-init_db();
-init_helpers();
-function registerGdprRoutes(app2) {
-  app2.get("/api/my-data/export", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email;
-      const user = await storage.getUser(userId);
-      const org = await storage.getOrganizationByOwner(userId);
-      let dogs2 = [];
-      let portraits2 = [];
-      if (org) {
-        dogs2 = await storage.getDogsByOrganization(org.id);
-        for (const dog of dogs2) {
-          const dogPortraits = await storage.getPortraitsByDog(dog.id);
-          portraits2.push(...dogPortraits.map((p) => ({
-            dogName: dog.name,
-            style: p.styleId,
-            createdAt: p.createdAt
-          })));
-        }
-      }
-      const exportData = {
-        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        user: {
-          id: user?.id,
-          email: user?.email,
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          createdAt: user?.createdAt
-        },
-        organization: org ? {
-          name: org.name,
-          slug: org.slug,
-          description: org.description,
-          websiteUrl: org.websiteUrl,
-          phone: org.phone,
-          address: org.address,
-          createdAt: org.createdAt
-        } : null,
-        pets: dogs2.map((d) => ({
-          name: d.name,
-          breed: d.breed,
-          species: d.species,
-          age: d.age,
-          gender: d.gender,
-          description: d.description,
-          ownerName: d.ownerName,
-          ownerEmail: d.ownerEmail,
-          ownerPhone: d.ownerPhone,
-          createdAt: d.createdAt
-        })),
-        portraits: portraits2
-      };
-      res.set("Content-Disposition", 'attachment; filename="my-data-export.json"');
-      res.set("Content-Type", "application/json");
-      res.json(exportData);
-    } catch (error) {
-      console.error("Data export error:", error);
-      res.status(500).json({ error: "Failed to export data" });
-    }
-  });
-  app2.delete("/api/my-account", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email;
-      if (userEmail === ADMIN_EMAIL) {
-        return res.status(403).json({ error: "Admin account cannot be self-deleted" });
-      }
-      const org = await storage.getOrganizationByOwner(userId);
-      if (org) {
-        const dogs2 = await storage.getDogsByOrganization(org.id);
-        for (const dog of dogs2) {
-          await storage.deleteDog(dog.id);
-        }
-        await storage.deleteOrganization(org.id);
-      }
-      await pool.query("DELETE FROM users WHERE id = $1", [userId]);
-      const supabaseUrl2 = process.env.SUPABASE_URL;
-      const supabaseServiceKey2 = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (supabaseUrl2 && supabaseServiceKey2) {
-        await fetch(`${supabaseUrl2}/auth/v1/admin/users/${userId}`, {
-          method: "DELETE",
-          headers: {
-            "Authorization": `Bearer ${supabaseServiceKey2}`,
-            "apikey": supabaseServiceKey2
-          }
-        });
-      }
-      console.log(`[gdpr] Account deleted: ${userEmail} (${userId})`);
-      res.json({ success: true, message: "Your account and all associated data have been permanently deleted." });
-    } catch (error) {
-      console.error("Account deletion error:", error);
-      res.status(500).json({ error: "Failed to delete account" });
-    }
-  });
-}
-
-// server/routes/jobs.ts
-function registerJobRoutes(app2) {
-  app2.get("/api/jobs/:jobId", isAuthenticated, (req, res) => {
-    const job = getJob(req.params.jobId);
-    if (!job) return res.status(404).json({ error: "Job not found" });
-    res.json(job);
-  });
-  app2.get("/api/jobs", isAuthenticated, (req, res) => {
-    const ids = (req.query.ids || "").split(",").filter(Boolean);
-    if (ids.length === 0) return res.status(400).json({ error: "Provide ?ids=id1,id2,..." });
-    if (ids.length > 50) return res.status(400).json({ error: "Max 50 job IDs per request" });
-    const results = getJobs(ids).map((j, i) => j || { id: ids[i], status: "not_found" });
-    res.json(results);
-  });
-}
-
-// server/routes.ts
-async function registerRoutes(httpServer2, app2) {
-  registerAuthRoutes(app2);
-  (async () => {
-    try {
-      await runStartupHealthCheck();
-    } catch (err) {
-      console.error("[startup] Health check failed:", err);
-    }
-  })();
-  app2.use("/api/", apiRateLimiter);
-  registerOrganizationRoutes(app2);
-  registerPlansBillingRoutes(app2);
-  registerPackRoutes(app2);
-  registerDogRoutes(app2);
-  registerPortraitRoutes(app2);
-  registerBatchRoutes(app2);
-  registerMerchRoutes(app2);
-  registerCustomerSessionRoutes(app2);
-  registerAdminRoutes(app2);
-  registerSmsRoutes(app2);
-  registerInstagramRoutes(app2);
-  registerGdprRoutes(app2);
-  registerJobRoutes(app2);
-  return httpServer2;
-}
-
-// server/static.ts
-var import_express = __toESM(require("express"), 1);
-var import_fs = __toESM(require("fs"), 1);
-var import_path = __toESM(require("path"), 1);
-function serveStatic(app2) {
-  const distPath = import_path.default.resolve(__dirname, "public");
-  if (!import_fs.default.existsSync(distPath)) {
-    throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
-    );
-  }
-  app2.use(import_express.default.static(distPath));
-  app2.use("/{*path}", (_req, res) => {
-    res.sendFile(import_path.default.resolve(distPath, "index.html"));
-  });
-}
-
-// server/index.ts
-var import_http = require("http");
-
-// server/seed.ts
-init_db();
-init_schema();
 
 // client/src/lib/portrait-styles.ts
 var portraitStyles2 = [
@@ -9333,8 +6110,4236 @@ var portraitStyles2 = [
 var dogStyles = portraitStyles2.filter((s) => s.species === "dog");
 var catStyles = portraitStyles2.filter((s) => s.species === "cat");
 var styleCategories = Array.from(new Set(portraitStyles2.map((s) => s.category)));
+var stylePreviewImages = {
+  "Renaissance Noble": "/images/styles/renaissance-noble.jpg",
+  "Baroque Aristocrat": "/images/styles/baroque-aristocrat.jpg",
+  "Victorian Gentleman": "/images/styles/victorian-gentleman.jpg",
+  "Royal Monarch": "/images/styles/royal-monarch.jpg",
+  "Bandana Portrait": "/images/styles/adopt-me-bandana.jpg",
+  "Art Nouveau Beauty": "/images/styles/art-nouveau.jpg",
+  "Impressionist Garden": "/images/styles/impressionist-garden.jpg",
+  "Steampunk Explorer": "/images/styles/steampunk-explorer.jpg",
+  "Tutu Princess": "/images/styles/tutu-princess.jpg",
+  "Cozy Pajamas": "/images/styles/cozy-pajamas.jpg",
+  "Space Explorer": "/images/styles/space-explorer.jpg",
+  "Halloween Pumpkin": "/images/styles/halloween-pumpkin.jpg",
+  "Birthday Party": "/images/styles/birthday-party.jpg",
+  "Pirate Captain": "/images/styles/pirate-captain.jpg",
+  "Cowboy Sheriff": "/images/styles/cowboy-sheriff.jpg",
+  "Superhero": "/images/styles/superhero.jpg",
+  "Country Cowboy": "/images/styles/country-cowboy.jpg",
+  "Garden Party": "/images/styles/garden-party.jpg",
+  "Beach Day": "/images/styles/beach-day.jpg",
+  "Mountain Explorer": "/images/styles/mountain-explorer.jpg",
+  "Cozy Cabin": "/images/styles/cozy-cabin.jpg",
+  "Autumn Leaves": "/images/styles/autumn-leaves.jpg",
+  "Picnic Buddy": "/images/styles/picnic-buddy.jpg",
+  "Spring Flower Crown": "/images/styles/flower-crown.jpg",
+  "Holiday Spirit": "/images/styles/holiday-spirit.jpg",
+  "Vintage Classic": "/images/styles/vintage-classic.jpg",
+  "Egyptian Royalty": "/images/styles/egyptian-royalty.jpg",
+  "Renaissance Feline": "/images/styles/renaissance-feline.jpg",
+  "Victorian Lady": "/images/styles/victorian-lady.jpg",
+  "Sunbeam Napper": "/images/styles/sunbeam-napper.jpg",
+  "Space Cadet": "/images/styles/space-cadet.jpg",
+  "Purrista Barista": "/images/styles/purrista-barista.jpg",
+  "Midnight Prowler": "/images/styles/midnight-prowler.jpg",
+  "Bookshelf Scholar": "/images/styles/bookshelf-scholar.jpg",
+  "Garden Explorer": "/images/styles/garden-explorer.jpg",
+  "Bow Tie Portrait": "/images/styles/adopt-me-bow-tie.jpg",
+  "Cozy Blanket": "/images/styles/cozy-blanket.jpg",
+  "Halloween Black Cat": "/images/styles/halloween-black-cat.jpg",
+  "Holiday Stocking": "/images/styles/holiday-stocking.jpg",
+  "Spring Blossoms": "/images/styles/spring-blossoms.jpg",
+  "Box Inspector": "/images/styles/box-inspector.jpg",
+  "Tea Party Guest": "/images/styles/tea-party-guest.jpg",
+  "Yoga Instructor": "/images/styles/yoga-instructor.jpg",
+  "Taco Tuesday Chef": "/images/styles/taco-tuesday-chef.jpg",
+  "Pool Party": "/images/styles/pool-party.jpg?v=2",
+  "Campfire": "/images/styles/campfire.jpg?v=2",
+  "Sleepover Party": "/images/styles/sleepover-party.jpg?v=2",
+  "Pool Lounge": "/images/styles/pool-lounge.jpg?v=2",
+  "Starlight Camp": "/images/styles/starlight-camp.jpg?v=2",
+  "Blanket Fort": "/images/styles/blanket-fort.jpg?v=2"
+};
+
+// server/routes/portraits.ts
+import_sharp2.default.cache(false);
+var MAX_STYLES_PER_PET = 5;
+var styleImageUrlCache = /* @__PURE__ */ new Map();
+async function getStyleReferenceUrl(previewImagePath) {
+  const cleanPath = previewImagePath.split("?")[0];
+  if (styleImageUrlCache.has(cleanPath)) return styleImageUrlCache.get(cleanPath);
+  const appUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL;
+  if (appUrl) {
+    const publicUrl = `${appUrl.replace(/\/$/, "")}${cleanPath}`;
+    console.log(`[fal] Using public style URL: ${publicUrl}`);
+    styleImageUrlCache.set(cleanPath, publicUrl);
+    return publicUrl;
+  }
+  const possiblePaths = [
+    path.join(process.cwd(), "dist/public", cleanPath),
+    path.join(process.cwd(), "client/public", cleanPath)
+  ];
+  let fileBuffer = null;
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        fileBuffer = fs.readFileSync(p);
+        break;
+      }
+    } catch {
+    }
+  }
+  if (!fileBuffer) {
+    console.error(`[fal] Style image not found on disk: ${cleanPath}`);
+    return null;
+  }
+  const ext = path.extname(cleanPath).slice(1);
+  const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+  const dataUri = `data:${mimeType};base64,${fileBuffer.toString("base64")}`;
+  const filename = `style-refs/${path.basename(cleanPath)}`;
+  try {
+    const url = await uploadToStorage(dataUri, "portraits", filename);
+    styleImageUrlCache.set(cleanPath, url);
+    console.log(`[fal] Cached style reference: ${cleanPath} \u2192 ${url}`);
+    return url;
+  } catch (err) {
+    console.error(`[fal] Failed to upload style reference ${cleanPath}:`, err);
+    return null;
+  }
+}
+function registerPortraitRoutes(app2) {
+  registerWorker(async (job) => {
+    const p = job.payload;
+    if (job.type === "generate") {
+      const falOpts = p.dogImageUrl && p.falStyleImageUrl && p.falStyleName ? { dogImageUrl: p.dogImageUrl, styleImageUrl: p.falStyleImageUrl, styleName: p.falStyleName } : void 0;
+      const generatedImageRaw = await generateImage(p.prompt, p.originalImage || void 0, falOpts);
+      let generatedImage = generatedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImage = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Portrait upload failed, using base64 fallback:", err);
+      }
+      let portraitRecord = p.existingPortrait ? { ...p.existingPortrait } : null;
+      if (p.dogId && p.styleId) {
+        if (p.existingPortrait) {
+          await storage.updatePortrait(p.existingPortrait.id, {
+            previousImageUrl: p.existingPortrait.generatedImageUrl || null,
+            generatedImageUrl: generatedImage
+          });
+          await storage.incrementPortraitEditCount(p.existingPortrait.id);
+          await storage.selectPortraitForGallery(p.dogId, p.existingPortrait.id);
+          portraitRecord = {
+            ...p.existingPortrait,
+            editCount: p.existingPortrait.editCount + 1,
+            generatedImageUrl: generatedImage,
+            previousImageUrl: p.existingPortrait.generatedImageUrl || null
+          };
+        } else {
+          portraitRecord = await storage.createPortrait({
+            dogId: p.dogId,
+            styleId: p.styleId,
+            generatedImageUrl: generatedImage
+          });
+          await storage.selectPortraitForGallery(p.dogId, portraitRecord.id);
+          await storage.incrementOrgPortraitsUsed(p.orgId);
+        }
+      }
+      return {
+        generatedImage,
+        dogName: p.dogName,
+        portraitId: portraitRecord?.id,
+        editCount: portraitRecord ? portraitRecord.editCount : null,
+        maxEdits: MAX_EDITS_PER_IMAGE,
+        isNewPortrait: p.isNewPortrait,
+        hasPreviousImage: !!portraitRecord?.previousImageUrl
+      };
+    }
+    if (job.type === "edit") {
+      const editedImageRaw = await editImage(p.imageForEdit, p.editPrompt);
+      let editedImage = editedImageRaw;
+      try {
+        const fname = `portrait-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        editedImage = await uploadToStorage(editedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Edited portrait upload failed, using base64 fallback:", err);
+      }
+      let editCount = null;
+      if (p.portraitId) {
+        const existing = await storage.getPortrait(p.portraitId);
+        await storage.updatePortrait(p.portraitId, {
+          previousImageUrl: existing?.generatedImageUrl || null,
+          generatedImageUrl: editedImage
+        });
+        await storage.incrementPortraitEditCount(p.portraitId);
+        const updated = await storage.getPortrait(p.portraitId);
+        editCount = updated?.editCount ?? null;
+      }
+      return {
+        editedImage,
+        editCount,
+        maxEdits: MAX_EDITS_PER_IMAGE,
+        hasPreviousImage: true
+      };
+    }
+    if (job.type === "batch") {
+      const batchFalOpts = p.dogImageUrl && p.falStyleImageUrl && p.falStyleName ? { dogImageUrl: p.dogImageUrl, styleImageUrl: p.falStyleImageUrl, styleName: p.falStyleName } : void 0;
+      let generatedImageUrl = await generateImage(p.prompt, p.originalPhotoUrl, batchFalOpts);
+      try {
+        const fname = `portrait-${p.dogId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageUrl, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Batch portrait upload failed, using base64 fallback:", err);
+      }
+      const portrait = await storage.createPortrait({
+        dogId: p.dogId,
+        styleId: p.styleId,
+        generatedImageUrl,
+        isSelected: true
+      });
+      await storage.incrementOrgPortraitsUsed(p.orgId);
+      if (p.needsPetCode) {
+        const petCode = generatePetCode(p.dogName);
+        await storage.updateDog(p.dogId, { petCode });
+      }
+      return {
+        dogId: p.dogId,
+        success: true,
+        portraitId: portrait.id,
+        generatedImageUrl
+      };
+    }
+    if (job.type === "group") {
+      const generatedImageRaw = await generateGroupPortrait(p.prompt, p.sourceImages);
+      let generatedImageUrl = generatedImageRaw;
+      try {
+        const fname = `group-portrait-${p.groupId}-${Date.now()}.png`;
+        generatedImageUrl = await uploadToStorage(generatedImageRaw, "portraits", fname);
+      } catch (err) {
+        console.error("[storage-upload] Group portrait upload failed, using base64 fallback:", err);
+      }
+      const portraitIds = [];
+      for (const dogId of p.dogIds) {
+        const portrait = await storage.createPortrait({
+          dogId,
+          styleId: p.styleId,
+          generatedImageUrl,
+          groupId: p.groupId,
+          isSelected: false
+        });
+        portraitIds.push(portrait.id);
+        await storage.selectPortraitForGallery(dogId, portrait.id);
+        await storage.incrementOrgPortraitsUsed(p.orgId);
+      }
+      return {
+        generatedImageUrl,
+        groupId: p.groupId,
+        portraitIds,
+        dogIds: p.dogIds,
+        creditsUsed: p.dogIds.length
+      };
+    }
+    throw new Error(`Unknown job type: ${job.type}`);
+  });
+  app2.get("/api/portraits/:id/image", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const portrait = await storage.getPortrait(id);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).send("Image not found");
+      }
+      const dataUri = portrait.generatedImageUrl;
+      if (!dataUri.startsWith("data:")) {
+        return res.redirect(dataUri);
+      }
+      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).send("Invalid image data");
+      }
+      const contentType = matches[1];
+      const imageBuffer = Buffer.from(matches[2], "base64");
+      res.set({
+        "Content-Type": contentType,
+        "Content-Length": imageBuffer.length.toString(),
+        "Cache-Control": "public, max-age=86400"
+      });
+      res.send(imageBuffer);
+    } catch (error) {
+      console.error("Error serving portrait image:", error);
+      res.status(500).send("Error loading image");
+    }
+  });
+  app2.get("/api/portraits/:id/download", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const portrait = await storage.getPortrait(id);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).send("Image not found");
+      }
+      const portraitBuffer = await fetchImageAsBuffer(portrait.generatedImageUrl);
+      const dog = await storage.getDog(portrait.dogId);
+      if (!dog) {
+        res.set({ "Content-Type": "image/png", "Content-Disposition": "attachment; filename=portrait.png" });
+        return res.send(portraitBuffer);
+      }
+      const org = await storage.getOrganization(dog.organizationId);
+      if (!org || !org.logoUrl) {
+        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
+        return res.send(portraitBuffer);
+      }
+      let logoBuffer;
+      try {
+        logoBuffer = await fetchImageAsBuffer(org.logoUrl);
+      } catch {
+        res.set({ "Content-Type": "image/png", "Content-Disposition": `attachment; filename=${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png` });
+        return res.send(portraitBuffer);
+      }
+      const portraitMeta = await (0, import_sharp2.default)(portraitBuffer).metadata();
+      const pw = portraitMeta.width || 1024;
+      const ph = portraitMeta.height || 1024;
+      const logoSize = Math.max(48, Math.round(Math.min(pw, ph) * 0.08));
+      const margin = Math.round(logoSize * 0.4);
+      const resizedLogo = await (0, import_sharp2.default)(logoBuffer).resize(logoSize, logoSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).ensureAlpha().png().toBuffer();
+      const circleSize = logoSize + 8;
+      const circleSvg = Buffer.from(
+        `<svg width="${circleSize}" height="${circleSize}"><circle cx="${circleSize / 2}" cy="${circleSize / 2}" r="${circleSize / 2}" fill="rgba(255,255,255,0.6)"/></svg>`
+      );
+      const logoBadge = await (0, import_sharp2.default)(circleSvg).composite([{ input: resizedLogo, gravity: "center" }]).png().toBuffer();
+      const result = await (0, import_sharp2.default)(portraitBuffer).composite([{
+        input: logoBadge,
+        top: ph - circleSize - margin,
+        left: pw - circleSize - margin
+      }]).png().toBuffer();
+      const filename = `${dog.name.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`;
+      res.set({
+        "Content-Type": "image/png",
+        "Content-Length": result.length.toString(),
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "public, max-age=3600"
+      });
+      res.send(result);
+    } catch (error) {
+      console.error("Error serving watermarked portrait:", error);
+      res.status(500).send("Error loading image");
+    }
+  });
+  app2.get("/api/organizations/:id/logo", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const org = await storage.getOrganization(id);
+      if (!org || !org.logoUrl) {
+        return res.status(404).send("Logo not found");
+      }
+      const dataUri = org.logoUrl;
+      if (!dataUri.startsWith("data:")) {
+        return res.redirect(dataUri);
+      }
+      const matches = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).send("Invalid logo data");
+      }
+      const contentType = matches[1];
+      const imageBuffer = Buffer.from(matches[2], "base64");
+      res.set({
+        "Content-Type": contentType,
+        "Content-Length": imageBuffer.length.toString(),
+        "Cache-Control": "public, max-age=86400"
+      });
+      res.send(imageBuffer);
+    } catch (error) {
+      console.error("Error serving org logo:", error);
+      res.status(500).send("Error loading logo");
+    }
+  });
+  app2.get("/api/business/:slug/og-image", async (req, res) => {
+    try {
+      const slug = req.params.slug;
+      const org = await storage.getOrganizationBySlug(slug);
+      if (!org) {
+        res.status(404).send("Organization not found");
+        return;
+      }
+      const imageBuffer = await generateShowcaseMockup(org.id);
+      res.set({
+        "Content-Type": "image/png",
+        "Content-Length": imageBuffer.length.toString(),
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      });
+      res.send(imageBuffer);
+    } catch (error) {
+      console.error("Error generating business OG image:", error);
+      res.status(500).send("Error generating preview");
+    }
+  });
+  app2.get("/api/pawfile/:id/og-image", async (req, res) => {
+    try {
+      const dogId = parseInt(req.params.id);
+      if (isNaN(dogId)) {
+        res.status(400).send("Invalid ID");
+        return;
+      }
+      const imageBuffer = await generatePawfileMockup(dogId);
+      res.set({
+        "Content-Type": "image/png",
+        "Content-Length": imageBuffer.length.toString(),
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      });
+      res.send(imageBuffer);
+    } catch (error) {
+      console.error("Error generating pawfile OG image:", error);
+      res.status(500).send("Error generating preview");
+    }
+  });
+  app2.get("/api/dogs/:dogId/portraits", isAuthenticated, async (req, res) => {
+    try {
+      const dogId = parseInt(req.params.dogId);
+      if (isNaN(dogId)) {
+        return res.status(400).json({ error: "Invalid pet ID" });
+      }
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId });
+      if (!org) return res.status(status || 403).json({ error });
+      const dogPortraits = await storage.getPortraitsByDog(dogId);
+      res.json(dogPortraits);
+    } catch (error) {
+      console.error("Error fetching portraits:", error);
+      res.status(500).json({ error: "Failed to fetch portraits" });
+    }
+  });
+  app2.post("/api/generate-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { prompt, dogName, originalImage, dogId, styleId, organizationId } = req.body;
+      if (!prompt || typeof prompt !== "string") return res.status(400).json({ error: "Prompt is required" });
+      if (prompt.length > 2e3) {
+        return res.status(400).json({ error: "Invalid prompt. Maximum 2000 characters." });
+      }
+      if (dogName && (typeof dogName !== "string" || dogName.length > 100)) {
+        return res.status(400).json({ error: "Invalid dog name." });
+      }
+      if (originalImage && typeof originalImage === "string" && !originalImage.startsWith("data:image/") && !originalImage.startsWith("https://")) {
+        return res.status(400).json({ error: "Invalid image format." });
+      }
+      let dogImageUrl = null;
+      if (originalImage && !isDataUri(originalImage)) {
+        dogImageUrl = originalImage;
+      }
+      let resolvedImage = originalImage || null;
+      if (resolvedImage && !isDataUri(resolvedImage)) {
+        try {
+          const buf = await fetchImageAsBuffer(resolvedImage);
+          resolvedImage = `data:image/png;base64,${buf.toString("base64")}`;
+        } catch (err) {
+          console.error("[generate-portrait] Failed to fetch source image:", err);
+          return res.status(400).json({ error: "Could not load the source image. Please re-upload the photo." });
+        }
+      }
+      if (!dogImageUrl && resolvedImage && isDataUri(resolvedImage)) {
+        try {
+          const tempName = `fal-src-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+          dogImageUrl = await uploadToStorage(resolvedImage, "originals", tempName);
+        } catch (err) {
+          console.error("[generate-portrait] Failed to upload base64 for fal.ai:", err);
+        }
+      }
+      console.log(`[fal-debug] dogImageUrl=${dogImageUrl ? dogImageUrl.substring(0, 80) + "..." : "NULL"}, styleId=${styleId}, originalImage type=${originalImage ? isDataUri(originalImage) ? "base64" : "url" : "none"}`);
+      const sanitizedPrompt = sanitizeForPrompt(prompt);
+      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
+      const { org, error: orgError, status: orgStatus } = await resolveOrg(userId, userEmail, {
+        orgId: organizationId,
+        dogId: dogId ? parseInt(dogId) : void 0
+      });
+      if (!org) return res.status(orgStatus || 400).json({ error: orgError });
+      if (org.subscriptionStatus === "canceled") {
+        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan to generate portraits." });
+      }
+      if (isTrialExpired(org)) {
+        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade to a paid plan to continue." });
+      }
+      if (!org.planId) {
+        return res.status(403).json({ error: "No plan selected. Please choose a plan before generating portraits." });
+      }
+      if (!dogId) {
+        const limitError = await checkDogLimit(org.id);
+        if (limitError) {
+          return res.status(403).json({ error: limitError });
+        }
+      }
+      let existingPortrait = null;
+      let isNewPortrait = false;
+      if (dogId && styleId) {
+        const parsedDogId = parseInt(dogId);
+        const parsedStyleId = parseInt(styleId);
+        existingPortrait = await storage.getPortraitByDogAndStyle(parsedDogId, parsedStyleId);
+        if (existingPortrait) {
+          if (existingPortrait.editCount >= MAX_EDITS_PER_IMAGE) {
+            return res.status(403).json({
+              error: `You've used all ${MAX_EDITS_PER_IMAGE} edits for this style. Try a different style!`,
+              editCount: existingPortrait.editCount,
+              maxEdits: MAX_EDITS_PER_IMAGE
+            });
+          }
+        } else {
+          isNewPortrait = true;
+          const existingPortraits = await storage.getPortraitsByDog(parsedDogId);
+          const uniqueStyles = new Set(existingPortraits.map((p) => p.styleId));
+          if (uniqueStyles.size >= MAX_STYLES_PER_PET) {
+            return res.status(403).json({
+              error: `This pet already has ${MAX_STYLES_PER_PET} styles. Edit an existing style or remove one first.`,
+              stylesUsed: uniqueStyles.size,
+              maxStyles: MAX_STYLES_PER_PET
+            });
+          }
+          const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
+          if (plan && plan.monthlyPortraitCredits) {
+            const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
+            await storage.syncOrgCredits(org.id);
+            if (creditsUsed >= plan.monthlyPortraitCredits) {
+              if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
+                return res.status(403).json({
+                  error: `You've used all ${plan.monthlyPortraitCredits} monthly portrait credits. ${org.subscriptionStatus === "trial" ? "Upgrade to a paid plan for more credits." : "Credits reset at the start of your next billing cycle."}`,
+                  creditsUsed,
+                  creditsLimit: plan.monthlyPortraitCredits
+                });
+              }
+            }
+          }
+        }
+      }
+      let falStyleImageUrl = null;
+      let falStyleName = null;
+      if (styleId && dogImageUrl) {
+        try {
+          const style = await storage.getPortraitStyle(parseInt(styleId));
+          console.log(`[fal] Style lookup: id=${styleId}, found=${!!style}, name=${style?.name}`);
+          if (style) {
+            falStyleName = style.name;
+            const previewPath = stylePreviewImages[style.name] || style.previewImageUrl;
+            console.log(`[fal] Preview path for "${style.name}": ${previewPath || "NOT FOUND"}`);
+            if (previewPath) {
+              falStyleImageUrl = await getStyleReferenceUrl(previewPath);
+              console.log(`[fal] Style reference URL: ${falStyleImageUrl || "FAILED"}`);
+            }
+          }
+        } catch (err) {
+          console.error("[generate-portrait] Failed to resolve style for fal.ai:", err);
+        }
+      }
+      const jobId = enqueue("generate", {
+        prompt: sanitizedPrompt,
+        originalImage: resolvedImage,
+        dogImageUrl,
+        falStyleImageUrl,
+        falStyleName,
+        dogName: dogName ? sanitizeForPrompt(dogName) : dogName,
+        dogId: dogId ? parseInt(dogId) : null,
+        styleId: styleId ? parseInt(styleId) : null,
+        orgId: org.id,
+        existingPortrait: existingPortrait ? {
+          id: existingPortrait.id,
+          editCount: existingPortrait.editCount,
+          generatedImageUrl: existingPortrait.generatedImageUrl
+        } : null,
+        isNewPortrait
+      });
+      res.status(202).json({ jobId });
+    } catch (error) {
+      console.error("[generate-portrait]", error);
+      res.status(500).json({ error: "Failed to start portrait generation. Please try again." });
+    }
+  });
+  app2.post("/api/generate-group-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, styleId } = req.body;
+      if (!Array.isArray(dogIds) || dogIds.length < 2 || dogIds.length > 5) {
+        return res.status(400).json({ error: "Please select 2-5 pets for a group portrait." });
+      }
+      if (!styleId || typeof styleId !== "number") {
+        return res.status(400).json({ error: "Style is required." });
+      }
+      const dogs2 = await Promise.all(dogIds.map((id) => storage.getDog(id)));
+      const missingIdx = dogs2.findIndex((d) => !d);
+      if (missingIdx !== -1) {
+        return res.status(404).json({ error: `Pet not found (id: ${dogIds[missingIdx]}).` });
+      }
+      const orgId = dogs2[0].organizationId;
+      if (!dogs2.every((d) => d.organizationId === orgId)) {
+        return res.status(400).json({ error: "All pets must belong to the same organization." });
+      }
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, userEmail, { orgId });
+      if (!org) return res.status(orgSt || 403).json({ error: orgErr });
+      if (org.id !== orgId) return res.status(403).json({ error: "Not authorized for this organization." });
+      if (!org) return res.status(404).json({ error: "Organization not found." });
+      if (org.subscriptionStatus === "canceled") {
+        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
+      }
+      if (isTrialExpired(org)) {
+        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade." });
+      }
+      if (!org.planId) {
+        return res.status(403).json({ error: "No plan selected. Please choose a plan first." });
+      }
+      const firstDog = dogs2[0];
+      const ownerEmail = firstDog.ownerEmail?.trim().toLowerCase() || null;
+      const ownerPhone = firstDog.ownerPhone?.replace(/\D/g, "") || null;
+      if (!ownerEmail && !ownerPhone) {
+        return res.status(400).json({ error: "The first pet has no owner contact info. Please add an email or phone." });
+      }
+      for (let i = 1; i < dogs2.length; i++) {
+        const d = dogs2[i];
+        const dEmail = d.ownerEmail?.trim().toLowerCase() || null;
+        const dPhone = d.ownerPhone?.replace(/\D/g, "") || null;
+        const emailMatch = ownerEmail && dEmail && ownerEmail === dEmail;
+        const phoneMatch = ownerPhone && dPhone && ownerPhone === dPhone;
+        if (!emailMatch && !phoneMatch) {
+          return res.status(400).json({ error: `${d.name} doesn't share an owner with ${firstDog.name}.` });
+        }
+      }
+      const noPhoto = dogs2.find((d) => !d.originalPhotoUrl);
+      if (noPhoto) {
+        return res.status(400).json({ error: `${noPhoto.name} has no photo. Please add a photo first.` });
+      }
+      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      const notCheckedIn = dogs2.find((d) => d.checkedInAt !== today);
+      if (notCheckedIn) {
+        return res.status(400).json({ error: `${notCheckedIn.name} is not checked in today.` });
+      }
+      const plan = await storage.getSubscriptionPlan(org.planId);
+      if (plan && plan.monthlyPortraitCredits) {
+        const { creditsUsed } = await storage.getAccurateCreditsUsed(org.id);
+        const creditsNeeded = dogIds.length;
+        if (creditsUsed + creditsNeeded > plan.monthlyPortraitCredits) {
+          if (org.subscriptionStatus === "trial" || !plan.overagePriceCents) {
+            return res.status(403).json({
+              error: `Group portrait needs ${creditsNeeded} credits but you only have ${plan.monthlyPortraitCredits - creditsUsed} remaining.`,
+              creditsUsed,
+              creditsLimit: plan.monthlyPortraitCredits,
+              creditsNeeded
+            });
+          }
+        }
+      }
+      const style = await storage.getPortraitStyle(styleId);
+      if (!style) return res.status(404).json({ error: "Style not found." });
+      const petNames = dogs2.map((d) => d.name).join(" and ");
+      const petBreeds = dogs2.map((d) => d.breed || "mixed breed").join(" and ");
+      const species = dogs2[0].species || "dog";
+      let prompt = style.promptTemplate.replace(/\{name\}/gi, petNames).replace(/\{breed\}/gi, petBreeds).replace(/\{species\}/gi, species);
+      prompt += `
+
+This is a GROUP portrait of ${dogs2.length} ${species}s together. Each reference photo shows one ${species}.`;
+      const sanitizedPrompt = sanitizeForPrompt(prompt);
+      if (!sanitizedPrompt) return res.status(400).json({ error: "Prompt contains invalid characters." });
+      const sourceImages = [];
+      for (const dog of dogs2) {
+        let imgUrl = dog.originalPhotoUrl;
+        if (!isDataUri(imgUrl)) {
+          try {
+            const buf = await fetchImageAsBuffer(imgUrl);
+            imgUrl = `data:image/png;base64,${buf.toString("base64")}`;
+          } catch (err) {
+            console.error(`[group-portrait] Failed to fetch photo for ${dog.name}:`, err);
+            return res.status(400).json({ error: `Could not load photo for ${dog.name}. Please re-upload.` });
+          }
+        }
+        sourceImages.push(imgUrl);
+      }
+      const groupId = `grp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const jobId = enqueue("group", {
+        prompt: sanitizedPrompt,
+        sourceImages,
+        dogIds: dogIds.map(Number),
+        styleId,
+        orgId: org.id,
+        groupId
+      });
+      res.status(202).json({ jobId, groupId });
+    } catch (error) {
+      console.error("[generate-group-portrait]", error);
+      res.status(500).json({ error: "Failed to start group portrait generation. Please try again." });
+    }
+  });
+  app2.post("/api/edit-portrait", isAuthenticated, aiRateLimiter, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { currentImage, editPrompt, dogId, portraitId } = req.body;
+      if (!currentImage) return res.status(400).json({ error: "Current image is required" });
+      if (!editPrompt || typeof editPrompt !== "string") return res.status(400).json({ error: "Edit instructions are required" });
+      if (editPrompt.length > 500) return res.status(400).json({ error: "Edit instructions too long (max 500 characters)." });
+      const sanitizedEditPrompt = sanitizeForPrompt(editPrompt);
+      if (!sanitizedEditPrompt) return res.status(400).json({ error: "Edit instructions contain invalid characters." });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: dogId ? parseInt(dogId) : void 0 });
+      if (!org) return res.status(status || 400).json({ error });
+      if (org.subscriptionStatus === "canceled") {
+        return res.status(403).json({ error: "Your subscription has been canceled. Please choose a new plan." });
+      }
+      if (isTrialExpired(org)) {
+        return res.status(403).json({ error: "Your 30-day free trial has expired. Please upgrade to a paid plan to continue." });
+      }
+      if (portraitId) {
+        const portrait = await storage.getPortrait(parseInt(portraitId));
+        if (!portrait) return res.status(404).json({ error: "Portrait not found" });
+        const dog = await storage.getDog(portrait.dogId);
+        if (!dog || dog.organizationId !== org.id) {
+          return res.status(403).json({ error: "Not authorized to edit this portrait" });
+        }
+        if (portrait.editCount >= MAX_EDITS_PER_IMAGE) {
+          return res.status(403).json({
+            error: `You've used all ${MAX_EDITS_PER_IMAGE} edits for this portrait. Try a different style!`,
+            editCount: portrait.editCount,
+            maxEdits: MAX_EDITS_PER_IMAGE
+          });
+        }
+      }
+      let imageForEdit = currentImage;
+      if (!isDataUri(currentImage)) {
+        const buf = await fetchImageAsBuffer(currentImage);
+        imageForEdit = `data:image/png;base64,${buf.toString("base64")}`;
+      }
+      const jobId = enqueue("edit", {
+        imageForEdit,
+        editPrompt: sanitizedEditPrompt,
+        portraitId: portraitId ? parseInt(portraitId) : null
+      });
+      res.status(202).json({ jobId });
+    } catch (error) {
+      console.error("[edit-portrait]", error);
+      res.status(500).json({ error: "Failed to start portrait edit. Please try again." });
+    }
+  });
+  app2.post("/api/revert-portrait", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { portraitId } = req.body;
+      if (!portraitId) return res.status(400).json({ error: "Portrait ID is required" });
+      const portrait = await storage.getPortrait(parseInt(portraitId));
+      if (!portrait) return res.status(404).json({ error: "Portrait not found" });
+      if (!portrait.previousImageUrl) return res.status(400).json({ error: "No previous image to revert to" });
+      const { org, error, status } = await resolveOrg(userId, userEmail, { dogId: portrait.dogId });
+      if (!org) return res.status(status || 400).json({ error });
+      await storage.updatePortrait(portrait.id, {
+        generatedImageUrl: portrait.previousImageUrl,
+        previousImageUrl: null
+      });
+      res.json({
+        revertedImage: portrait.previousImageUrl,
+        portraitId: portrait.id,
+        editCount: portrait.editCount,
+        hasPreviousImage: false
+      });
+    } catch (error) {
+      console.error("[revert-portrait]", error);
+      res.status(500).json({ error: "Failed to revert portrait. Please try again." });
+    }
+  });
+}
+
+// server/routes/batch.ts
+init_storage();
+init_db();
+init_pack_config();
+init_helpers();
+function registerBatchRoutes(app2) {
+  app2.post("/api/generate-batch", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, packType, styleId, organizationId } = req.body;
+      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
+        return res.status(400).json({ error: "dogIds array is required" });
+      }
+      if (!packType || !["celebrate", "fun", "artistic"].includes(packType)) {
+        return res.status(400).json({ error: "Invalid packType" });
+      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
+      if (!org) return res.status(status || 404).json({ error });
+      const allStyles = await storage.getAllPortraitStyles();
+      const jobIds = [];
+      const errors = [];
+      for (const dogId of dogIds) {
+        const dog = await storage.getDog(dogId);
+        if (!dog || dog.organizationId !== org.id) {
+          errors.push({ dogId, error: "Dog not found or wrong org" });
+          continue;
+        }
+        if (!dog.originalPhotoUrl) {
+          errors.push({ dogId, error: "No photo uploaded" });
+          continue;
+        }
+        const petSpecies = dog.species || "dog";
+        const packs = getPacks(petSpecies);
+        const pack = packs.find((p) => p.type === packType);
+        if (!pack) {
+          errors.push({ dogId, error: "Pack not found for species" });
+          continue;
+        }
+        const packStyles = pack.styleIds.map((id) => allStyles.find((s) => s.id === id)).filter(Boolean);
+        if (packStyles.length === 0) {
+          errors.push({ dogId, error: "No styles found for this pack" });
+          continue;
+        }
+        let style;
+        if (styleId) {
+          style = packStyles.find((s) => s.id === parseInt(styleId));
+          if (!style) {
+            errors.push({ dogId, error: "Selected style not in this pack" });
+            continue;
+          }
+        } else {
+          const usedStyleIds = await storage.getUsedStyleIdsForDog(dogId);
+          const availableStyles = packStyles.filter((s) => !usedStyleIds.includes(s.id));
+          if (availableStyles.length > 0) {
+            style = availableStyles[Math.floor(Math.random() * availableStyles.length)];
+          } else {
+            style = packStyles[Math.floor(Math.random() * packStyles.length)];
+          }
+        }
+        if (!style) {
+          errors.push({ dogId, error: "Could not select style" });
+          continue;
+        }
+        const species = dog.species || "dog";
+        const breed = dog.breed || species;
+        const prompt = sanitizeForPrompt(
+          style.promptTemplate.replace(/\{breed\}/g, breed).replace(/\{species\}/g, species).replace(/\{name\}/g, dog.name)
+        );
+        let falStyleImageUrl = null;
+        const previewPath = stylePreviewImages[style.name] || style.previewImageUrl;
+        if (previewPath) {
+          try {
+            falStyleImageUrl = await getStyleReferenceUrl(previewPath);
+          } catch (err) {
+            console.error(`[batch] Failed to resolve style reference for ${style.name}:`, err);
+          }
+        }
+        const jobId = enqueue("batch", {
+          dogId: dog.id,
+          dogName: dog.name,
+          prompt,
+          originalPhotoUrl: dog.originalPhotoUrl,
+          dogImageUrl: dog.originalPhotoUrl,
+          // Public URL for fal.ai
+          falStyleImageUrl,
+          falStyleName: style.name,
+          styleId: style.id,
+          orgId: org.id,
+          needsPetCode: !dog.petCode
+        });
+        jobIds.push({ dogId: dog.id, jobId });
+      }
+      res.status(202).json({
+        jobIds,
+        errors,
+        status: "generating",
+        totalQueued: jobIds.filter((j) => j.jobId).length
+      });
+    } catch (error) {
+      console.error("Error in batch generation:", error.message);
+      res.status(500).json({ error: "Batch generation failed" });
+    }
+  });
+  app2.post("/api/deliver-batch", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, organizationId, messageTemplate } = req.body;
+      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
+        return res.status(400).json({ error: "dogIds array is required" });
+      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
+      if (!org) return res.status(status || 404).json({ error });
+      const { enqueueNativeSms: enqueueNativeSms2 } = await Promise.resolve().then(() => (init_sms_queue_helper(), sms_queue_helper_exports));
+      const result = await enqueueNativeSms2(org, dogIds, messageTemplate);
+      return res.json({
+        method: "native",
+        ...result
+      });
+    } catch (error) {
+      console.error("Error in batch delivery:", error.message);
+      res.status(500).json({ error: "Batch delivery failed" });
+    }
+  });
+  app2.post("/api/batch/start", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { orgId: bodyOrgId } = req.body;
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: bodyOrgId });
+      if (!org) return res.status(status || 404).json({ error });
+      const orgId = org.id;
+      const result = await pool.query(
+        `INSERT INTO batch_sessions (organization_id, staff_user_id, status, photo_count)
+         VALUES ($1, $2, 'uploading', 0) RETURNING id`,
+        [orgId, userId]
+      );
+      res.json({ batchId: result.rows[0].id, status: "uploading" });
+    } catch (error) {
+      console.error("Error starting batch session:", error);
+      res.status(500).json({ error: "Failed to start batch session" });
+    }
+  });
+  app2.post("/api/batch/:id/photos", isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+      const userId = req.user.claims.sub;
+      const { photo } = req.body;
+      if (!photo) {
+        return res.status(400).json({ error: "Photo data is required" });
+      }
+      const batchResult = await pool.query(
+        `SELECT bs.*, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+      const batch = batchResult.rows[0];
+      const userEmail = req.user.claims.email;
+      if (batch.owner_id !== userId && userEmail !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Not authorized to access this batch" });
+      }
+      if (batch.status !== "uploading" && batch.status !== "assigning") {
+        return res.status(400).json({ error: "Batch is no longer accepting photos" });
+      }
+      if (batch.photo_count >= 20) {
+        return res.status(400).json({ error: "Maximum 20 photos per batch" });
+      }
+      const photoResult = await pool.query(
+        `INSERT INTO batch_photos (batch_session_id, photo_url)
+         VALUES ($1, $2) RETURNING id`,
+        [batchId, photo]
+      );
+      await pool.query(
+        `UPDATE batch_sessions SET photo_count = photo_count + 1 WHERE id = $1`,
+        [batchId]
+      );
+      res.json({ photoId: photoResult.rows[0].id, photoCount: batch.photo_count + 1 });
+    } catch (error) {
+      console.error("Error uploading batch photo:", error);
+      res.status(500).json({ error: "Failed to upload photo" });
+    }
+  });
+  app2.patch("/api/batch/:id/photos/:photoId", isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const photoId = parseInt(req.params.photoId);
+      const { dogId } = req.body;
+      if (isNaN(batchId) || isNaN(photoId)) {
+        return res.status(400).json({ error: "Invalid batch or photo ID" });
+      }
+      if (!dogId) {
+        return res.status(400).json({ error: "dogId is required" });
+      }
+      const batchResult = await pool.query(
+        `SELECT bs.organization_id, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
+      const dog = await storage.getDog(parseInt(dogId));
+      if (!dog || dog.organizationId !== batchResult.rows[0].organization_id) {
+        return res.status(400).json({ error: "Dog not found or doesn't belong to this organization" });
+      }
+      await pool.query(
+        `UPDATE batch_photos SET dog_id = $1, assigned_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND batch_session_id = $3`,
+        [parseInt(dogId), photoId, batchId]
+      );
+      await pool.query(
+        `UPDATE batch_sessions SET status = 'assigning' WHERE id = $1 AND status = 'uploading'`,
+        [batchId]
+      );
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error assigning batch photo:", error);
+      res.status(500).json({ error: "Failed to assign photo" });
+    }
+  });
+  app2.post("/api/batch/:id/generate", isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      const { packType } = req.body;
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+      const batchResult = await pool.query(
+        `SELECT bs.*, o.industry_type, o.id as org_id, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+      const batch = batchResult.rows[0];
+      const userId = req.user.claims.sub;
+      if (batch.owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
+      const photosResult = await pool.query(
+        `SELECT * FROM batch_photos WHERE batch_session_id = $1 AND dog_id IS NOT NULL ORDER BY id`,
+        [batchId]
+      );
+      if (photosResult.rows.length === 0) {
+        return res.status(400).json({ error: "No photos have been assigned to pets yet" });
+      }
+      await pool.query(
+        `UPDATE batch_sessions SET status = 'generating' WHERE id = $1`,
+        [batchId]
+      );
+      res.status(202).json({
+        batchId,
+        status: "generating",
+        assignedPhotos: photosResult.rows.length,
+        packType: packType || "celebrate",
+        message: `Generating portraits for ${photosResult.rows.length} photos. Check batch status for progress.`
+      });
+    } catch (error) {
+      console.error("Error generating batch portraits:", error);
+      res.status(500).json({ error: "Failed to start generation" });
+    }
+  });
+  app2.get("/api/batch/:id", isAuthenticated, async (req, res) => {
+    try {
+      const batchId = parseInt(req.params.id);
+      if (isNaN(batchId)) {
+        return res.status(400).json({ error: "Invalid batch ID" });
+      }
+      const batchResult = await pool.query(
+        `SELECT bs.*, o.owner_id FROM batch_sessions bs
+         JOIN organizations o ON o.id = bs.organization_id
+         WHERE bs.id = $1`,
+        [batchId]
+      );
+      if (batchResult.rows.length === 0) {
+        return res.status(404).json({ error: "Batch session not found" });
+      }
+      const userId = req.user.claims.sub;
+      if (batchResult.rows[0].owner_id !== userId) {
+        const userEmail = req.user.claims.email;
+        if (userEmail !== process.env.ADMIN_EMAIL) {
+          return res.status(403).json({ error: "Not authorized to access this batch" });
+        }
+      }
+      const photosResult = await pool.query(
+        `SELECT bp.id, bp.dog_id, bp.assigned_at, bp.created_at,
+                d.name as dog_name, d.breed as dog_breed
+         FROM batch_photos bp
+         LEFT JOIN dogs d ON d.id = bp.dog_id
+         WHERE bp.batch_session_id = $1
+         ORDER BY bp.id`,
+        [batchId]
+      );
+      res.json({
+        batch: batchResult.rows[0],
+        photos: photosResult.rows
+      });
+    } catch (error) {
+      console.error("Error fetching batch:", error);
+      res.status(500).json({ error: "Failed to fetch batch" });
+    }
+  });
+}
+
+// server/routes/merch.ts
+init_storage();
+init_db();
+init_stripeClient();
+
+// server/printful-config.ts
+var PRINTFUL_PRODUCTS = {
+  // --- MUGS (product 19) ---
+  mug_11oz: {
+    variantId: 1320,
+    name: "White Glossy Mug \u2014 11 oz",
+    category: "mug",
+    size: "11oz",
+    priceCents: 3e3,
+    // $30.00 (80% margin)
+    wholesaleCostCents: 595
+    // $5.95
+  },
+  mug_15oz: {
+    variantId: 4830,
+    name: "White Glossy Mug \u2014 15 oz",
+    category: "mug",
+    size: "15oz",
+    priceCents: 4e3,
+    // $40.00 (80% margin)
+    wholesaleCostCents: 795
+    // $7.95
+  },
+  // --- TOTE (product 84) ---
+  tote_natural: {
+    variantId: 4533,
+    name: "All-Over Print Tote Bag",
+    category: "tote",
+    priceCents: 8600,
+    // $86.00 (80% margin)
+    wholesaleCostCents: 1725
+    // $17.25
+  },
+  // --- FRAMED PRINTS: 8×10 (product 2) ---
+  frame_8x10_wood: {
+    variantId: 15021,
+    name: "Framed Poster 8\xD710 \u2014 Wood",
+    category: "frame",
+    size: "8x10",
+    frameColor: "wood",
+    priceCents: 9700,
+    // $97.00 (79% margin)
+    wholesaleCostCents: 2035
+    // $20.35
+  },
+  frame_8x10_black: {
+    variantId: 4651,
+    name: "Framed Poster 8\xD710 \u2014 Black",
+    category: "frame",
+    size: "8x10",
+    frameColor: "black",
+    priceCents: 9700,
+    wholesaleCostCents: 2035
+  },
+  frame_8x10_white: {
+    variantId: 10754,
+    name: "Framed Poster 8\xD710 \u2014 White",
+    category: "frame",
+    size: "8x10",
+    frameColor: "white",
+    priceCents: 9700,
+    wholesaleCostCents: 2035
+  },
+  // --- FRAMED PRINTS: 11×14 (product 2) ---
+  frame_11x14_wood: {
+    variantId: 15023,
+    name: "Framed Poster 11\xD714 \u2014 Wood",
+    category: "frame",
+    size: "11x14",
+    frameColor: "wood",
+    priceCents: 14300,
+    // $143.00 (79% margin)
+    wholesaleCostCents: 3009
+    // $30.09
+  },
+  frame_11x14_black: {
+    variantId: 14292,
+    name: "Framed Poster 11\xD714 \u2014 Black",
+    category: "frame",
+    size: "11x14",
+    frameColor: "black",
+    priceCents: 14300,
+    wholesaleCostCents: 3009
+  },
+  frame_11x14_white: {
+    variantId: 14293,
+    name: "Framed Poster 11\xD714 \u2014 White",
+    category: "frame",
+    size: "11x14",
+    frameColor: "white",
+    priceCents: 14300,
+    wholesaleCostCents: 3009
+  },
+  // --- FRAMED PRINTS: 12×16 (product 2) ---
+  frame_12x16_wood: {
+    variantId: 15025,
+    name: "Framed Poster 12\xD716 \u2014 Wood",
+    category: "frame",
+    size: "12x16",
+    frameColor: "wood",
+    priceCents: 15e3,
+    // $150.00 (79% margin)
+    wholesaleCostCents: 3157
+    // $31.57
+  },
+  frame_12x16_black: {
+    variantId: 1350,
+    name: "Framed Poster 12\xD716 \u2014 Black",
+    category: "frame",
+    size: "12x16",
+    frameColor: "black",
+    priceCents: 15e3,
+    wholesaleCostCents: 3157
+  },
+  frame_12x16_white: {
+    variantId: 10751,
+    name: "Framed Poster 12\xD716 \u2014 White",
+    category: "frame",
+    size: "12x16",
+    frameColor: "white",
+    priceCents: 15e3,
+    wholesaleCostCents: 3157
+  }
+};
+function getProductsByCategory(category) {
+  return Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === category);
+}
+function getProduct(key) {
+  return PRINTFUL_PRODUCTS[key];
+}
+function getFrameSizes() {
+  return [...new Set(
+    Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === "frame" && p.size).map((p) => p.size)
+  )];
+}
+function getFrameColors(size) {
+  return Object.values(PRINTFUL_PRODUCTS).filter((p) => p.category === "frame" && p.size === size && p.frameColor).map((p) => p.frameColor);
+}
+
+// server/printful.ts
+var PRINTFUL_BASE = "https://api.printful.com";
+var PRINTFUL_STORE_ID = "17752122";
+function getApiKey() {
+  const key = process.env.PRINTFUL_API_KEY;
+  if (!key) throw new Error("PRINTFUL_API_KEY env var is not set");
+  return key;
+}
+async function printfulFetch(path6, options = {}) {
+  const url = `${PRINTFUL_BASE}${path6}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Authorization": `Bearer ${getApiKey()}`,
+      "Content-Type": "application/json",
+      "X-PF-Store-Id": PRINTFUL_STORE_ID,
+      ...options.headers
+    }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const errorMsg = data?.result || data?.error?.message || `Printful API error ${response.status}`;
+    throw new Error(`Printful ${response.status}: ${errorMsg}`);
+  }
+  return data;
+}
+async function createOrder(recipient, items, externalId) {
+  const body = {
+    recipient,
+    items,
+    packing_slip: {
+      email: "hello@pawtraitpros.com",
+      phone: "",
+      message: "Thank you for your Pawtrait Pros order! Your pet's portrait was created with love.",
+      logo_url: ""
+      // TODO: add Pawtrait Pros logo URL once hosted
+    }
+  };
+  if (externalId) {
+    body.external_id = externalId;
+  }
+  const data = await printfulFetch("/orders", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return data.result;
+}
+async function confirmOrder(orderId) {
+  const data = await printfulFetch(`/orders/${orderId}/confirm`, {
+    method: "POST"
+  });
+  return data.result;
+}
+async function getOrder(orderId) {
+  const data = await printfulFetch(`/orders/${orderId}`);
+  return data.result;
+}
+async function estimateShipping(recipient, items) {
+  const data = await printfulFetch("/shipping/rates", {
+    method: "POST",
+    body: JSON.stringify({ recipient, items })
+  });
+  return data.result;
+}
+function buildOrderItem(variantId, quantity, imageUrl) {
+  return {
+    variant_id: variantId,
+    quantity,
+    files: [
+      {
+        type: "default",
+        url: imageUrl
+      }
+    ]
+  };
+}
+
+// server/routes/merch.ts
+init_email();
+init_helpers();
+
+// server/merch-payouts.ts
+init_db();
+var BUSINESS_SHARE_RATE = 0.3;
+async function recordMerchEarnings(orderId, orgId) {
+  try {
+    const existing = await pool.query(
+      `SELECT id FROM merch_earnings WHERE merch_order_id = $1`,
+      [orderId]
+    );
+    if (existing.rows.length > 0) {
+      console.log(`[earnings] Already recorded for order ${orderId}, skipping`);
+      return;
+    }
+    const itemsResult = await pool.query(
+      `SELECT quantity, price_cents, wholesale_cost_cents FROM merch_order_items WHERE order_id = $1`,
+      [orderId]
+    );
+    if (itemsResult.rows.length === 0) {
+      console.warn(`[earnings] No items found for order ${orderId}`);
+      return;
+    }
+    let totalRetailCents = 0;
+    let totalWholesaleCents = 0;
+    for (const item of itemsResult.rows) {
+      const qty = item.quantity || 1;
+      totalRetailCents += item.price_cents * qty;
+      totalWholesaleCents += (item.wholesale_cost_cents || 0) * qty;
+    }
+    const marginCents = totalRetailCents - totalWholesaleCents;
+    const businessShareCents = Math.round(marginCents * BUSINESS_SHARE_RATE);
+    const platformShareCents = marginCents - businessShareCents;
+    await pool.query(
+      `INSERT INTO merch_earnings (organization_id, merch_order_id, retail_cents, wholesale_cents, margin_cents, business_share_cents, platform_share_cents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [orgId, orderId, totalRetailCents, totalWholesaleCents, marginCents, businessShareCents, platformShareCents]
+    );
+    console.log(`[earnings] Recorded for order ${orderId}: retail=$${(totalRetailCents / 100).toFixed(2)}, margin=$${(marginCents / 100).toFixed(2)}, business=$${(businessShareCents / 100).toFixed(2)}, platform=$${(platformShareCents / 100).toFixed(2)}`);
+  } catch (err) {
+    console.error(`[earnings] Failed to record for order ${orderId}:`, err.message);
+  }
+}
+
+// server/routes/merch.ts
+init_gelato_config();
+
+// server/card-artwork.ts
+var import_sharp4 = __toESM(require("sharp"), 1);
+init_supabase_storage();
+init_gelato_config();
+import_sharp4.default.cache(false);
+function roundedRectSvg2(w, h, r, fill) {
+  return `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${r}" ry="${r}" fill="${fill}"/></svg>`;
+}
+function textSvg2(text2, fontSize, color, maxWidth, fontWeight = "bold", align = "start") {
+  const escaped = text2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const anchor = align === "middle" ? "middle" : "start";
+  const x = align === "middle" ? maxWidth / 2 : 0;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${Math.round(fontSize * 1.5)}">
+    <text x="${x}" y="${fontSize}" font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${escaped}</text>
+  </svg>`;
+  return Buffer.from(svg);
+}
+function multiLineTextSvg(lines, fontSize, color, maxWidth, fontWeight = "normal", lineHeight = 1.6, align = "middle") {
+  const anchor = align === "middle" ? "middle" : "start";
+  const x = align === "middle" ? maxWidth / 2 : 0;
+  const totalHeight = Math.round(fontSize * lineHeight * lines.length);
+  const escapedLines = lines.map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+  const tspans = escapedLines.map((l, i) => `<tspan x="${x}" dy="${i === 0 ? fontSize : Math.round(fontSize * lineHeight)}">${l}</tspan>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${maxWidth}" height="${totalHeight + 20}">
+    <text font-family="Georgia, 'Times New Roman', serif" font-size="${fontSize}" font-weight="${fontWeight}" fill="${color}" text-anchor="${anchor}">${tspans}</text>
+  </svg>`;
+  return Buffer.from(svg);
+}
+function decorativeBorderSvg(w, h, color, thickness, radius) {
+  const inset = thickness / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect x="${inset}" y="${inset}" width="${w - thickness}" height="${h - thickness}" rx="${radius}" ry="${radius}" fill="none" stroke="${color}" stroke-width="${thickness}"/>
+  </svg>`;
+  return Buffer.from(svg);
+}
+async function resizeToFit2(imageBuffer, maxW, maxH) {
+  return (0, import_sharp4.default)(imageBuffer).resize(maxW, maxH, { fit: "cover", position: "top" }).png().toBuffer();
+}
+async function makeRoundedImage2(imageBuffer, w, h, radius) {
+  const resized = await resizeToFit2(imageBuffer, w, h);
+  const mask = Buffer.from(
+    `<svg width="${w}" height="${h}"><rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" ry="${radius}" fill="white"/></svg>`
+  );
+  return (0, import_sharp4.default)(resized).composite([{ input: mask, blend: "dest-in" }]).png().toBuffer();
+}
+async function generateFlatCardArtwork(portraitUrl, occasion, petName, orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.flat_front;
+  const { primary, secondary, textColor } = occasion.templateColors;
+  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
+  const composites = [];
+  const bg = await (0, import_sharp4.default)({
+    create: { width: W, height: H, channels: 4, background: hexToRgb(secondary) }
+  }).png().toBuffer();
+  composites.push({ input: decorativeBorderSvg(W, H, primary, 16, 24), top: 0, left: 0 });
+  composites.push({ input: decorativeBorderSvg(W - 60, H - 60, primary, 4, 16), top: 30, left: 30 });
+  const greetingText = textSvg2(occasion.greetingText, 72, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 80, left: 60 });
+  const portraitW = W - 200;
+  const portraitH = H - 550;
+  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitW, portraitH, 20);
+  const portraitLeft = Math.round((W - portraitW) / 2);
+  composites.push({ input: roundedPortrait, top: 220, left: portraitLeft });
+  const nameText = textSvg2(petName, 52, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 220 + portraitH + 30, left: 60 });
+  const fromText = textSvg2(`from ${orgName}`, 24, primary, W - 120, "normal", "middle");
+  composites.push({ input: fromText, top: H - 80, left: 60 });
+  return (0, import_sharp4.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFlatCardBack(orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.flat_back;
+  const composites = [];
+  const bg = await (0, import_sharp4.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const orgText = textSvg2(orgName, 32, "#666666", W - 200, "normal", "middle");
+  composites.push({ input: orgText, top: Math.round(H / 2) - 40, left: 100 });
+  const poweredText = textSvg2("Powered by Pawtrait Pros", 22, "#999999", W - 200, "normal", "middle");
+  composites.push({ input: poweredText, top: Math.round(H / 2) + 10, left: 100 });
+  return (0, import_sharp4.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFoldedOutsideArtwork(portraitUrl, occasion, petName, orgName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.folded_outside;
+  const { primary, secondary, textColor } = occasion.templateColors;
+  const portraitBuf = await fetchImageAsBuffer(portraitUrl);
+  const composites = [];
+  const bg = await (0, import_sharp4.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const halfH = Math.round(H / 2);
+  const frontBg = await (0, import_sharp4.default)(Buffer.from(roundedRectSvg2(W, halfH, 0, secondary))).png().toBuffer();
+  composites.push({ input: frontBg, top: 0, left: 0 });
+  composites.push({ input: decorativeBorderSvg(W - 40, halfH - 40, primary, 4, 12), top: 20, left: 20 });
+  const greetingText = textSvg2(occasion.greetingText, 42, textColor, W - 120, "bold", "middle");
+  composites.push({ input: greetingText, top: 30, left: 60 });
+  const portraitSize = halfH - 200;
+  const roundedPortrait = await makeRoundedImage2(portraitBuf, portraitSize, portraitSize, 16);
+  composites.push({ input: roundedPortrait, top: 95, left: Math.round((W - portraitSize) / 2) });
+  const nameText = textSvg2(petName, 34, textColor, W - 120, "bold", "middle");
+  composites.push({ input: nameText, top: 95 + portraitSize + 10, left: 60 });
+  const backTop = halfH;
+  const orgText = textSvg2(orgName, 28, "#666666", W - 200, "normal", "middle");
+  composites.push({ input: orgText, top: backTop + Math.round(halfH / 2) - 30, left: 100 });
+  const poweredText = textSvg2("Powered by Pawtrait Pros", 20, "#999999", W - 200, "normal", "middle");
+  composites.push({ input: poweredText, top: backTop + Math.round(halfH / 2) + 10, left: 100 });
+  return (0, import_sharp4.default)(bg).composite(composites).png().toBuffer();
+}
+async function generateFoldedInsideArtwork(occasion, petName) {
+  const { width: W, height: H } = CARD_DIMENSIONS.folded_inside;
+  const { primary, textColor } = occasion.templateColors;
+  const composites = [];
+  const bg = await (0, import_sharp4.default)({
+    create: { width: W, height: H, channels: 4, background: { r: 255, g: 255, b: 255 } }
+  }).png().toBuffer();
+  const halfH = Math.round(H / 2);
+  const lineSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W - 200}" height="4"><rect x="0" y="0" width="${W - 200}" height="4" rx="2" ry="2" fill="${primary}" opacity="0.3"/></svg>`
+  );
+  composites.push({ input: lineSvg, top: halfH - 20, left: 100 });
+  const greetingTop = halfH + 80;
+  const greetingText = textSvg2(occasion.greetingText, 64, textColor, W - 160, "bold", "middle");
+  composites.push({ input: greetingText, top: greetingTop, left: 80 });
+  const personalizedSub = occasion.subText.replace(/\b(your|you)\b/gi, petName + "'s");
+  const subLines = wrapText(personalizedSub, 35);
+  const subText = multiLineTextSvg(subLines, 32, primary, W - 160, "normal", 1.6, "middle");
+  composites.push({ input: subText, top: greetingTop + 110, left: 80 });
+  const heartSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="${primary}" opacity="0.4">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+    </svg>`
+  );
+  composites.push({ input: heartSvg, top: greetingTop + 280, left: Math.round(W / 2) - 20 });
+  return (0, import_sharp4.default)(bg).composite(composites).png().toBuffer();
+}
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return { r: 255, g: 255, b: 255 };
+  return {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  };
+}
+function wrapText(text2, maxCharsPerLine) {
+  const words = text2.split(" ");
+  const lines = [];
+  let currentLine = "";
+  for (const word of words) {
+    if (currentLine.length + word.length + 1 > maxCharsPerLine && currentLine.length > 0) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = currentLine ? `${currentLine} ${word}` : word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines;
+}
+function bufferToDataUri(buffer, mimeType = "image/png") {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+// server/routes/merch.ts
+init_supabase_storage();
+function registerMerchRoutes(app2) {
+  const previewCache = /* @__PURE__ */ new Map();
+  const PREVIEW_CACHE_TTL = 15 * 60 * 1e3;
+  const PREVIEW_CACHE_MAX = 50;
+  function getCachedPreview(key) {
+    const entry = previewCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > PREVIEW_CACHE_TTL) {
+      previewCache.delete(key);
+      return null;
+    }
+    return entry.buffer;
+  }
+  function setCachedPreview(key, buffer) {
+    if (previewCache.size >= PREVIEW_CACHE_MAX) {
+      const oldest = [...previewCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+      if (oldest) previewCache.delete(oldest[0]);
+    }
+    previewCache.set(key, { buffer, timestamp: Date.now() });
+  }
+  app2.get("/api/merch/products", async (req, res) => {
+    try {
+      res.json({
+        frames: getProductsByCategory("frame"),
+        mugs: getProductsByCategory("mug"),
+        totes: getProductsByCategory("tote"),
+        frameSizes: getFrameSizes(),
+        frameColors: getFrameColors("8x10")
+        // all sizes have same colors
+      });
+    } catch (error) {
+      console.error("Error fetching merch products:", error);
+      res.status(500).json({ error: "Failed to fetch merch products" });
+    }
+  });
+  app2.post("/api/merch/estimate", isAuthenticated, async (req, res) => {
+    try {
+      const { items, address } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one item is required" });
+      }
+      if (!address || !address.address1 || !address.city || !address.state_code || !address.zip || !address.country_code) {
+        return res.status(400).json({ error: "Complete shipping address is required" });
+      }
+      const recipient = {
+        name: address.name || "Customer",
+        address1: address.address1,
+        city: address.city,
+        state_code: address.state_code,
+        zip: address.zip,
+        country_code: address.country_code
+      };
+      const printfulItems = items.map((item) => {
+        const product = getProduct(item.productKey);
+        if (!product) throw new Error(`Unknown product: ${item.productKey}`);
+        return { variant_id: product.variantId, quantity: item.quantity || 1 };
+      });
+      const rates = await estimateShipping(recipient, printfulItems);
+      res.json({ rates });
+    } catch (error) {
+      console.error("Error estimating shipping:", error);
+      res.status(500).json({ error: "Failed to estimate shipping" });
+    }
+  });
+  app2.post("/api/merch/checkout", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { items, customer, address, imageUrl, portraitId, dogId, orgId, sessionToken } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one item is required" });
+      }
+      if (!customer?.name || !address?.address1 || !address?.city || !address?.state_code || !address?.zip) {
+        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
+      }
+      if (!imageUrl) {
+        return res.status(400).json({ error: "Image URL is required for printing" });
+      }
+      if (!orgId) {
+        return res.status(400).json({ error: "Organization ID is required" });
+      }
+      let subtotalCents = 0;
+      const validatedItems = [];
+      for (const item of items) {
+        const isCard = item.productKey.startsWith("card_");
+        const printfulProduct = isCard ? null : getProduct(item.productKey);
+        const gelatoProduct = isCard ? getGelatoProduct(item.productKey) : null;
+        if (!printfulProduct && !gelatoProduct) {
+          return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
+        }
+        const priceCents = printfulProduct?.priceCents || gelatoProduct?.priceCents || 0;
+        const wholesaleCostCents = printfulProduct?.wholesaleCostCents || gelatoProduct?.wholesaleCostCents || 0;
+        const qty = item.quantity || 1;
+        subtotalCents += priceCents * qty;
+        validatedItems.push({
+          productKey: item.productKey,
+          variantId: printfulProduct?.variantId || 0,
+          quantity: qty,
+          priceCents,
+          wholesaleCostCents,
+          occasion: isCard ? item.occasion || void 0 : void 0
+        });
+      }
+      const recipient = {
+        name: customer.name,
+        address1: address.address1,
+        city: address.city,
+        state_code: address.state_code,
+        zip: address.zip,
+        country_code: address.country_code || "US",
+        email: customer.email,
+        phone: customer.phone
+      };
+      let shippingCents = 0;
+      try {
+        const printfulShippingItems = validatedItems.filter((i) => !i.productKey.startsWith("card_")).map((i) => ({ variant_id: i.variantId, quantity: i.quantity }));
+        if (printfulShippingItems.length === 0) throw new Error("No Printful items for shipping estimate");
+        const rates = await estimateShipping(recipient, printfulShippingItems);
+        if (rates.length > 0) {
+          shippingCents = Math.round(parseFloat(rates[0].rate) * 100);
+        }
+      } catch (shippingErr) {
+        console.warn("[merch] Shipping estimate failed, proceeding with $0:", shippingErr.message);
+      }
+      const totalCents = subtotalCents + shippingCents;
+      const orderResult = await pool.query(
+        `INSERT INTO merch_orders (
+          organization_id, dog_id, portrait_id,
+          customer_name, customer_email, customer_phone,
+          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
+          total_cents, shipping_cents, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id`,
+        [
+          orgId,
+          dogId || null,
+          portraitId || null,
+          customer.name,
+          customer.email || null,
+          customer.phone || null,
+          address.address1,
+          address.city,
+          address.state_code,
+          address.zip,
+          address.country_code || "US",
+          totalCents,
+          shippingCents,
+          "awaiting_payment"
+        ]
+      );
+      const merchOrderId = orderResult.rows[0].id;
+      for (const item of validatedItems) {
+        await pool.query(
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, wholesale_cost_cents, occasion)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.wholesaleCostCents, item.occasion || null]
+        );
+      }
+      const org = await storage.getOrganization(parseInt(orgId));
+      const testMode = org?.stripeTestMode;
+      const stripe = getStripeClient(testMode);
+      const lineItems = validatedItems.map((item) => {
+        const printfulProduct = getProduct(item.productKey);
+        const gelatoProduct = getGelatoProduct(item.productKey);
+        const occasion = item.occasion ? getOccasion(item.occasion) : null;
+        let displayName = printfulProduct?.name || gelatoProduct?.name || item.productKey;
+        if (occasion) displayName = `${occasion.name} ${displayName}`;
+        return {
+          price_data: {
+            currency: "usd",
+            product_data: { name: displayName },
+            unit_amount: item.priceCents
+          },
+          quantity: item.quantity
+        };
+      });
+      if (shippingCents > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: { name: "Shipping" },
+            unit_amount: shippingCents
+          },
+          quantity: 1
+        });
+      }
+      const baseUrl = process.env.APP_URL || (process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000");
+      const successUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=success&session_id={CHECKOUT_SESSION_ID}` : `${baseUrl}/order-complete?session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = sessionToken ? `${baseUrl}/order/${sessionToken}?payment=canceled` : `${baseUrl}/`;
+      const checkoutSession = await stripe.checkout.sessions.create({
+        mode: "payment",
+        allow_promotion_codes: true,
+        line_items: lineItems,
+        customer_email: customer.email || void 0,
+        metadata: {
+          merchOrderId: String(merchOrderId),
+          imageUrl,
+          orgId: String(orgId),
+          dogId: dogId ? String(dogId) : "",
+          portraitId: portraitId ? String(portraitId) : ""
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      });
+      await pool.query(
+        `UPDATE merch_orders SET stripe_payment_intent_id = $1 WHERE id = $2`,
+        [checkoutSession.id, merchOrderId]
+      );
+      res.json({
+        checkoutUrl: checkoutSession.url,
+        orderId: merchOrderId,
+        sessionId: checkoutSession.id,
+        totalCents,
+        shippingCents,
+        subtotalCents
+      });
+    } catch (error) {
+      console.error("Error creating merch checkout:", error);
+      res.status(500).json({ error: "Failed to create checkout" });
+    }
+  });
+  app2.post("/api/merch/confirm-checkout", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { sessionId } = req.body;
+      if (!sessionId) {
+        return res.status(400).json({ error: "Session ID is required" });
+      }
+      const orderResult = await pool.query(
+        `SELECT * FROM merch_orders WHERE stripe_payment_intent_id = $1`,
+        [sessionId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found for this session" });
+      }
+      const order = orderResult.rows[0];
+      if (order.status !== "awaiting_payment") {
+        return res.json({
+          orderId: order.id,
+          status: order.status,
+          totalCents: order.total_cents,
+          alreadyProcessed: true
+        });
+      }
+      const org = await storage.getOrganization(order.organization_id);
+      const stripe = getStripeClient(org?.stripeTestMode);
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status !== "paid") {
+        return res.status(402).json({ error: "Payment not completed", paymentStatus: session.payment_status });
+      }
+      await pool.query(
+        `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
+        [order.id]
+      );
+      await recordMerchEarnings(order.id, order.organization_id);
+      const itemsResult = await pool.query(
+        `SELECT * FROM merch_order_items WHERE order_id = $1`,
+        [order.id]
+      );
+      const imageUrl = session.metadata?.imageUrl;
+      if (!imageUrl) {
+        console.error(`[merch] No imageUrl in session metadata for order ${order.id}`);
+        return res.json({ orderId: order.id, status: "paid", warning: "Fulfillment pending \u2014 missing image URL" });
+      }
+      const printfulRows = itemsResult.rows.filter((item) => !item.product_key.startsWith("card_"));
+      const gelatoRows = itemsResult.rows.filter((item) => item.product_key.startsWith("card_"));
+      const recipient = {
+        name: order.customer_name,
+        address1: order.shipping_street,
+        city: order.shipping_city,
+        state_code: order.shipping_state,
+        zip: order.shipping_zip,
+        country_code: order.shipping_country || "US",
+        email: order.customer_email,
+        phone: order.customer_phone
+      };
+      let printfulOrderId = null;
+      let gelatoOrderId = null;
+      if (printfulRows.length > 0) {
+        try {
+          const printfulItems = printfulRows.map(
+            (item) => buildOrderItem(item.variant_id, item.quantity, imageUrl)
+          );
+          const printfulOrder = await createOrder(recipient, printfulItems, String(order.id));
+          printfulOrderId = printfulOrder.id;
+          await pool.query(
+            `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+            [String(printfulOrder.id), printfulOrder.status, order.id]
+          );
+          try {
+            await confirmOrder(printfulOrder.id);
+            await pool.query(
+              `UPDATE merch_orders SET status = 'confirmed' WHERE id = $1`,
+              [order.id]
+            );
+          } catch (confirmErr) {
+            console.warn(`[merch] Printful auto-confirm failed for order ${order.id}:`, confirmErr.message);
+          }
+        } catch (printfulErr) {
+          console.error(`[merch] Printful order failed for paid order ${order.id}:`, printfulErr.message);
+          await pool.query(
+            `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
+            [order.id]
+          );
+        }
+      }
+      if (gelatoRows.length > 0) {
+        try {
+          const { createGelatoOrder: createGelatoOrder2, buildCardOrderItem: buildCardOrderItem2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const petName = dogResult?.name || "Your Pet";
+          const orgName = org?.name || "Pawtrait Pros";
+          const gelatoItems = [];
+          for (let i = 0; i < gelatoRows.length; i++) {
+            const item = gelatoRows[i];
+            const product = getGelatoProduct(item.product_key);
+            const occasion = item.occasion ? getOccasion(item.occasion) : null;
+            let files;
+            if (occasion) {
+              const format = product?.format || "flat";
+              console.log(`[merch] Generating ${occasion.id} ${format} card artwork for order ${order.id}`);
+              if (format === "flat") {
+                const frontBuf = await generateFlatCardArtwork(imageUrl, occasion, petName, orgName);
+                const backBuf = await generateFlatCardBack(orgName);
+                const frontUrl = await uploadToStorage(bufferToDataUri(frontBuf), "portraits", `card-${order.id}-${i}-front.png`);
+                const backUrl = await uploadToStorage(bufferToDataUri(backBuf), "portraits", `card-${order.id}-${i}-back.png`);
+                files = [{ type: "default", url: frontUrl }, { type: "back", url: backUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [frontUrl, item.id]);
+              } else {
+                const outsideBuf = await generateFoldedOutsideArtwork(imageUrl, occasion, petName, orgName);
+                const insideBuf = await generateFoldedInsideArtwork(occasion, petName);
+                const outsideUrl = await uploadToStorage(bufferToDataUri(outsideBuf), "portraits", `card-${order.id}-${i}-outside.png`);
+                const insideUrl = await uploadToStorage(bufferToDataUri(insideBuf), "portraits", `card-${order.id}-${i}-inside.png`);
+                files = [{ type: "default", url: outsideUrl }, { type: "inside", url: insideUrl }];
+                await pool.query(`UPDATE merch_order_items SET artwork_url = $1 WHERE id = $2`, [outsideUrl, item.id]);
+              }
+            } else {
+              files = [{ type: "default", url: imageUrl }];
+            }
+            gelatoItems.push(buildCardOrderItem2(
+              product?.productUid || item.product_key,
+              item.quantity,
+              files,
+              `item-${order.id}-${i}`
+            ));
+          }
+          const nameParts = (order.customer_name || "Customer").split(" ");
+          const gelatoAddress = {
+            firstName: nameParts[0] || "Customer",
+            lastName: nameParts.slice(1).join(" ") || "",
+            addressLine1: order.shipping_street,
+            city: order.shipping_city,
+            state: order.shipping_state,
+            postCode: order.shipping_zip,
+            country: order.shipping_country || "US",
+            email: order.customer_email,
+            phone: order.customer_phone
+          };
+          const gelatoOrder = await createGelatoOrder2(
+            gelatoItems,
+            gelatoAddress,
+            `pp-${order.id}`,
+            `org-${order.organization_id}`
+          );
+          gelatoOrderId = gelatoOrder.id;
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET printful_order_id = $1, status = 'submitted' WHERE id = $2`,
+              [`gelato:${gelatoOrder.id}`, order.id]
+            );
+          }
+          console.log(`[merch] Gelato order ${gelatoOrder.id} created for merch order ${order.id}`);
+        } catch (gelatoErr) {
+          console.error(`[merch] Gelato order failed for paid order ${order.id}:`, gelatoErr.message);
+          if (!printfulOrderId) {
+            await pool.query(
+              `UPDATE merch_orders SET status = 'paid_fulfillment_pending' WHERE id = $1`,
+              [order.id]
+            );
+          }
+        }
+      }
+      if (order.customer_email && isEmailConfigured()) {
+        try {
+          const itemDescriptions = itemsResult.rows.map((item) => {
+            const product = getProduct(item.product_key);
+            return `${product?.name || item.product_key} x${item.quantity}`;
+          });
+          const orgName = org?.name || "Pawtrait Pros";
+          const dogResult = order.dog_id ? await storage.getDog(order.dog_id) : null;
+          const dogName = dogResult?.name || "your pet";
+          const { subject, html } = buildOrderConfirmationEmail(orgName, dogName, order.id, order.total_cents, itemDescriptions);
+          let attachments;
+          if (order.portrait_id) {
+            try {
+              const baseUrl = process.env.APP_URL || "https://pawtraitpros.com";
+              const downloadRes = await fetch(`${baseUrl}/api/portraits/${order.portrait_id}/download`);
+              if (downloadRes.ok) {
+                const buffer = Buffer.from(await downloadRes.arrayBuffer());
+                attachments = [{ filename: `${dogName.replace(/[^a-zA-Z0-9]/g, "-")}-portrait.png`, content: buffer }];
+              }
+            } catch (dlErr) {
+              console.warn(`[merch] Failed to fetch watermarked portrait for email:`, dlErr.message);
+            }
+          }
+          await sendEmail(order.customer_email, subject, html, attachments, orgName);
+          console.log(`[merch] Confirmation email sent to ${order.customer_email} for order ${order.id}`);
+        } catch (emailErr) {
+          console.warn(`[merch] Failed to send confirmation email for order ${order.id}:`, emailErr.message);
+        }
+      }
+      const finalStatus = printfulOrderId || gelatoOrderId ? "confirmed" : "paid_fulfillment_pending";
+      res.json({
+        orderId: order.id,
+        printfulOrderId,
+        gelatoOrderId,
+        totalCents: order.total_cents,
+        status: finalStatus
+      });
+    } catch (error) {
+      console.error("Error confirming merch checkout:", error);
+      res.status(500).json({ error: "Failed to confirm checkout" });
+    }
+  });
+  app2.get("/api/merch/order/:id", isAuthenticated, async (req, res) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      if (isNaN(orderId)) {
+        return res.status(400).json({ error: "Invalid order ID" });
+      }
+      const orderResult = await pool.query(
+        `SELECT * FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, userEmail, { orgId: orderResult.rows[0].organization_id });
+      if (!org) return res.status(orgSt || 403).json({ error: orgErr });
+      const itemsResult = await pool.query(
+        `SELECT * FROM merch_order_items WHERE order_id = $1`,
+        [orderId]
+      );
+      const items = itemsResult.rows.map((item) => ({
+        ...item,
+        product: getProduct(item.product_key)
+      }));
+      res.json({ order: orderResult.rows[0], items });
+    } catch (error) {
+      console.error("Error fetching merch order:", error);
+      res.status(500).json({ error: "Failed to fetch order" });
+    }
+  });
+  app2.get("/api/merch/orders", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org, error: orgErr, status: orgSt } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(orgSt || 404).json({ error: orgErr });
+      const orgId = org.id;
+      const ordersResult = await pool.query(
+        `SELECT mo.*,
+          (SELECT json_agg(json_build_object(
+            'id', moi.id,
+            'product_key', moi.product_key,
+            'variant_id', moi.variant_id,
+            'quantity', moi.quantity,
+            'price_cents', moi.price_cents
+          )) FROM merch_order_items moi WHERE moi.order_id = mo.id) as items
+        FROM merch_orders mo
+        WHERE mo.organization_id = $1
+        ORDER BY mo.created_at DESC`,
+        [orgId]
+      );
+      res.json({ orders: ordersResult.rows });
+    } catch (error) {
+      console.error("Error fetching merch orders:", error);
+      res.status(500).json({ error: "Failed to fetch orders" });
+    }
+  });
+  app2.post("/api/merch/order/:id/sync", isAuthenticated, async (req, res) => {
+    try {
+      const email = req.user.claims.email;
+      if (email !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin only" });
+      }
+      const orderId = parseInt(req.params.id);
+      const orderResult = await pool.query(
+        `SELECT printful_order_id FROM merch_orders WHERE id = $1`,
+        [orderId]
+      );
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const printfulOrderId = orderResult.rows[0].printful_order_id;
+      if (!printfulOrderId) {
+        return res.status(400).json({ error: "Order has no Printful order ID" });
+      }
+      const printfulOrder = await getOrder(parseInt(printfulOrderId));
+      await pool.query(
+        `UPDATE merch_orders SET printful_status = $1 WHERE id = $2`,
+        [printfulOrder.status, orderId]
+      );
+      res.json({ orderId, printfulStatus: printfulOrder.status, printfulOrder });
+    } catch (error) {
+      console.error("Error syncing merch order:", error);
+      res.status(500).json({ error: "Failed to sync order" });
+    }
+  });
+  app2.get("/api/gelato/products", async (_req, res) => {
+    try {
+      res.json({ cards: getAllGelatoProducts() });
+    } catch (error) {
+      console.error("Error fetching Gelato products:", error);
+      res.status(500).json({ error: "Failed to fetch card products" });
+    }
+  });
+  app2.get("/api/gelato/availability", async (_req, res) => {
+    const available = !!process.env.GELATO_API_KEY;
+    const month = (/* @__PURE__ */ new Date()).getMonth();
+    const occasions = sortOccasionsForDisplay(month);
+    res.json({ available, occasions });
+  });
+  app2.get("/api/cards/occasions", async (_req, res) => {
+    const month = (/* @__PURE__ */ new Date()).getMonth();
+    res.json({ occasions: sortOccasionsForDisplay(month) });
+  });
+  app2.post("/api/cards/preview", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { portraitId, occasion: occasionId, format, petName } = req.body;
+      if (!portraitId || !occasionId) {
+        return res.status(400).json({ error: "portraitId and occasion are required" });
+      }
+      const occasion = getOccasion(occasionId);
+      if (!occasion) {
+        return res.status(400).json({ error: `Unknown occasion: ${occasionId}` });
+      }
+      const cardFormat = format || "flat";
+      const cacheKey = `${portraitId}-${occasionId}-${cardFormat}`;
+      const cached = getCachedPreview(cacheKey);
+      if (cached) {
+        res.set("Content-Type", "image/png");
+        res.set("Cache-Control", "public, max-age=900");
+        return res.send(cached);
+      }
+      const portrait = await storage.getPortrait(portraitId);
+      if (!portrait || !portrait.generatedImageUrl) {
+        return res.status(404).json({ error: "Portrait not found" });
+      }
+      const name = petName || "Your Pet";
+      let orgName = "Your Business";
+      try {
+        if (portrait.dogId) {
+          const dog = await storage.getDog(portrait.dogId);
+          if (dog?.organizationId) {
+            const org = await storage.getOrganization(dog.organizationId);
+            if (org?.name) orgName = org.name;
+          }
+        }
+      } catch (e) {
+      }
+      let previewBuf;
+      const { default: sharpLib } = await import("sharp");
+      if (cardFormat === "folded") {
+        const fullSpread = await generateFoldedOutsideArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+        const meta = await sharpLib(fullSpread).metadata();
+        const halfH = Math.round((meta.height || 2100) / 2);
+        previewBuf = await sharpLib(fullSpread).extract({ left: 0, top: 0, width: meta.width || 1500, height: halfH }).png().toBuffer();
+      } else {
+        previewBuf = await generateFlatCardArtwork(portrait.generatedImageUrl, occasion, name, orgName);
+      }
+      const preview = await sharpLib(previewBuf).resize(600, null, { fit: "inside" }).png().toBuffer();
+      setCachedPreview(cacheKey, preview);
+      res.set("Content-Type", "image/png");
+      res.set("Cache-Control", "public, max-age=900");
+      res.send(preview);
+    } catch (error) {
+      console.error("Error generating card preview:", error);
+      res.status(500).json({ error: "Failed to generate preview" });
+    }
+  });
+  app2.post("/api/gelato/order", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { items, customer, address, artworkUrls } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "At least one card item is required" });
+      }
+      if (!customer?.name || !address?.address1 || !address?.city || !address?.state || !address?.zip) {
+        return res.status(400).json({ error: "Customer name and complete shipping address are required" });
+      }
+      if (!artworkUrls || !Array.isArray(artworkUrls) || artworkUrls.length === 0) {
+        return res.status(400).json({ error: "Artwork URL(s) are required" });
+      }
+      const { getGelatoProduct: getGelatoCardProduct } = await Promise.resolve().then(() => (init_gelato_config(), gelato_config_exports));
+      const { createGelatoOrder: createGelatoOrder2, buildCardOrderItem: buildCardOrderItem2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
+      let subtotalCents = 0;
+      const gelatoItems = [];
+      const dbItems = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const product = getGelatoCardProduct(item.productKey);
+        if (!product) {
+          return res.status(400).json({ error: `Unknown card product: ${item.productKey}` });
+        }
+        const qty = item.quantity || 1;
+        subtotalCents += product.priceCents * qty;
+        const files = artworkUrls.map((url, idx) => ({
+          type: idx === 0 ? "default" : "back",
+          url
+        }));
+        gelatoItems.push(
+          buildCardOrderItem2(product.productUid, qty, files, `item-${i}`)
+        );
+        dbItems.push({
+          productKey: item.productKey,
+          quantity: qty,
+          priceCents: product.priceCents,
+          wholesaleCostCents: product.wholesaleCostCents
+        });
+      }
+      const nameParts = customer.name.trim().split(/\s+/);
+      const firstName = nameParts[0] || "Customer";
+      const lastName = nameParts.slice(1).join(" ") || "";
+      const orgId = req.body.orgId || null;
+      const orderResult = await pool.query(
+        `INSERT INTO merch_orders (
+          organization_id, dog_id, portrait_id,
+          customer_name, customer_email, customer_phone,
+          shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country,
+          total_cents, shipping_cents, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING id`,
+        [
+          orgId,
+          req.body.dogId || null,
+          req.body.portraitId || null,
+          customer.name,
+          customer.email || null,
+          customer.phone || null,
+          address.address1,
+          address.city,
+          address.state,
+          address.zip,
+          address.country || "US",
+          subtotalCents,
+          0,
+          "pending"
+        ]
+      );
+      const merchOrderId = orderResult.rows[0].id;
+      for (const item of dbItems) {
+        await pool.query(
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, wholesale_cost_cents)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [merchOrderId, item.productKey, 0, item.quantity, item.priceCents, item.wholesaleCostCents]
+        );
+      }
+      try {
+        const gelatoOrder = await createGelatoOrder2(
+          gelatoItems,
+          {
+            firstName,
+            lastName,
+            addressLine1: address.address1,
+            city: address.city,
+            state: address.state,
+            postCode: address.zip,
+            country: address.country || "US",
+            email: customer.email,
+            phone: customer.phone
+          },
+          `gelato-${merchOrderId}`,
+          `customer-${merchOrderId}`
+        );
+        await pool.query(
+          `UPDATE merch_orders SET printful_order_id = $1, printful_status = $2, status = 'submitted' WHERE id = $3`,
+          [gelatoOrder.id, gelatoOrder.fulfillmentStatus, merchOrderId]
+        );
+        res.json({
+          orderId: merchOrderId,
+          gelatoOrderId: gelatoOrder.id,
+          totalCents: subtotalCents,
+          status: "submitted"
+        });
+      } catch (gelatoErr) {
+        console.error(`[gelato] Order creation failed for merch_order ${merchOrderId}:`, gelatoErr.message);
+        await pool.query(
+          `UPDATE merch_orders SET status = 'failed', printful_status = $1 WHERE id = $2`,
+          [gelatoErr.message, merchOrderId]
+        );
+        res.status(500).json({ error: "Failed to submit card order", orderId: merchOrderId });
+      }
+    } catch (error) {
+      console.error("Error creating Gelato order:", error);
+      res.status(500).json({ error: "Failed to create card order" });
+    }
+  });
+  app2.get("/api/gelato/discover-products", isAuthenticated, async (req, res) => {
+    const email = req.user.claims.email;
+    if (email !== ADMIN_EMAIL) {
+      return res.status(403).json({ error: "Admin only" });
+    }
+    try {
+      const { searchCardProducts: searchCardProducts2, searchFoldedCardProducts: searchFoldedCardProducts2, listCatalogs: listCatalogs2 } = await Promise.resolve().then(() => (init_gelato(), gelato_exports));
+      const catalogs = await listCatalogs2();
+      const flatCards = await searchCardProducts2();
+      const foldedCards = await searchFoldedCardProducts2();
+      res.json({ catalogs, flatCards, foldedCards });
+    } catch (error) {
+      console.error("Error discovering Gelato products:", error);
+      res.status(500).json({ error: "Failed to discover products" });
+    }
+  });
+}
+
+// server/routes/customer-sessions.ts
+var import_crypto3 = __toESM(require("crypto"), 1);
+init_storage();
+init_db();
+init_sms();
+init_helpers();
+function registerCustomerSessionRoutes(app2) {
+  app2.post("/api/customer-session", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { dogId, portraitId, packType, customerPhone, orgId: bodyOrgId } = req.body;
+      if (!dogId || !portraitId) {
+        return res.status(400).json({ error: "dogId and portraitId are required" });
+      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: bodyOrgId, dogId });
+      if (!org) return res.status(status || 404).json({ error });
+      const orgId = org.id;
+      const dog = await storage.getDog(parseInt(dogId));
+      if (!dog || dog.organizationId !== orgId) {
+        return res.status(400).json({ error: "Dog not found or doesn't belong to this organization" });
+      }
+      let token = "";
+      let attempts = 0;
+      while (attempts < 10) {
+        token = import_crypto3.default.randomBytes(4).toString("hex");
+        const existing = await pool.query("SELECT id FROM customer_sessions WHERE token = $1", [token]);
+        if (existing.rows.length === 0) break;
+        attempts++;
+      }
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
+      await pool.query(
+        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, pack_type, customer_phone, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [token, orgId, parseInt(dogId), parseInt(portraitId), packType || null, customerPhone || null, expiresAt.toISOString()]
+      );
+      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+      const orderUrl = `${host}/order/${token}`;
+      console.log(`[customer-session] Created session ${token} for org ${orgId}, dog ${dogId}`);
+      res.json({
+        token,
+        orderUrl,
+        expiresAt: expiresAt.toISOString()
+      });
+    } catch (error) {
+      console.error("Error creating customer session:", error);
+      res.status(500).json({ error: "Failed to create customer session" });
+    }
+  });
+  app2.post("/api/customer-session/from-code", publicExpensiveRateLimiter, async (req, res) => {
+    try {
+      const { petCode } = req.body;
+      if (!petCode) {
+        return res.status(400).json({ error: "petCode is required" });
+      }
+      const dogResult = await pool.query(
+        `SELECT d.*, p.id as portrait_id, p.generated_image_url
+         FROM dogs d
+         LEFT JOIN portraits p ON p.dog_id = d.id AND p.is_selected = true
+         WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+      if (dogResult.rows.length === 0) {
+        return res.status(404).json({ error: "Pet not found" });
+      }
+      const dog = dogResult.rows[0];
+      if (!dog.portrait_id) {
+        return res.status(400).json({ error: "No portrait available for this pet" });
+      }
+      let token = "";
+      let attempts = 0;
+      while (attempts < 10) {
+        token = import_crypto3.default.randomBytes(4).toString("hex");
+        const existing = await pool.query("SELECT id FROM customer_sessions WHERE token = $1", [token]);
+        if (existing.rows.length === 0) break;
+        attempts++;
+      }
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
+      await pool.query(
+        `INSERT INTO customer_sessions (token, organization_id, dog_id, portrait_id, expires_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [token, dog.organization_id, dog.id, dog.portrait_id, expiresAt.toISOString()]
+      );
+      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+      res.json({
+        token,
+        orderUrl: `${host}/order/${token}`,
+        expiresAt: expiresAt.toISOString()
+      });
+    } catch (error) {
+      console.error("Error creating customer session from code:", error);
+      res.status(500).json({ error: "Failed to create session" });
+    }
+  });
+  app2.get("/api/customer-session/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      if (!token || token.length !== 8) {
+        return res.status(400).json({ error: "Invalid session token" });
+      }
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
+                d.name as dog_name, d.breed as dog_breed, d.species as dog_species,
+                p.generated_image_url as portrait_image, p.style_id as portrait_style_id
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         JOIN portraits p ON p.id = cs.portrait_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      const session = sessionResult.rows[0];
+      if (session.expires_at && new Date(session.expires_at) < /* @__PURE__ */ new Date()) {
+        return res.status(410).json({ error: "This order link has expired" });
+      }
+      const alternatesResult = await pool.query(
+        `SELECT id, generated_image_url, style_id FROM portraits
+         WHERE dog_id = $1 AND generated_image_url IS NOT NULL AND id != $2
+         ORDER BY created_at DESC LIMIT 5`,
+        [session.dog_id, session.portrait_id]
+      );
+      res.json({
+        token: session.token,
+        orgId: session.organization_id,
+        orgName: session.org_name,
+        orgLogo: session.org_logo,
+        dogId: session.dog_id,
+        dogName: session.dog_name,
+        dogBreed: session.dog_breed,
+        dogSpecies: session.dog_species,
+        portraitImage: session.portrait_image,
+        portraitId: session.portrait_id,
+        packType: session.pack_type,
+        expiresAt: session.expires_at,
+        alternatePortraits: alternatesResult.rows.map((p) => ({
+          id: p.id,
+          imageUrl: p.generated_image_url,
+          styleId: p.style_id
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching customer session:", error);
+      res.status(500).json({ error: "Failed to load order page" });
+    }
+  });
+  app2.get("/api/customer-session/:token/receipt", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, o.logo_url as org_logo,
+                d.name as dog_name
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      const session = sessionResult.rows[0];
+      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+      const orderUrl = `${host}/order/${token}`;
+      res.json({
+        orgName: session.org_name,
+        orgLogo: session.org_logo,
+        dogName: session.dog_name,
+        orderUrl,
+        token,
+        expiresAt: session.expires_at
+      });
+    } catch (error) {
+      console.error("Error generating receipt:", error);
+      res.status(500).json({ error: "Failed to generate receipt" });
+    }
+  });
+  app2.post("/api/customer-session/:token/send-sms", isAuthenticated, async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { phone } = req.body;
+      if (!phone) {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+      const sessionResult = await pool.query(
+        `SELECT cs.*, o.name as org_name, d.name as dog_name
+         FROM customer_sessions cs
+         JOIN organizations o ON o.id = cs.organization_id
+         JOIN dogs d ON d.id = cs.dog_id
+         WHERE cs.token = $1`,
+        [token]
+      );
+      if (sessionResult.rows.length === 0) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      const session = sessionResult.rows[0];
+      const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+      const orderUrl = `${host}/order/${token}`;
+      const message = `Hi from ${session.org_name}! ${session.dog_name}'s portrait is ready. View it & order prints here: ${orderUrl}`;
+      if (!isSmsConfigured()) {
+        return res.status(503).json({ error: "SMS service is not configured" });
+      }
+      const formattedPhone = formatPhoneNumber(phone);
+      const result = await sendSms(formattedPhone, message);
+      if (!result.success) {
+        throw new Error(result.error || "Failed to send SMS");
+      }
+      await pool.query(
+        `UPDATE customer_sessions SET customer_phone = $1 WHERE token = $2`,
+        [formattedPhone, token]
+      );
+      res.json({ success: true, message: "SMS sent" });
+    } catch (error) {
+      console.error("Error sending customer session SMS:", error);
+      res.status(500).json({ error: "Failed to send SMS" });
+    }
+  });
+}
+
+// server/routes/admin.ts
+var import_zod2 = require("zod");
+init_storage();
+init_stripeClient();
+init_subscription();
+var import_crypto4 = __toESM(require("crypto"), 1);
+init_db();
+init_sms();
+init_helpers();
+function registerAdminRoutes(app2) {
+  app2.post("/api/admin/organizations", isAuthenticated, isAdmin, async (req, res) => {
+    const MAX_RETRIES = 2;
+    const { name, description, websiteUrl, referredByOrgId } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: "Organization name is required" });
+    }
+    if (referredByOrgId) {
+      const referrer = await storage.getOrganization(referredByOrgId);
+      if (!referrer || referrer.subscriptionStatus !== "active") {
+        return res.status(400).json({ error: "Referrer must be an active subscriber" });
+      }
+    }
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const slug = await generateUniqueSlug(name);
+        const orgData = {
+          name,
+          slug,
+          description: description || "",
+          websiteUrl: websiteUrl || "",
+          ownerId: null,
+          subscriptionStatus: "inactive",
+          portraitsUsedThisMonth: 0
+        };
+        if (referredByOrgId) {
+          orgData.referredByOrgId = referredByOrgId;
+        }
+        const org = await storage.createOrganization(orgData);
+        return res.status(201).json(org);
+      } catch (error) {
+        const err = error;
+        console.error(`[admin] Create org attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, err?.message, err?.code, err?.detail, err?.constraint);
+        if (attempt < MAX_RETRIES) {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+        return res.status(500).json({ error: err?.message || "Failed to create organization" });
+      }
+    }
+  });
+  app2.get("/api/admin/organizations", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgs = await storage.getAllOrganizations();
+      const allPlans = await storage.getAllSubscriptionPlans();
+      const planMap = new Map(allPlans.map((p) => [p.id, p]));
+      const orgsWithStats = await Promise.all(
+        orgs.map(async (org) => {
+          const dogs2 = await storage.getDogsByOrganization(org.id);
+          let portraitCount = 0;
+          for (const dog of dogs2) {
+            const portraits2 = await storage.getPortraitsByDog(dog.id);
+            portraitCount += portraits2.length;
+          }
+          const plan = org.planId ? planMap.get(org.planId) : null;
+          const planName = plan ? plan.name.toLowerCase() : "none";
+          const planPriceCents = plan ? plan.priceMonthly : 0;
+          const addonSlots = org.additionalPetSlots || 0;
+          const addonRevenueCents = addonSlots * 300;
+          const totalRevenueCents = (org.subscriptionStatus === "active" ? planPriceCents : 0) + (org.subscriptionStatus === "active" ? addonRevenueCents : 0);
+          return {
+            ...org,
+            dogCount: dogs2.length,
+            portraitCount,
+            planName,
+            planPriceCents,
+            addonRevenueCents,
+            totalRevenueCents
+          };
+        })
+      );
+      res.json(orgsWithStats);
+    } catch (error) {
+      console.error("Error fetching admin organizations:", error);
+      res.status(500).json({ error: "Failed to fetch organizations" });
+    }
+  });
+  app2.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgs = await storage.getAllOrganizations();
+      const dogs2 = await storage.getAllDogs();
+      let totalPortraits = 0;
+      for (const dog of dogs2) {
+        const portraits2 = await storage.getPortraitsByDog(dog.id);
+        totalPortraits += portraits2.length;
+      }
+      const activeSubscriptions = orgs.filter((o) => o.subscriptionStatus === "active").length;
+      const pastDue = orgs.filter((o) => o.subscriptionStatus === "past_due").length;
+      const allPlans = await storage.getAllSubscriptionPlans();
+      const planMap = new Map(allPlans.map((p) => [p.id, p]));
+      const planDistribution = {};
+      for (const plan of allPlans) {
+        const key = plan.name.toLowerCase() === "free trial" ? "trial" : plan.name.toLowerCase();
+        planDistribution[key] = orgs.filter((o) => o.planId === plan.id).length;
+      }
+      planDistribution.trial = (planDistribution.trial || 0) + orgs.filter((o) => !o.planId && o.subscriptionStatus === "trial").length;
+      planDistribution.inactive = orgs.filter((o) => o.subscriptionStatus === "inactive" || o.subscriptionStatus === "canceled").length;
+      const monthlyRevenue = orgs.reduce((sum, o) => {
+        if (o.subscriptionStatus === "active" && o.planId) {
+          const plan = planMap.get(o.planId);
+          const planRev = plan ? plan.priceMonthly / 100 : 0;
+          const addonRev = (o.additionalPetSlots || 0) * 3;
+          return sum + planRev + addonRev;
+        }
+        return sum;
+      }, 0);
+      res.json({
+        totalOrgs: orgs.length,
+        totalDogs: dogs2.length,
+        totalPortraits,
+        activeSubscriptions,
+        pastDue,
+        monthlyRevenue,
+        planDistribution
+      });
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+  app2.get("/api/admin/merch-revenue", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          o.id as org_id,
+          o.name as org_name,
+          COUNT(mo.id) as order_count,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.total_cents ELSE 0 END), 0) as total_revenue_cents,
+          COALESCE(SUM(CASE WHEN mo.status NOT IN ('awaiting_payment', 'failed') THEN mo.shipping_cents ELSE 0 END), 0) as total_shipping_cents,
+          MAX(mo.created_at) as last_order_at
+        FROM organizations o
+        JOIN merch_orders mo ON mo.organization_id = o.id
+        GROUP BY o.id, o.name
+        ORDER BY total_revenue_cents DESC
+      `);
+      const totalRevenue = result.rows.reduce((sum, r) => sum + parseInt(r.total_revenue_cents), 0);
+      const totalOrders = result.rows.reduce((sum, r) => sum + parseInt(r.order_count), 0);
+      res.json({
+        byOrg: result.rows.map((r) => ({
+          orgId: r.org_id,
+          orgName: r.org_name,
+          orderCount: parseInt(r.order_count),
+          totalRevenueCents: parseInt(r.total_revenue_cents),
+          totalShippingCents: parseInt(r.total_shipping_cents),
+          lastOrderAt: r.last_order_at
+        })),
+        totalRevenueCents: totalRevenue,
+        totalOrders
+      });
+    } catch (error) {
+      console.error("Error fetching merch revenue:", error);
+      res.status(500).json({ error: "Failed to fetch merch revenue" });
+    }
+  });
+  app2.get("/api/admin/referrals", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgs = await storage.getAllOrganizations();
+      const referredOrgs = orgs.filter((o) => o.referredByOrgId);
+      const relationships = [];
+      for (const org of referredOrgs) {
+        const referrer = orgs.find((o) => o.id === org.referredByOrgId);
+        if (!referrer) continue;
+        const commissions = await storage.getReferralCommissions(referrer.id);
+        const orgCommissions = commissions.filter((c) => c.referred_org_id === org.id);
+        const totalEarned = orgCommissions.reduce((sum, c) => sum + c.commission_cents, 0);
+        const totalApplied = orgCommissions.filter((c) => c.credit_applied).reduce((sum, c) => sum + c.commission_cents, 0);
+        const startDate = org.referralStartDate;
+        let monthsRemaining = 12;
+        if (startDate) {
+          const elapsed = (Date.now() - new Date(startDate).getTime()) / (1e3 * 60 * 60 * 24 * 365 / 12);
+          monthsRemaining = Math.max(0, Math.round(12 - elapsed));
+        }
+        relationships.push({
+          referrerOrgId: referrer.id,
+          referrerName: referrer.name,
+          referredOrgId: org.id,
+          referredName: org.name,
+          referredStatus: org.subscriptionStatus,
+          startDate: startDate || null,
+          monthsRemaining,
+          totalEarnedCents: totalEarned,
+          totalAppliedCents: totalApplied,
+          commissionCount: orgCommissions.length
+        });
+      }
+      res.json(relationships);
+    } catch (error) {
+      console.error("Error fetching referrals:", error);
+      res.status(500).json({ error: "Failed to fetch referrals" });
+    }
+  });
+  app2.get("/api/admin/referrals/:orgId", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const commissions = await storage.getReferralCommissions(orgId);
+      res.json(commissions);
+    } catch (error) {
+      console.error("Error fetching referral commissions:", error);
+      res.status(500).json({ error: "Failed to fetch commissions" });
+    }
+  });
+  app2.get("/api/admin/organizations/:id/dogs", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const org = await storage.getOrganization(orgId);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      const orgDogs = await storage.getDogsByOrganization(orgId);
+      const dogsWithPortraits = await Promise.all(
+        orgDogs.map(async (dog) => {
+          const portrait = await storage.getSelectedPortraitByDog(dog.id);
+          if (portrait) {
+            const style = await storage.getPortraitStyle(portrait.styleId);
+            return { ...dog, portrait: { ...portrait, style } };
+          }
+          return dog;
+        })
+      );
+      res.json(dogsWithPortraits);
+    } catch (error) {
+      console.error("Error fetching org dogs:", error);
+      res.status(500).json({ error: "Failed to fetch dogs" });
+    }
+  });
+  app2.post("/api/admin/organizations/:id/dogs", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const org = await storage.getOrganization(orgId);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      if (!org.planId || org.subscriptionStatus === "inactive") {
+        return res.status(403).json({ error: "This organization needs a plan before pets can be added" });
+      }
+      const limitError = await checkDogLimit(orgId);
+      if (limitError) {
+        return res.status(403).json({ error: limitError });
+      }
+      const { originalPhotoUrl, generatedPortraitUrl, styleId, ...rawData } = req.body;
+      const dogData = {};
+      for (const key of DOG_ALLOWED_FIELDS) {
+        if (rawData[key] !== void 0) dogData[key] = rawData[key];
+      }
+      if (dogData.name && containsInappropriateLanguage(dogData.name)) {
+        return res.status(400).json({ error: "Please choose a family-friendly name" });
+      }
+      if (dogData.breed && !isValidBreed(dogData.breed, dogData.species)) {
+        return res.status(400).json({ error: "Please select a valid breed from the list" });
+      }
+      const dog = await createDogWithPortrait(dogData, orgId, originalPhotoUrl, generatedPortraitUrl, styleId);
+      res.status(201).json(dog);
+    } catch (error) {
+      if (error instanceof import_zod2.z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Error creating pet for org:", error);
+      res.status(500).json({ error: "Failed to save pet" });
+    }
+  });
+  app2.get("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      let org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      const synced = await storage.syncOrgCredits(id);
+      if (synced) org = synced;
+      const dogs2 = await storage.getDogsByOrganization(id);
+      const plan = org.planId ? await storage.getSubscriptionPlan(org.planId) : null;
+      res.json({
+        ...org,
+        dogCount: dogs2.length,
+        ...computePetLimitInfo(org, plan, dogs2.length)
+      });
+    } catch (error) {
+      console.error("Error fetching organization:", error);
+      res.status(500).json({ error: "Failed to fetch organization" });
+    }
+  });
+  app2.post("/api/admin/organizations/:id/select-plan", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { planId } = req.body;
+      if (!planId) {
+        return res.status(400).json({ error: "Plan ID is required" });
+      }
+      const plan = await storage.getSubscriptionPlan(planId);
+      if (!plan) {
+        return res.status(400).json({ error: "Invalid plan" });
+      }
+      const org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      const isFreeTrialPlan = plan.priceMonthly === 0 && (plan.trialDays ?? 0) > 0;
+      if (isFreeTrialPlan && !canStartFreeTrial(org)) {
+        return res.status(400).json({ error: "This organization has already used its free trial." });
+      }
+      const trialEndsAt = plan.trialDays ? new Date(Date.now() + plan.trialDays * 24 * 60 * 60 * 1e3) : null;
+      const isNewPlan = org.planId !== plan.id;
+      const orgUpdate = {
+        planId: plan.id,
+        subscriptionStatus: isFreeTrialPlan ? "trial" : "active"
+      };
+      if (isNewPlan) {
+        orgUpdate.billingCycleStart = org.billingCycleStart || org.createdAt || /* @__PURE__ */ new Date();
+      }
+      if (trialEndsAt) {
+        orgUpdate.trialEndsAt = trialEndsAt;
+      }
+      await storage.updateOrganization(id, orgUpdate);
+      if (isFreeTrialPlan) {
+        await markFreeTrialUsed(id);
+      }
+      await storage.syncOrgCredits(id);
+      const updated = await storage.getOrganization(id);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error selecting plan for organization:", error);
+      res.status(500).json({ error: "Failed to select plan" });
+    }
+  });
+  app2.patch("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      const allowedFields = ORG_ALLOWED_FIELDS;
+      const updates = {};
+      for (const field of allowedFields) {
+        if (req.body[field] !== void 0) {
+          updates[field] = req.body[field];
+        }
+      }
+      if (Object.keys(updates).length === 0) {
+        return res.json(org);
+      }
+      if (updates.planId !== void 0) {
+        if (updates.planId !== null) {
+          const plan = await storage.getSubscriptionPlan(updates.planId);
+          if (!plan) {
+            return res.status(400).json({ error: "Invalid plan selected" });
+          }
+        }
+      }
+      if (updates.logoUrl !== void 0 && updates.logoUrl !== null) {
+        const MAX_LOGO_LENGTH = 5e5;
+        if (typeof updates.logoUrl !== "string" || updates.logoUrl.length > MAX_LOGO_LENGTH) {
+          return res.status(400).json({ error: "Logo data too large or invalid" });
+        }
+      }
+      if (updates.name && updates.name !== org.name) {
+        updates.slug = await generateUniqueSlug(updates.name, id);
+      }
+      const stripeFields = {};
+      for (const key of ["stripeCustomerId", "stripeSubscriptionId", "subscriptionStatus", "stripeTestMode"]) {
+        if (updates[key] !== void 0) {
+          stripeFields[key] = updates[key];
+          if (key !== "subscriptionStatus") delete updates[key];
+        }
+      }
+      await storage.updateOrganization(id, updates);
+      if (Object.keys(stripeFields).length > 0) {
+        await storage.updateOrganizationStripeInfo(id, stripeFields);
+      }
+      const result = await storage.getOrganization(id);
+      res.json(result);
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      res.status(500).json({ error: "Failed to update organization" });
+    }
+  });
+  app2.delete("/api/admin/organizations/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const org = await storage.getOrganization(id);
+      if (!org) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      const dogs2 = await storage.getDogsByOrganization(id);
+      for (const dog of dogs2) {
+        await storage.deleteDog(dog.id);
+      }
+      await storage.deleteOrganization(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting organization:", error);
+      res.status(500).json({ error: "Failed to delete organization" });
+    }
+  });
+  app2.get("/api/admin/data-integrity", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const allOrgs = await storage.getAllOrganizations();
+      const issues = [];
+      for (const org of allOrgs) {
+        const orgDogs = await storage.getDogsByOrganization(org.id);
+        const dogCount = orgDogs.length;
+        if (!org.planId && dogCount > 0) {
+          issues.push({
+            type: "no_plan",
+            severity: "critical",
+            orgId: org.id,
+            orgName: org.name,
+            dogCount,
+            message: `Has ${dogCount} pet(s) but no plan assigned`
+          });
+        }
+        if (!org.planId && org.subscriptionStatus === "trial") {
+          issues.push({
+            type: "trial_no_plan",
+            severity: "critical",
+            orgId: org.id,
+            orgName: org.name,
+            message: `Status is "trial" but no plan assigned`
+          });
+        }
+        if (org.planId && dogCount > 0) {
+          const plan = await storage.getSubscriptionPlan(org.planId);
+          if (plan?.dogsLimit) {
+            const effectiveLimit = plan.dogsLimit + (org.additionalPetSlots || 0);
+            if (dogCount > effectiveLimit) {
+              issues.push({
+                type: "over_limit",
+                severity: "warning",
+                orgId: org.id,
+                orgName: org.name,
+                dogCount,
+                petLimit: effectiveLimit,
+                planName: plan.name,
+                message: `Has ${dogCount} pet(s) but limit is ${effectiveLimit}`
+              });
+            }
+          }
+        }
+      }
+      res.json({
+        totalOrgs: allOrgs.length,
+        issueCount: issues.length,
+        issues
+      });
+    } catch (error) {
+      console.error("Error checking data integrity:", error);
+      res.status(500).json({ error: "Failed to check data integrity" });
+    }
+  });
+  app2.post("/api/admin/sync-stripe", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const allOrgs = await storage.getAllOrganizations();
+      const orgsWithStripe = allOrgs.filter((o) => o.stripeSubscriptionId);
+      const results = [];
+      for (const org of orgsWithStripe) {
+        try {
+          const stripe = getStripeClient(org.stripeTestMode);
+          const sub = await stripe.subscriptions.retrieve(org.stripeSubscriptionId);
+          const newStatus = mapStripeStatusToInternal(sub.status, org.subscriptionStatus);
+          const priceId = sub.items?.data?.[0]?.price?.id;
+          const matchedPlan = priceId ? STRIPE_PLAN_PRICE_MAP[priceId] : void 0;
+          const updates = {};
+          const changes = [];
+          if (newStatus !== org.subscriptionStatus) {
+            updates.subscriptionStatus = newStatus;
+            changes.push(`status: ${org.subscriptionStatus} \u2192 ${newStatus}`);
+          }
+          if (matchedPlan && matchedPlan.id !== org.planId) {
+            updates.planId = matchedPlan.id;
+            changes.push(`plan: ${org.planId} \u2192 ${matchedPlan.id} (${matchedPlan.name})`);
+          }
+          if (newStatus === "canceled") {
+            if (org.additionalPetSlots && org.additionalPetSlots > 0) {
+              updates.additionalPetSlots = 0;
+              changes.push(`add-on slots: ${org.additionalPetSlots} \u2192 0`);
+            }
+          }
+          const subAny = sub;
+          if (sub.status === "active" && subAny.current_period_start) {
+            const periodStart = new Date(subAny.current_period_start * 1e3);
+            const existingStart = org.billingCycleStart;
+            if (!existingStart || existingStart.getTime() !== periodStart.getTime()) {
+              updates.billingCycleStart = periodStart;
+              changes.push(`billing cycle: updated to ${periodStart.toISOString()}`);
+            }
+          }
+          if (changes.length > 0) {
+            if (updates.subscriptionStatus) {
+              await storage.updateOrganizationStripeInfo(org.id, {
+                subscriptionStatus: updates.subscriptionStatus,
+                stripeSubscriptionId: org.stripeSubscriptionId
+              });
+              delete updates.subscriptionStatus;
+            }
+            if (Object.keys(updates).length > 0) {
+              await storage.updateOrganization(org.id, updates);
+            }
+            results.push(`${org.name} (id ${org.id}): ${changes.join(", ")}`);
+          }
+        } catch (stripeErr) {
+          results.push(`${org.name} (id ${org.id}): ERROR - ${stripeErr.message}`);
+        }
+      }
+      res.json({
+        message: `Synced ${orgsWithStripe.length} org(s) with Stripe`,
+        orgsChecked: orgsWithStripe.length,
+        changes: results
+      });
+    } catch (error) {
+      console.error("Error syncing Stripe data:", error);
+      res.status(500).json({ error: "Failed to sync Stripe data" });
+    }
+  });
+  app2.post("/api/admin/recalculate-credits", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const results = await storage.recalculateAllOrgCredits();
+      res.json({
+        message: `Recalculated credits for ${results.length} organization(s)`,
+        changes: results
+      });
+    } catch (error) {
+      console.error("Error recalculating credits:", error);
+      res.status(500).json({ error: "Failed to recalculate credits" });
+    }
+  });
+  app2.post("/api/admin/organizations/:id/generate-send-token", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (org.sendToken && !req.body.regenerate) {
+        return res.json({ sendToken: org.sendToken, orgName: org.name });
+      }
+      const token = import_crypto4.default.randomBytes(24).toString("hex");
+      await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, orgId]);
+      res.json({ sendToken: token, orgName: org.name });
+    } catch (error) {
+      console.error("Error generating send token for org:", error.message);
+      res.status(500).json({ error: "Failed to generate token" });
+    }
+  });
+  app2.post("/api/admin/organizations/:id/send-setup-text", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      const phone = org.contactPhone || org.contact_phone;
+      if (!phone) {
+        return res.status(400).json({ error: "No phone number on file for this business. Add their phone number first." });
+      }
+      let token = org.sendToken;
+      if (!token) {
+        token = import_crypto4.default.randomBytes(24).toString("hex");
+        await pool.query("UPDATE organizations SET send_token = $1 WHERE id = $2", [token, orgId]);
+      }
+      const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+      const message = `Hi from Pawtrait Pros! Download the Pawtrait Send app to start sending portrait texts from your phone: ${appUrl}/setup-phone`;
+      const result = await sendSms(phone, message);
+      if (!result.success) {
+        return res.status(500).json({ error: `Failed to send text: ${result.error || "Unknown error"}` });
+      }
+      res.json({ success: true, phone, orgName: org.name });
+    } catch (error) {
+      console.error("Error sending setup text:", error.message);
+      res.status(500).json({ error: "Failed to send setup text" });
+    }
+  });
+  app2.get("/api/admin/organizations/:id/send-token", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      res.json({ sendToken: org.sendToken || null, orgName: org.name });
+    } catch (error) {
+      console.error("Error fetching send token:", error.message);
+      res.status(500).json({ error: "Failed to fetch token" });
+    }
+  });
+}
+
+// server/routes/sms-routes.ts
+var import_express_rate_limit3 = __toESM(require("express-rate-limit"), 1);
+init_sms();
+function registerSmsRoutes(app2) {
+  const smsRateLimiter = (0, import_express_rate_limit3.default)({
+    windowMs: 60 * 1e3,
+    max: 5,
+    message: { error: "Too many texts sent. Please wait a minute." },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.user?.claims?.sub || "anonymous"
+  });
+  app2.post("/api/send-sms", isAuthenticated, smsRateLimiter, async (req, res) => {
+    try {
+      const { to, message, mediaUrl } = req.body;
+      if (!to || !message) {
+        return res.status(400).json({ error: "Phone number and message are required" });
+      }
+      const cleaned = to.replace(/[\s\-().]/g, "");
+      if (!/^\+?1?\d{10,15}$/.test(cleaned)) {
+        return res.status(400).json({ error: "Please enter a valid phone number" });
+      }
+      if (!isSmsConfigured()) {
+        return res.status(503).json({ error: "SMS service is not configured" });
+      }
+      const phone = formatPhoneNumber(cleaned);
+      const result = await sendSms(phone, message, mediaUrl || void 0);
+      if (result.queued) {
+        return res.json({ success: true, queued: true, messageId: result.messageId });
+      }
+      if (result.retrying) {
+        return res.json({ success: false, retrying: true, messageId: result.messageId, error: result.error });
+      }
+      if (!result.success) {
+        return res.status(500).json({ error: result.error || "Failed to send text message" });
+      }
+      res.json({ success: true, delivered: result.delivered, messageId: result.messageId });
+    } catch (error) {
+      console.error("SMS send error:", error);
+      res.status(500).json({ error: "Failed to send text message" });
+    }
+  });
+  app2.get("/api/sms-status/:messageId", isAuthenticated, (req, res) => {
+    const { messageId } = req.params;
+    const entry = getRetryStatus(messageId);
+    if (!entry) {
+      return res.json({ status: "unknown" });
+    }
+    res.json({
+      status: entry.status,
+      error: entry.lastError
+    });
+  });
+}
+
+// server/routes/instagram.ts
+var import_crypto5 = __toESM(require("crypto"), 1);
+init_storage();
+init_db();
+init_helpers();
+var GRAPH_API = "https://graph.instagram.com";
+var GRAPH_API_V = "https://graph.instagram.com/v21.0";
+var IG_APP_ID = process.env.INSTAGRAM_APP_ID;
+var IG_APP_SECRET = process.env.INSTAGRAM_APP_SECRET;
+var imageCache = /* @__PURE__ */ new Map();
+var MAX_IMAGE_CACHE_SIZE = 50;
+var ALLOWED_IMAGE_TYPES = /* @__PURE__ */ new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of imageCache) {
+    if (now > entry.expiresAt) {
+      imageCache.delete(token);
+    }
+  }
+}, 2 * 60 * 1e3);
+function storePublicImage(base64DataUri) {
+  const matches = base64DataUri.match(/^data:(image\/\w+);base64,(.+)$/s);
+  if (!matches) throw new Error("Invalid base64 image data");
+  const contentType = matches[1];
+  if (!ALLOWED_IMAGE_TYPES.has(contentType)) throw new Error(`Unsupported image type: ${contentType}`);
+  const buffer = Buffer.from(matches[2], "base64");
+  const token = import_crypto5.default.randomUUID();
+  if (imageCache.size >= MAX_IMAGE_CACHE_SIZE) {
+    const oldestKey = imageCache.keys().next().value;
+    if (oldestKey) imageCache.delete(oldestKey);
+  }
+  imageCache.set(token, {
+    data: buffer,
+    contentType,
+    expiresAt: Date.now() + 10 * 60 * 1e3
+    // 10 min TTL
+  });
+  const host = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+  return `${host}/api/public-image/${token}`;
+}
+function verifyMetaSignedRequest(signedRequest) {
+  if (!IG_APP_SECRET) return null;
+  const [sig, payload] = signedRequest.split(".");
+  if (!sig || !payload) return null;
+  const expectedSig = import_crypto5.default.createHmac("sha256", IG_APP_SECRET).update(payload).digest("base64url");
+  try {
+    if (!import_crypto5.default.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return null;
+  } catch {
+    return null;
+  }
+  return JSON.parse(Buffer.from(payload, "base64url").toString());
+}
+function registerInstagramRoutes(app2) {
+  app2.get("/api/public-image/:token", (req, res) => {
+    const entry = imageCache.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) {
+      imageCache.delete(req.params.token);
+      return res.status(404).json({ error: "Image not found or expired" });
+    }
+    res.set("Content-Type", entry.contentType);
+    res.set("Cache-Control", "public, max-age=600");
+    res.send(entry.data);
+  });
+  app2.get("/api/instagram-native/status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.json({ connected: false });
+      const result = await pool.query(
+        "SELECT instagram_access_token, instagram_user_id, instagram_username, instagram_token_expires_at FROM organizations WHERE id = $1",
+        [org.id]
+      );
+      const row = result.rows[0];
+      if (!row?.instagram_access_token || !row?.instagram_user_id) {
+        return res.json({ connected: false });
+      }
+      if (row.instagram_token_expires_at && new Date(row.instagram_token_expires_at) < /* @__PURE__ */ new Date()) {
+        return res.json({ connected: false, reason: "token_expired" });
+      }
+      const expiresAt = row.instagram_token_expires_at ? new Date(row.instagram_token_expires_at) : null;
+      const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1e3);
+      if (expiresAt && expiresAt < sevenDaysFromNow && IG_APP_SECRET) {
+        try {
+          const refreshRes = await fetch(
+            `${GRAPH_API}/refresh_access_token?grant_type=ig_refresh_token&access_token=${row.instagram_access_token}`
+          );
+          const refreshData = await refreshRes.json();
+          if (refreshData.access_token) {
+            const newExpires = new Date(Date.now() + (refreshData.expires_in || 5184e3) * 1e3);
+            await pool.query(
+              "UPDATE organizations SET instagram_access_token = $1, instagram_token_expires_at = $2 WHERE id = $3",
+              [refreshData.access_token, newExpires.toISOString(), org.id]
+            );
+            console.log(`[instagram-native] Token refreshed for org ${org.id}`);
+          }
+        } catch (refreshErr) {
+          console.warn("[instagram-native] Token refresh failed:", refreshErr);
+        }
+      }
+      const verifyRes = await fetch(`${GRAPH_API_V}/me?fields=user_id,username&access_token=${row.instagram_access_token}`);
+      const verifyData = await verifyRes.json();
+      if (verifyData.error) {
+        console.warn("[instagram-native] Token invalid:", verifyData.error.message);
+        return res.json({ connected: false, reason: "token_invalid" });
+      }
+      if (verifyData.username && verifyData.username !== row.instagram_username) {
+        await pool.query("UPDATE organizations SET instagram_username = $1 WHERE id = $2", [verifyData.username, org.id]);
+      }
+      res.json({ connected: true, username: verifyData.username || row.instagram_username, orgId: org.id });
+    } catch (error) {
+      console.error("[instagram-native] Status error:", error);
+      res.json({ connected: false });
+    }
+  });
+  app2.get("/api/instagram-native/connect", isAuthenticated, async (req, res) => {
+    if (!IG_APP_ID || !IG_APP_SECRET) {
+      return res.redirect("/settings?instagram=error&detail=missing_instagram_config");
+    }
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.redirect("/settings?instagram=error&detail=no_organization");
+      const orgId = org.id;
+      const statePayload = JSON.stringify({ orgId, ts: Date.now() });
+      const stateHmac = import_crypto5.default.createHmac("sha256", IG_APP_SECRET).update(statePayload).digest("hex");
+      const state = Buffer.from(JSON.stringify({ p: statePayload, s: stateHmac })).toString("base64url");
+      const redirectUri = `${process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000"}/api/instagram-native/callback`;
+      const authUrl = `https://api.instagram.com/oauth/authorize?client_id=${IG_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_business_basic,instagram_business_content_publish&response_type=code&state=${state}`;
+      console.log(`[instagram-native] Redirecting org ${orgId} to Facebook OAuth`);
+      res.redirect(authUrl);
+    } catch (error) {
+      console.error("[instagram-native] Connect error:", error);
+      res.redirect("/settings?instagram=error&detail=connect_failed");
+    }
+  });
+  app2.get("/api/instagram-native/callback", async (req, res) => {
+    const { code, state, error: oauthError } = req.query;
+    if (oauthError) {
+      console.error("[instagram-native] OAuth denied:", oauthError);
+      return res.redirect("/settings?instagram=error&detail=" + encodeURIComponent(oauthError));
+    }
+    if (!code || !state) {
+      return res.redirect("/settings?instagram=error&detail=missing_code_or_state");
+    }
+    try {
+      const stateOuter = JSON.parse(Buffer.from(state, "base64url").toString());
+      const expectedHmac = import_crypto5.default.createHmac("sha256", IG_APP_SECRET).update(stateOuter.p).digest("hex");
+      if (!import_crypto5.default.timingSafeEqual(Buffer.from(stateOuter.s, "hex"), Buffer.from(expectedHmac, "hex"))) {
+        return res.redirect("/settings?instagram=error&detail=invalid_state");
+      }
+      const stateData = JSON.parse(stateOuter.p);
+      const orgId = stateData.orgId;
+      if (!orgId) throw new Error("No orgId in state");
+      const redirectUri = `${process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000"}/api/instagram-native/callback`;
+      const cleanCode = code.replace(/#_$/, "");
+      console.log(`[instagram-native] Token exchange: client_id=${IG_APP_ID}, redirect_uri=${redirectUri}, code_length=${cleanCode.length}`);
+      const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: IG_APP_ID,
+          client_secret: IG_APP_SECRET,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+          code: cleanCode
+        }).toString()
+      });
+      const tokenData = await tokenRes.json();
+      if (tokenData.error_type || tokenData.error) {
+        console.error("[instagram-native] Token exchange error:", JSON.stringify(tokenData));
+        console.error("[instagram-native] Used redirect_uri:", redirectUri);
+        console.error("[instagram-native] Used client_id:", IG_APP_ID);
+        throw new Error(tokenData.error_message || tokenData.error?.message || "Token exchange failed");
+      }
+      const shortLivedToken = tokenData.access_token;
+      const longTokenRes = await fetch(
+        `${GRAPH_API}/access_token?grant_type=ig_exchange_token&client_secret=${IG_APP_SECRET}&access_token=${shortLivedToken}`
+      );
+      const longTokenData = await longTokenRes.json();
+      if (longTokenData.error) {
+        console.error("[instagram-native] Long-lived token error:", longTokenData.error);
+        throw new Error(longTokenData.error.message || "Long-lived token exchange failed");
+      }
+      const longLivedToken = longTokenData.access_token;
+      const expiresIn = longTokenData.expires_in || 5184e3;
+      const igProfileRes = await fetch(`${GRAPH_API_V}/me?fields=user_id,username&access_token=${longLivedToken}`);
+      const igProfileData = await igProfileRes.json();
+      const igUserId = igProfileData.id;
+      const igUsername = igProfileData.username || null;
+      console.log(`[instagram-native] Profile: id=${igUserId}, username=${igUsername}`);
+      const expiresAt = new Date(Date.now() + expiresIn * 1e3);
+      await pool.query(
+        `UPDATE organizations SET
+          instagram_access_token = $1,
+          instagram_user_id = $2,
+          instagram_username = $3,
+          instagram_page_id = $4,
+          instagram_token_expires_at = $5
+        WHERE id = $6`,
+        [longLivedToken, igUserId, igUsername, null, expiresAt.toISOString(), orgId]
+      );
+      console.log(`[instagram-native] Connected org ${orgId}: @${igUsername} (IG ID: ${igUserId})`);
+      res.redirect("/settings?instagram=connected");
+    } catch (error) {
+      console.error("[instagram-native] Callback error:", error);
+      res.redirect("/settings?instagram=error&detail=callback_failed");
+    }
+  });
+  app2.post("/api/instagram-native/post", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { dogId, caption, image, orgId: bodyOrgId } = req.body;
+      let imageToPost;
+      let org;
+      let defaultCaption;
+      if (image && bodyOrgId) {
+        const { org: resolvedOrg, error, status } = await resolveOrg(userId, userEmail, { orgId: bodyOrgId });
+        if (!resolvedOrg) return res.status(status || 404).json({ error });
+        org = resolvedOrg;
+        imageToPost = image;
+        defaultCaption = caption || `Check out the adorable pets at ${org.name}! #petportrait #pawtraitpros`;
+      } else if (dogId) {
+        const dog = await storage.getDog(parseInt(dogId));
+        if (!dog) return res.status(404).json({ error: "Dog not found" });
+        const { org: resolvedOrg, error, status } = await resolveOrg(userId, userEmail, { dogId: dog.id });
+        if (!resolvedOrg) return res.status(status || 404).json({ error });
+        org = resolvedOrg;
+        const portrait = await storage.getSelectedPortraitByDog(dog.id);
+        if (!portrait || !portrait.generatedImageUrl) {
+          return res.status(400).json({ error: "No portrait found for this pet" });
+        }
+        imageToPost = portrait.generatedImageUrl;
+        const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+        const host = req.headers["x-forwarded-host"] || req.headers["host"] || "pawtraitpros.com";
+        const dogUrl = dog.petCode ? `${proto}://${host}/pawfile/code/${dog.petCode}` : `${proto}://${host}/pawfile/${dog.id}`;
+        defaultCaption = caption || `Meet ${dog.name}! ${dog.breed ? `A beautiful ${dog.breed} ` : ""}View their full portrait at ${dogUrl}
+
+#petportrait #pawtraitpros`;
+      } else {
+        return res.status(400).json({ error: "dogId or image+orgId is required" });
+      }
+      const result = await pool.query(
+        "SELECT instagram_access_token, instagram_user_id FROM organizations WHERE id = $1",
+        [org.id]
+      );
+      const token = result.rows[0]?.instagram_access_token;
+      const igUserId = result.rows[0]?.instagram_user_id;
+      if (!token || !igUserId) {
+        return res.status(400).json({ error: "Instagram not connected. Please connect Instagram first." });
+      }
+      const imageUrl = storePublicImage(imageToPost);
+      console.log(`[instagram-native] Posting for org ${org.id}, image URL: ${imageUrl}`);
+      console.log(`[instagram-native] Creating container: user=${igUserId}, image_url=${imageUrl}`);
+      const containerRes = await fetch(`${GRAPH_API_V}/${igUserId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_url: imageUrl,
+          caption: defaultCaption,
+          access_token: token
+        })
+      });
+      const containerText = await containerRes.text();
+      console.log(`[instagram-native] Container response (${containerRes.status}): ${containerText}`);
+      const containerData = JSON.parse(containerText);
+      if (containerData.error) {
+        console.error("[instagram-native] Container creation error:", JSON.stringify(containerData.error));
+        throw new Error(containerData.error.message || "Failed to create media container");
+      }
+      const containerId = containerData.id;
+      console.log(`[instagram-native] Container created: ${containerId}`);
+      let ready = false;
+      for (let i = 0; i < 15; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2e3));
+        const statusRes = await fetch(
+          `${GRAPH_API_V}/${containerId}?fields=status_code&access_token=${token}`
+        );
+        const statusData = await statusRes.json();
+        if (statusData.status_code === "FINISHED") {
+          ready = true;
+          break;
+        }
+        if (statusData.status_code === "ERROR") {
+          throw new Error("Instagram rejected the image. It may be too large or in an unsupported format.");
+        }
+      }
+      if (!ready) {
+        throw new Error("Image processing timed out. Please try again.");
+      }
+      console.log(`[instagram-native] Publishing container ${containerId} for user ${igUserId}`);
+      const publishRes = await fetch(`${GRAPH_API_V}/${igUserId}/media_publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creation_id: containerId,
+          access_token: token
+        })
+      });
+      const publishText = await publishRes.text();
+      console.log(`[instagram-native] Publish response (${publishRes.status}): ${publishText}`);
+      const publishData = JSON.parse(publishText);
+      if (publishData.error) {
+        console.error("[instagram-native] Publish error:", JSON.stringify(publishData.error));
+        throw new Error(publishData.error.message || "Failed to publish to Instagram");
+      }
+      console.log(`[instagram-native] Published to Instagram: ${publishData.id}`);
+      const tokenFromUrl = imageUrl.split("/").pop();
+      if (tokenFromUrl) imageCache.delete(tokenFromUrl);
+      res.json({
+        success: true,
+        mediaId: publishData.id,
+        postUrl: null
+        // Graph API doesn't return permalink directly
+      });
+    } catch (error) {
+      console.error("[instagram-native] Post error:", error);
+      res.status(500).json({ error: "Failed to post to Instagram" });
+    }
+  });
+  app2.delete("/api/instagram-native/disconnect", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: req.query.orgId });
+      if (!org) return res.status(status || 404).json({ error });
+      await pool.query(
+        `UPDATE organizations SET
+          instagram_access_token = NULL,
+          instagram_user_id = NULL,
+          instagram_username = NULL,
+          instagram_page_id = NULL,
+          instagram_token_expires_at = NULL
+        WHERE id = $1`,
+        [org.id]
+      );
+      console.log(`[instagram-native] Disconnected org ${org.id}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[instagram-native] Disconnect error:", error);
+      res.status(500).json({ error: "Failed to disconnect Instagram" });
+    }
+  });
+  app2.post("/api/instagram-native/data-deletion", async (req, res) => {
+    try {
+      const { signed_request } = req.body;
+      if (!signed_request || !IG_APP_SECRET) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+      const data = verifyMetaSignedRequest(signed_request);
+      if (!data) {
+        return res.status(403).json({ error: "Invalid signature" });
+      }
+      const fbUserId = data.user_id;
+      if (fbUserId) {
+        await pool.query(
+          `UPDATE organizations SET
+            instagram_access_token = NULL,
+            instagram_user_id = NULL,
+            instagram_username = NULL,
+            instagram_page_id = NULL,
+            instagram_token_expires_at = NULL
+          WHERE instagram_user_id = $1`,
+          [String(fbUserId)]
+        );
+        console.log(`[instagram-native] Data deletion processed for FB user ${fbUserId}`);
+      }
+      const confirmationCode = import_crypto5.default.randomUUID();
+      res.json({
+        url: `https://pawtraitpros.com/privacy`,
+        confirmation_code: confirmationCode
+      });
+    } catch (error) {
+      console.error("[instagram-native] Data deletion error:", error);
+      res.status(500).json({ error: "Failed to process data deletion" });
+    }
+  });
+  app2.post("/api/instagram-native/deauthorize", async (req, res) => {
+    try {
+      const { signed_request } = req.body;
+      if (!signed_request) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+      const data = verifyMetaSignedRequest(signed_request);
+      if (!data) {
+        return res.status(403).json({ error: "Invalid signature" });
+      }
+      const fbUserId = data.user_id;
+      if (fbUserId) {
+        await pool.query(
+          `UPDATE organizations SET
+            instagram_access_token = NULL,
+            instagram_user_id = NULL,
+            instagram_username = NULL,
+            instagram_page_id = NULL,
+            instagram_token_expires_at = NULL
+          WHERE instagram_user_id = $1`,
+          [String(fbUserId)]
+        );
+        console.log(`[instagram-native] Deauthorized FB user ${fbUserId}`);
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[instagram-native] Deauthorize error:", error);
+      res.status(500).json({ error: "Failed to process deauthorization" });
+    }
+  });
+}
+
+// server/routes/gdpr.ts
+init_storage();
+init_db();
+init_helpers();
+function registerGdprRoutes(app2) {
+  app2.get("/api/my-data/export", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      const user = await storage.getUser(userId);
+      const org = await storage.getOrganizationByOwner(userId);
+      let dogs2 = [];
+      let portraits2 = [];
+      if (org) {
+        dogs2 = await storage.getDogsByOrganization(org.id);
+        for (const dog of dogs2) {
+          const dogPortraits = await storage.getPortraitsByDog(dog.id);
+          portraits2.push(...dogPortraits.map((p) => ({
+            dogName: dog.name,
+            style: p.styleId,
+            createdAt: p.createdAt
+          })));
+        }
+      }
+      const exportData = {
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        user: {
+          id: user?.id,
+          email: user?.email,
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          createdAt: user?.createdAt
+        },
+        organization: org ? {
+          name: org.name,
+          slug: org.slug,
+          description: org.description,
+          websiteUrl: org.websiteUrl,
+          phone: org.contactPhone,
+          address: org.locationStreet,
+          createdAt: org.createdAt
+        } : null,
+        pets: dogs2.map((d) => ({
+          name: d.name,
+          breed: d.breed,
+          species: d.species,
+          age: d.age,
+          gender: d.gender,
+          description: d.description,
+          ownerName: d.ownerName,
+          ownerEmail: d.ownerEmail,
+          ownerPhone: d.ownerPhone,
+          createdAt: d.createdAt
+        })),
+        portraits: portraits2
+      };
+      res.set("Content-Disposition", 'attachment; filename="my-data-export.json"');
+      res.set("Content-Type", "application/json");
+      res.json(exportData);
+    } catch (error) {
+      console.error("Data export error:", error);
+      res.status(500).json({ error: "Failed to export data" });
+    }
+  });
+  app2.delete("/api/my-account", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
+      if (userEmail === ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin account cannot be self-deleted" });
+      }
+      const org = await storage.getOrganizationByOwner(userId);
+      if (org) {
+        const dogs2 = await storage.getDogsByOrganization(org.id);
+        for (const dog of dogs2) {
+          await storage.deleteDog(dog.id);
+        }
+        await storage.deleteOrganization(org.id);
+      }
+      await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+      const supabaseUrl2 = process.env.SUPABASE_URL;
+      const supabaseServiceKey2 = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (supabaseUrl2 && supabaseServiceKey2) {
+        await fetch(`${supabaseUrl2}/auth/v1/admin/users/${userId}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${supabaseServiceKey2}`,
+            "apikey": supabaseServiceKey2
+          }
+        });
+      }
+      console.log(`[gdpr] Account deleted: ${userEmail} (${userId})`);
+      res.json({ success: true, message: "Your account and all associated data have been permanently deleted." });
+    } catch (error) {
+      console.error("Account deletion error:", error);
+      res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+}
+
+// server/routes/jobs.ts
+function registerJobRoutes(app2) {
+  app2.get("/api/jobs/:jobId", isAuthenticated, (req, res) => {
+    const job = getJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    res.json(job);
+  });
+  app2.get("/api/jobs", isAuthenticated, (req, res) => {
+    const ids = (req.query.ids || "").split(",").filter(Boolean);
+    if (ids.length === 0) return res.status(400).json({ error: "Provide ?ids=id1,id2,..." });
+    if (ids.length > 50) return res.status(400).json({ error: "Max 50 job IDs per request" });
+    const results = getJobs(ids).map((j, i) => j || { id: ids[i], status: "not_found" });
+    res.json(results);
+  });
+}
+
+// server/routes/sms-queue.ts
+init_db();
+init_storage();
+init_helpers();
+init_websocket();
+init_sms();
+function registerSmsQueueRoutes(app2) {
+  app2.post("/api/sms-queue/enqueue", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { dogIds, organizationId, messageTemplate } = req.body;
+      if (!dogIds || !Array.isArray(dogIds) || dogIds.length === 0) {
+        return res.status(400).json({ error: "dogIds array is required" });
+      }
+      const { org, error, status } = await resolveOrg(userId, userEmail, { orgId: organizationId });
+      if (!org) return res.status(status || 404).json({ error });
+      const appUrl = process.env.APP_URL || "https://pawtraitpros.com";
+      const defaultTemplate = "Check out {dogName}'s beautiful portrait from {orgName}! {link}";
+      const template = messageTemplate?.trim() || defaultTemplate;
+      const queued = [];
+      const errors = [];
+      for (const dogId of dogIds) {
+        const dog = await storage.getDog(dogId);
+        if (!dog || dog.organizationId !== org.id) {
+          errors.push({ dogId, error: "Dog not found or wrong org" });
+          continue;
+        }
+        if (!dog.ownerPhone) {
+          errors.push({ dogId, error: "No owner phone number" });
+          continue;
+        }
+        let petCode = dog.petCode;
+        if (!petCode) {
+          petCode = generatePetCode(dog.name);
+          await storage.updateDog(dog.id, { petCode });
+        }
+        const pawfileUrl = `${appUrl}/pawfile/code/${petCode}`;
+        const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
+        const imageUrl = selectedPortrait?.generatedImageUrl?.startsWith("https://") ? selectedPortrait.generatedImageUrl : selectedPortrait ? `${appUrl}/api/portraits/${selectedPortrait.id}/image` : null;
+        const messageBody = template.replace(/\{dogName\}/g, dog.name).replace(/\{orgName\}/g, org.name).replace(/\{link\}/g, pawfileUrl);
+        let smsStatus = "pending";
+        let smsError = null;
+        if (isSmsConfigured()) {
+          try {
+            const smsResult = await sendSms(dog.ownerPhone, messageBody, imageUrl || void 0);
+            if (smsResult.success) {
+              smsStatus = "sent";
+            } else {
+              smsStatus = "failed";
+              smsError = smsResult.error || "Send failed";
+              console.error(`[sms-queue] Telnyx send failed for ${dog.name}:`, smsResult.error);
+            }
+          } catch (smsErr) {
+            smsStatus = "failed";
+            smsError = smsErr.message;
+            console.error(`[sms-queue] Telnyx send error for ${dog.name}:`, smsErr.message);
+          }
+        } else {
+          smsStatus = "failed";
+          smsError = "SMS not configured";
+          console.error(`[sms-queue] SMS not configured \u2014 cannot send to ${dog.name}`);
+        }
+        const result = await pool.query(
+          `INSERT INTO sms_queue (organization_id, dog_id, recipient_phone, message_body, image_url, pawfile_url, status, ${smsStatus === "sent" ? "sent_at" : "error"})
+           VALUES ($1, $2, $3, $4, $5, $6, $7, ${smsStatus === "sent" ? "CURRENT_TIMESTAMP" : "$8"}) RETURNING id`,
+          smsStatus === "sent" ? [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus] : [org.id, dog.id, dog.ownerPhone, messageBody, imageUrl, pawfileUrl, smsStatus, smsError]
+        );
+        queued.push({ dogId: dog.id, queueId: result.rows[0].id });
+        if (smsStatus === "failed") {
+          errors.push({ dogId: dog.id, error: smsError || "Send failed" });
+        }
+      }
+      const sentCount = queued.length - errors.filter((e) => queued.some((q) => q.dogId === e.dogId)).length;
+      if (queued.length > 0) {
+        const io2 = getIo();
+        if (io2) {
+          io2.to(`org:${org.id}`).emit("delivery:update", {
+            count: queued.length,
+            sent: sentCount,
+            orgId: org.id
+          });
+        }
+      }
+      res.json({ queued, errors, totalQueued: queued.length, totalSent: sentCount, sent: sentCount > 0 });
+    } catch (error) {
+      console.error("Error enqueuing SMS:", error.message);
+      res.status(500).json({ error: "Failed to enqueue messages" });
+    }
+  });
+  app2.get("/api/sms-queue/mine", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+      const result = await pool.query(
+        `UPDATE sms_queue
+         SET status = 'claimed', claimed_at = CURRENT_TIMESTAMP
+         WHERE organization_id = $1 AND status = 'pending'
+         RETURNING id, dog_id, recipient_phone, message_body, image_url, pawfile_url`,
+        [org.id]
+      );
+      res.json({ messages: result.rows, count: result.rows.length });
+    } catch (error) {
+      console.error("Error fetching SMS queue:", error.message);
+      res.status(500).json({ error: "Failed to fetch queue" });
+    }
+  });
+  app2.get("/api/sms-queue/status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { org, error, status } = await resolveOrg(userId, userEmail);
+      if (!org) return res.status(status || 404).json({ error });
+      const result = await pool.query(
+        `SELECT sq.id, sq.dog_id, sq.recipient_phone, sq.message_body, sq.image_url,
+                sq.pawfile_url, sq.status, sq.sent_at, sq.error, d.name as dog_name
+         FROM sms_queue sq
+         JOIN dogs d ON d.id = sq.dog_id
+         WHERE sq.organization_id = $1
+           AND sq.created_at > NOW() - INTERVAL '24 hours'
+         ORDER BY sq.created_at DESC`,
+        [org.id]
+      );
+      res.json({ items: result.rows });
+    } catch (error) {
+      console.error("Error fetching queue status:", error.message);
+      res.status(500).json({ error: "Failed to fetch queue status" });
+    }
+  });
+  app2.patch("/api/sms-queue/:id/status", isAuthenticated, async (req, res) => {
+    try {
+      const queueId = parseInt(req.params.id);
+      if (isNaN(queueId)) return res.status(400).json({ error: "Invalid queue ID" });
+      const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email || "";
+      const { status: newStatus, error: errorMsg } = req.body;
+      if (!["sent", "failed"].includes(newStatus)) {
+        return res.status(400).json({ error: "Status must be 'sent' or 'failed'" });
+      }
+      const queueItem = await pool.query(
+        `SELECT sq.organization_id, o.owner_id FROM sms_queue sq
+         JOIN organizations o ON o.id = sq.organization_id
+         WHERE sq.id = $1`,
+        [queueId]
+      );
+      if (queueItem.rows.length === 0) {
+        return res.status(404).json({ error: "Queue item not found" });
+      }
+      if (queueItem.rows[0].owner_id !== userId && userEmail !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+      const orgId = queueItem.rows[0].organization_id;
+      if (newStatus === "sent") {
+        await pool.query(
+          `UPDATE sms_queue SET status = 'sent', sent_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [queueId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE sms_queue SET status = 'failed', error = $2 WHERE id = $1`,
+          [queueId, errorMsg || "Unknown error"]
+        );
+      }
+      const io2 = getIo();
+      if (io2) {
+        io2.to(`org:${orgId}`).emit("delivery:update", {
+          queueId,
+          status: newStatus,
+          error: errorMsg
+        });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating queue status:", error.message);
+      res.status(500).json({ error: "Failed to update status" });
+    }
+  });
+  app2.get("/api/sms-queue/fetch", isDeviceAuthenticated, async (req, res) => {
+    try {
+      const org = req.deviceOrg;
+      await pool.query(
+        `UPDATE sms_queue SET status = 'pending', claimed_at = NULL
+         WHERE organization_id = $1 AND status = 'claimed'
+           AND claimed_at < NOW() - INTERVAL '10 minutes'`,
+        [org.id]
+      );
+      const result = await pool.query(
+        `UPDATE sms_queue
+         SET status = 'claimed', claimed_at = CURRENT_TIMESTAMP
+         WHERE organization_id = $1 AND status = 'pending'
+         RETURNING id, dog_id, recipient_phone, message_body, image_url, pawfile_url`,
+        [org.id]
+      );
+      res.json({ messages: result.rows, count: result.rows.length });
+    } catch (error) {
+      console.error("Error fetching SMS queue (device):", error.message);
+      res.status(500).json({ error: "Failed to fetch queue" });
+    }
+  });
+  app2.post("/api/sms-queue/report", isDeviceAuthenticated, async (req, res) => {
+    try {
+      const org = req.deviceOrg;
+      const { results } = req.body;
+      if (!results || !Array.isArray(results) || results.length === 0) {
+        return res.status(400).json({ error: "results array is required" });
+      }
+      const io2 = getIo();
+      for (const r of results) {
+        if (!r.id || !["sent", "failed"].includes(r.status)) continue;
+        if (r.status === "sent") {
+          await pool.query(
+            `UPDATE sms_queue SET status = 'sent', sent_at = CURRENT_TIMESTAMP
+             WHERE id = $1 AND organization_id = $2`,
+            [r.id, org.id]
+          );
+        } else {
+          await pool.query(
+            `UPDATE sms_queue SET status = 'failed', error = $3
+             WHERE id = $1 AND organization_id = $2`,
+            [r.id, org.id, r.error || "Unknown error"]
+          );
+        }
+        if (io2) {
+          io2.to(`org:${org.id}`).emit("delivery:update", {
+            queueId: r.id,
+            status: r.status,
+            error: r.error
+          });
+        }
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error reporting SMS results:", error.message);
+      res.status(500).json({ error: "Failed to report results" });
+    }
+  });
+  const connectAttempts = /* @__PURE__ */ new Map();
+  app2.post("/api/sms-queue/connect-by-phone", async (req, res) => {
+    try {
+      const clientIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
+      const now = Date.now();
+      const limit = connectAttempts.get(clientIp);
+      if (limit && limit.resetAt > now && limit.count >= 5) {
+        return res.status(429).json({ error: "Too many attempts. Try again later." });
+      }
+      if (!limit || limit.resetAt <= now) {
+        connectAttempts.set(clientIp, { count: 1, resetAt: now + 36e5 });
+      } else {
+        limit.count++;
+      }
+      const { phone } = req.body;
+      if (!phone || typeof phone !== "string") {
+        return res.status(400).json({ error: "Phone number is required" });
+      }
+      const digits = phone.replace(/\D/g, "");
+      let normalized;
+      if (digits.length === 10) {
+        normalized = `+1${digits}`;
+      } else if (digits.length === 11 && digits.startsWith("1")) {
+        normalized = `+${digits}`;
+      } else {
+        return res.status(400).json({ error: "Please enter a valid 10-digit US phone number." });
+      }
+      const formats = [
+        normalized,
+        // +14045551234
+        digits.length === 11 ? digits : `1${digits}`,
+        // 14045551234
+        digits.length === 10 ? digits : digits.slice(1)
+        // 4045551234
+      ];
+      const digits10 = digits.length === 10 ? digits : digits.slice(1);
+      const result = await pool.query(
+        `SELECT send_token, name, id FROM organizations
+         WHERE send_token IS NOT NULL
+           AND regexp_replace(contact_phone, '[^0-9]', '', 'g') LIKE '%' || $1
+         LIMIT 1`,
+        [digits10]
+      );
+      if (result.rows.length === 0) {
+        return res.json({ token: null, error: "We couldn't find a business with that number. Double-check and try again." });
+      }
+      const org = result.rows[0];
+      res.json({ token: org.send_token, orgName: org.name });
+    } catch (error) {
+      console.error("Error in connect-by-phone:", error.message);
+      res.status(500).json({ error: "Something went wrong. Please try again." });
+    }
+  });
+  app2.delete("/api/sms-queue/cleanup", isAuthenticated, async (req, res) => {
+    try {
+      const userEmail = req.user.claims.email || "";
+      if (userEmail !== ADMIN_EMAIL) {
+        return res.status(403).json({ error: "Admin only" });
+      }
+      const result = await pool.query(
+        `DELETE FROM sms_queue WHERE created_at < NOW() - INTERVAL '24 hours' RETURNING id`
+      );
+      res.json({ deleted: result.rows.length });
+    } catch (error) {
+      console.error("Error cleaning up SMS queue:", error.message);
+      res.status(500).json({ error: "Cleanup failed" });
+    }
+  });
+}
+
+// server/routes/payouts.ts
+init_db();
+init_storage();
+init_helpers();
+
+// server/stripe-connect.ts
+init_stripeClient();
+function getLiveStripe() {
+  return getStripeClient(false);
+}
+async function createConnectAccount(orgName, contactEmail) {
+  const stripe = getLiveStripe();
+  const account = await stripe.accounts.create({
+    type: "express",
+    country: "US",
+    email: contactEmail,
+    business_type: "company",
+    company: {
+      name: orgName
+    },
+    capabilities: {
+      transfers: { requested: true }
+    }
+  });
+  return account.id;
+}
+async function createOnboardingLink(accountId, returnUrl, refreshUrl) {
+  const stripe = getLiveStripe();
+  const link = await stripe.accountLinks.create({
+    account: accountId,
+    type: "account_onboarding",
+    return_url: returnUrl,
+    refresh_url: refreshUrl
+  });
+  return link.url;
+}
+async function checkAccountStatus(accountId) {
+  const stripe = getLiveStripe();
+  const account = await stripe.accounts.retrieve(accountId);
+  return {
+    payoutsEnabled: account.payouts_enabled || false,
+    chargesEnabled: account.charges_enabled || false,
+    detailsSubmitted: account.details_submitted || false
+  };
+}
+async function createTransfer(accountId, amountCents, metadata = {}) {
+  const stripe = getLiveStripe();
+  const transfer = await stripe.transfers.create({
+    amount: amountCents,
+    currency: "usd",
+    destination: accountId,
+    metadata
+  });
+  return transfer.id;
+}
+
+// server/routes/payouts.ts
+function registerPayoutRoutes(app2) {
+  app2.post("/api/connect/onboard", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const org = await storage.getOrganizationByOwner(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+      let accountId = org.stripeConnectAccountId;
+      if (!accountId) {
+        accountId = await createConnectAccount(org.name, org.contactEmail || "");
+        await pool.query(
+          `UPDATE organizations SET stripe_connect_account_id = $1 WHERE id = $2`,
+          [accountId, org.id]
+        );
+      }
+      const baseUrl = process.env.NODE_ENV === "production" ? "https://pawtraitpros.com" : "http://localhost:5000";
+      const onboardingUrl = await createOnboardingLink(
+        accountId,
+        `${baseUrl}/dashboard?connect=complete`,
+        `${baseUrl}/dashboard?connect=refresh`
+      );
+      res.json({ url: onboardingUrl, accountId });
+    } catch (error) {
+      console.error("[connect] Onboarding error:", error.message);
+      res.status(500).json({ error: "Failed to start onboarding" });
+    }
+  });
+  app2.get("/api/connect/status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const org = await storage.getOrganizationByOwner(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+      if (!org.stripeConnectAccountId) {
+        return res.json({ connected: false, payoutsEnabled: false });
+      }
+      const status = await checkAccountStatus(org.stripeConnectAccountId);
+      if (status.payoutsEnabled && !org.stripeConnectOnboardingComplete) {
+        await pool.query(
+          `UPDATE organizations SET stripe_connect_onboarding_complete = true WHERE id = $1`,
+          [org.id]
+        );
+      }
+      res.json({
+        connected: true,
+        accountId: org.stripeConnectAccountId,
+        ...status
+      });
+    } catch (error) {
+      console.error("[connect] Status check error:", error.message);
+      res.status(500).json({ error: "Failed to check status" });
+    }
+  });
+  app2.get("/api/my-earnings", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const org = await storage.getOrganizationByOwner(userId);
+      if (!org) return res.status(404).json({ error: "No organization found" });
+      const totalsResult = await pool.query(
+        `SELECT
+          COALESCE(SUM(business_share_cents), 0) as total_earned,
+          COALESCE(SUM(CASE WHEN payout_id IS NOT NULL THEN business_share_cents ELSE 0 END), 0) as total_paid,
+          COALESCE(SUM(CASE WHEN payout_id IS NULL THEN business_share_cents ELSE 0 END), 0) as pending_balance
+         FROM merch_earnings WHERE organization_id = $1`,
+        [org.id]
+      );
+      const recentResult = await pool.query(
+        `SELECT me.*, mo.customer_name, mo.created_at as order_date
+         FROM merch_earnings me
+         JOIN merch_orders mo ON me.merch_order_id = mo.id
+         WHERE me.organization_id = $1
+         ORDER BY me.created_at DESC LIMIT 20`,
+        [org.id]
+      );
+      const payoutsResult = await pool.query(
+        `SELECT * FROM merch_payouts WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 10`,
+        [org.id]
+      );
+      const totals = totalsResult.rows[0];
+      res.json({
+        totalEarnedCents: parseInt(totals.total_earned),
+        totalPaidCents: parseInt(totals.total_paid),
+        pendingBalanceCents: parseInt(totals.pending_balance),
+        recentEarnings: recentResult.rows,
+        recentPayouts: payoutsResult.rows,
+        connectStatus: {
+          connected: !!org.stripeConnectAccountId,
+          onboardingComplete: org.stripeConnectOnboardingComplete || false
+        }
+      });
+    } catch (error) {
+      console.error("[earnings] Error:", error.message);
+      res.status(500).json({ error: "Failed to fetch earnings" });
+    }
+  });
+  app2.get("/api/admin/payout-summary", isAuthenticated, async (req, res) => {
+    try {
+      const email = req.user?.claims?.email;
+      if (email !== ADMIN_EMAIL) return res.status(403).json({ error: "Forbidden" });
+      const result = await pool.query(`
+        SELECT
+          o.id as org_id,
+          o.name as org_name,
+          o.stripe_connect_account_id,
+          o.stripe_connect_onboarding_complete,
+          COALESCE(SUM(me.business_share_cents), 0) as total_earned,
+          COALESCE(SUM(CASE WHEN me.payout_id IS NOT NULL THEN me.business_share_cents ELSE 0 END), 0) as total_paid,
+          COALESCE(SUM(CASE WHEN me.payout_id IS NULL THEN me.business_share_cents ELSE 0 END), 0) as pending_balance,
+          COUNT(me.id) as total_orders
+        FROM organizations o
+        LEFT JOIN merch_earnings me ON o.id = me.organization_id
+        GROUP BY o.id, o.name, o.stripe_connect_account_id, o.stripe_connect_onboarding_complete
+        HAVING COALESCE(SUM(me.business_share_cents), 0) > 0
+        ORDER BY pending_balance DESC
+      `);
+      res.json({
+        organizations: result.rows.map((r) => ({
+          orgId: r.org_id,
+          orgName: r.org_name,
+          connectAccountId: r.stripe_connect_account_id,
+          connectOnboarded: r.stripe_connect_onboarding_complete || false,
+          totalEarnedCents: parseInt(r.total_earned),
+          totalPaidCents: parseInt(r.total_paid),
+          pendingBalanceCents: parseInt(r.pending_balance),
+          totalOrders: parseInt(r.total_orders)
+        }))
+      });
+    } catch (error) {
+      console.error("[admin-payouts] Summary error:", error.message);
+      res.status(500).json({ error: "Failed to fetch payout summary" });
+    }
+  });
+  app2.post("/api/admin/payout/:orgId", isAuthenticated, async (req, res) => {
+    try {
+      const email = req.user?.claims?.email;
+      if (email !== ADMIN_EMAIL) return res.status(403).json({ error: "Forbidden" });
+      const orgId = parseInt(req.params.orgId);
+      const org = await storage.getOrganization(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (!org.stripeConnectAccountId) {
+        return res.status(400).json({ error: "Organization has not set up Stripe Connect" });
+      }
+      const connectStatus = await checkAccountStatus(org.stripeConnectAccountId);
+      if (!connectStatus.payoutsEnabled) {
+        return res.status(400).json({ error: "Connect account is not ready for payouts" });
+      }
+      const unpaidResult = await pool.query(
+        `SELECT id, business_share_cents FROM merch_earnings WHERE organization_id = $1 AND payout_id IS NULL`,
+        [orgId]
+      );
+      if (unpaidResult.rows.length === 0) {
+        return res.status(400).json({ error: "No pending earnings to pay out" });
+      }
+      const totalCents = unpaidResult.rows.reduce((sum, r) => sum + r.business_share_cents, 0);
+      const earningIds = unpaidResult.rows.map((r) => r.id);
+      const payoutResult = await pool.query(
+        `INSERT INTO merch_payouts (organization_id, amount_cents, period_start, period_end, status, initiated_by)
+         VALUES ($1, $2, (SELECT MIN(created_at) FROM merch_earnings WHERE id = ANY($3)), CURRENT_TIMESTAMP, 'pending', $4)
+         RETURNING id`,
+        [orgId, totalCents, earningIds, email]
+      );
+      const payoutId = payoutResult.rows[0].id;
+      try {
+        const transferId = await createTransfer(
+          org.stripeConnectAccountId,
+          totalCents,
+          { payoutId: String(payoutId), orgId: String(orgId), orgName: org.name }
+        );
+        await pool.query(
+          `UPDATE merch_payouts SET status = 'completed', stripe_transfer_id = $1, completed_at = CURRENT_TIMESTAMP WHERE id = $2`,
+          [transferId, payoutId]
+        );
+        await pool.query(
+          `UPDATE merch_earnings SET payout_id = $1 WHERE id = ANY($2)`,
+          [payoutId, earningIds]
+        );
+        console.log(`[admin-payout] Paid $${(totalCents / 100).toFixed(2)} to ${org.name} (transfer ${transferId})`);
+        res.json({
+          payoutId,
+          transferId,
+          amountCents: totalCents,
+          earningsCount: earningIds.length,
+          orgName: org.name
+        });
+      } catch (stripeErr) {
+        await pool.query(
+          `UPDATE merch_payouts SET status = 'failed' WHERE id = $1`,
+          [payoutId]
+        );
+        console.error(`[admin-payout] Transfer failed for ${org.name}:`, stripeErr.message);
+        res.status(500).json({ error: `Stripe transfer failed: ${stripeErr.message}` });
+      }
+    } catch (error) {
+      console.error("[admin-payout] Error:", error.message);
+      res.status(500).json({ error: "Failed to process payout" });
+    }
+  });
+  app2.get("/api/admin/payouts", isAuthenticated, async (req, res) => {
+    try {
+      const email = req.user?.claims?.email;
+      if (email !== ADMIN_EMAIL) return res.status(403).json({ error: "Forbidden" });
+      const result = await pool.query(`
+        SELECT mp.*, o.name as org_name
+        FROM merch_payouts mp
+        JOIN organizations o ON mp.organization_id = o.id
+        ORDER BY mp.created_at DESC
+        LIMIT 50
+      `);
+      res.json({ payouts: result.rows });
+    } catch (error) {
+      console.error("[admin-payouts] History error:", error.message);
+      res.status(500).json({ error: "Failed to fetch payout history" });
+    }
+  });
+}
+
+// server/routes.ts
+async function registerRoutes(httpServer2, app2) {
+  registerAuthRoutes(app2);
+  (async () => {
+    try {
+      await runStartupHealthCheck();
+    } catch (err) {
+      console.error("[startup] Health check failed:", err);
+    }
+  })();
+  app2.use("/api/", apiRateLimiter);
+  registerOrganizationRoutes(app2);
+  registerPlansBillingRoutes(app2);
+  registerPackRoutes(app2);
+  registerDogRoutes(app2);
+  registerPortraitRoutes(app2);
+  registerBatchRoutes(app2);
+  registerMerchRoutes(app2);
+  registerCustomerSessionRoutes(app2);
+  registerAdminRoutes(app2);
+  registerSmsRoutes(app2);
+  registerInstagramRoutes(app2);
+  registerGdprRoutes(app2);
+  registerJobRoutes(app2);
+  registerSmsQueueRoutes(app2);
+  registerPayoutRoutes(app2);
+  return httpServer2;
+}
+
+// server/static.ts
+var import_express = __toESM(require("express"), 1);
+var import_fs = __toESM(require("fs"), 1);
+var import_path = __toESM(require("path"), 1);
+function serveStatic(app2) {
+  const distPath = import_path.default.resolve(__dirname, "public");
+  if (!import_fs.default.existsSync(distPath)) {
+    throw new Error(
+      `Could not find the build directory: ${distPath}, make sure to build the client first`
+    );
+  }
+  app2.use(import_express.default.static(distPath));
+  app2.use("/{*path}", (_req, res) => {
+    res.sendFile(import_path.default.resolve(distPath, "index.html"));
+  });
+}
+
+// server/index.ts
+var import_http = require("http");
 
 // server/seed.ts
+init_db();
+init_schema();
 var import_drizzle_orm6 = require("drizzle-orm");
 var planDefinitions = [
   // Legacy plans (kept for backward compat, marked inactive)
@@ -9399,8 +10404,11 @@ var planDefinitions = [
     unitLimit: 80,
     monthlyPortraitCredits: 240,
     overagePriceCents: 800,
-    // $8 per 10 credits
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SQ3LsEHqjVSX",
+    stripePriceId: "price_1T8FVf2LfX3IuyBIe3b7cb0V",
+    stripeProductLiveId: "prod_U6SVxCjDWiNTqs",
+    stripeLivePriceId: "price_1T8FaY2LfX3IuyBIkWibecz6"
   },
   {
     id: 11,
@@ -9412,7 +10420,11 @@ var planDefinitions = [
     unitLimit: 160,
     monthlyPortraitCredits: 480,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVjdx0VzVQH4",
+    stripePriceId: "price_1T8Fa92LfX3IuyBIyjODGNkg",
+    stripeProductLiveId: "prod_U6SVbtHmPXW8sz",
+    stripeLivePriceId: "price_1T8FaY2LfX3IuyBIxML1VsAY"
   },
   {
     id: 12,
@@ -9424,7 +10436,11 @@ var planDefinitions = [
     unitLimit: 240,
     monthlyPortraitCredits: 720,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVK84H8tj3L8",
+    stripePriceId: "price_1T8FaA2LfX3IuyBIE30w2EFX",
+    stripeProductLiveId: "prod_U6SVRYeHnPx4Rd",
+    stripeLivePriceId: "price_1T8FaZ2LfX3IuyBIAAGqxBxa"
   },
   // ── Daycare Plans ──
   {
@@ -9437,7 +10453,11 @@ var planDefinitions = [
     unitLimit: 25,
     monthlyPortraitCredits: 200,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SV9chqrq1BI9",
+    stripePriceId: "price_1T8FaB2LfX3IuyBITkTcCNzL",
+    stripeProductLiveId: "prod_U6SVGQIZdAJDhe",
+    stripeLivePriceId: "price_1T8Fab2LfX3IuyBI7zfVDSeR"
   },
   {
     id: 14,
@@ -9449,7 +10469,11 @@ var planDefinitions = [
     unitLimit: 75,
     monthlyPortraitCredits: 600,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVNEW2jXuDqh",
+    stripePriceId: "price_1T8FaC2LfX3IuyBIeuMmIJw0",
+    stripeProductLiveId: "prod_U6SVx1MBpzgZ4c",
+    stripeLivePriceId: "price_1T8Fac2LfX3IuyBIvXSns9lP"
   },
   {
     id: 15,
@@ -9461,7 +10485,11 @@ var planDefinitions = [
     unitLimit: 150,
     monthlyPortraitCredits: 1200,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVqwlkybkSI2",
+    stripePriceId: "price_1T8FaD2LfX3IuyBIOkvR9esj",
+    stripeProductLiveId: "prod_U6SVnv6eAVPaC7",
+    stripeLivePriceId: "price_1T8Fad2LfX3IuyBIHXz8x2Sf"
   },
   // ── Boarding Plans ──
   {
@@ -9474,7 +10502,11 @@ var planDefinitions = [
     unitLimit: 50,
     monthlyPortraitCredits: 350,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVUeYVvnIiwL",
+    stripePriceId: "price_1T8FaE2LfX3IuyBIH930NTlS",
+    stripeProductLiveId: "prod_U6SV2qQWtxQbpR",
+    stripeLivePriceId: "price_1T8Faf2LfX3IuyBIwi35BwMN"
   },
   {
     id: 17,
@@ -9486,7 +10518,11 @@ var planDefinitions = [
     unitLimit: 200,
     monthlyPortraitCredits: 1500,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVGkX4EPIjie",
+    stripePriceId: "price_1T8FaG2LfX3IuyBISzdsiedV",
+    stripeProductLiveId: "prod_U6SVgxvPoMvUht",
+    stripeLivePriceId: "price_1T8Fag2LfX3IuyBIm0AlKuXv"
   },
   {
     id: 18,
@@ -9498,7 +10534,11 @@ var planDefinitions = [
     unitLimit: 500,
     monthlyPortraitCredits: 3500,
     overagePriceCents: 800,
-    trialDays: 30
+    trialDays: 30,
+    stripeProductId: "prod_U6SVkyBzP4FQao",
+    stripePriceId: "price_1T8FaI2LfX3IuyBIMf7NMbd0",
+    stripeProductLiveId: "prod_U6SVTdnSDoJUzY",
+    stripeLivePriceId: "price_1T8Fai2LfX3IuyBI3anV63Ku"
   }
 ];
 async function seedDatabase() {
@@ -9509,10 +10549,6 @@ async function seedDatabase() {
       (async () => {
         await pool.query("SET LOCAL statement_timeout = 8000");
         await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_test_mode BOOLEAN DEFAULT false NOT NULL");
-        const migResult = await pool.query("UPDATE organizations SET stripe_test_mode = true WHERE stripe_customer_id IS NOT NULL AND stripe_test_mode = false");
-        if (migResult.rowCount && migResult.rowCount > 0) {
-          console.log(`[migration] Set ${migResult.rowCount} existing org(s) to Stripe test mode`);
-        }
         console.log("[migration] stripe_test_mode column ready");
         await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS industry_type TEXT");
         await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS capture_mode TEXT");
@@ -9587,7 +10623,10 @@ async function seedDatabase() {
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS stay_nights INTEGER");
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS next_portrait_date TEXT");
         await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS last_portrait_style_id INTEGER");
+        await pool.query("ALTER TABLE dogs ADD COLUMN IF NOT EXISTS portrait_queue_date TEXT");
         console.log("[migration] Dog vertical fields ready");
+        await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS portrait_cadence TEXT");
+        console.log("[migration] Organization portrait cadence ready");
         await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS vertical TEXT");
         await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_type TEXT");
         await pool.query("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS unit_limit INTEGER");
@@ -9651,6 +10690,24 @@ async function seedDatabase() {
     console.log("[migration] portraits group_id:", migErr.message);
   }
   try {
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS referred_by_org_id INTEGER REFERENCES organizations(id)");
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS referral_start_date TIMESTAMP");
+    await pool.query(`CREATE TABLE IF NOT EXISTS referral_commissions (
+      id SERIAL PRIMARY KEY,
+      referrer_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      referred_org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      stripe_invoice_id TEXT NOT NULL,
+      invoice_amount_cents INTEGER NOT NULL,
+      commission_cents INTEGER NOT NULL,
+      credit_applied BOOLEAN NOT NULL DEFAULT false,
+      credit_applied_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    )`);
+    console.log("[migration] referral commission tables ready");
+  } catch (migErr) {
+    console.log("[migration] referral commissions:", migErr.message);
+  }
+  try {
     await pool.query(`
       ALTER TABLE customer_sessions
         DROP CONSTRAINT IF EXISTS customer_sessions_dog_id_fkey,
@@ -9677,6 +10734,58 @@ async function seedDatabase() {
     console.log("[migration] batch_photos FK set-null ready");
   } catch (migErr) {
     console.log("[migration] batch_photos FK:", migErr.message);
+  }
+  try {
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS send_token TEXT");
+    await pool.query(`CREATE TABLE IF NOT EXISTS sms_queue (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      dog_id INTEGER NOT NULL REFERENCES dogs(id) ON DELETE CASCADE,
+      recipient_phone TEXT NOT NULL,
+      message_body TEXT NOT NULL,
+      image_url TEXT,
+      pawfile_url TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claimed_at TIMESTAMP,
+      sent_at TIMESTAMP,
+      error TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`);
+    console.log("[migration] sms_queue table + send_token ready");
+  } catch (migErr) {
+    console.log("[migration] sms_queue:", migErr.message);
+  }
+  try {
+    await pool.query("ALTER TABLE merch_order_items ADD COLUMN IF NOT EXISTS wholesale_cost_cents INTEGER");
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_connect_account_id TEXT");
+    await pool.query("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS stripe_connect_onboarding_complete BOOLEAN DEFAULT false");
+    await pool.query(`CREATE TABLE IF NOT EXISTS merch_earnings (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      merch_order_id INTEGER NOT NULL REFERENCES merch_orders(id),
+      retail_cents INTEGER NOT NULL,
+      wholesale_cents INTEGER NOT NULL,
+      margin_cents INTEGER NOT NULL,
+      business_share_cents INTEGER NOT NULL,
+      platform_share_cents INTEGER NOT NULL,
+      payout_id INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    )`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS merch_payouts (
+      id SERIAL PRIMARY KEY,
+      organization_id INTEGER NOT NULL REFERENCES organizations(id),
+      amount_cents INTEGER NOT NULL,
+      stripe_transfer_id TEXT,
+      period_start TIMESTAMP NOT NULL,
+      period_end TIMESTAMP NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      initiated_by TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      completed_at TIMESTAMP
+    )`);
+    console.log("[migration] merch earnings payout tables ready");
+  } catch (migErr) {
+    console.log("[migration] merch earnings:", migErr.message);
   }
   await seedSubscriptionPlans();
   try {
@@ -9771,6 +10880,7 @@ async function seedSubscriptionPlans() {
 }
 
 // server/webhookHandlers.ts
+var import_crypto6 = __toESM(require("crypto"), 1);
 init_stripeClient();
 init_storage();
 init_db();
@@ -9778,6 +10888,143 @@ init_stripeService();
 init_subscription();
 init_email();
 var WebhookHandlers = class _WebhookHandlers {
+  // --- Gelato order status webhook ---
+  static async processGelatoWebhook(rawBody, signatureHeader) {
+    const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
+    if (gelatoSecret) {
+      if (!signatureHeader) {
+        console.warn("[gelato-webhook] Missing signature header \u2014 rejecting");
+        return { status: 401, body: { error: "Missing webhook signature" } };
+      }
+      const expected = import_crypto6.default.createHmac("sha256", gelatoSecret).update(rawBody).digest("hex");
+      if (!import_crypto6.default.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))) {
+        console.warn("[gelato-webhook] Invalid signature \u2014 rejecting");
+        return { status: 401, body: { error: "Invalid webhook signature" } };
+      }
+    }
+    const body = JSON.parse(rawBody.toString());
+    const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
+    console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
+    if (event !== "order_status_updated" && event !== "order_item_status_updated") {
+      return { status: 200, body: { received: true } };
+    }
+    if (!orderReferenceId) {
+      return { status: 200, body: { received: true } };
+    }
+    const merchOrderId = orderReferenceId.startsWith("gelato-") ? parseInt(orderReferenceId.replace("gelato-", "")) : null;
+    if (!merchOrderId || isNaN(merchOrderId)) {
+      return { status: 200, body: { received: true } };
+    }
+    let appStatus = null;
+    switch (fulfillmentStatus) {
+      case "shipped":
+      case "in_transit":
+        appStatus = "shipped";
+        break;
+      case "delivered":
+        appStatus = "delivered";
+        break;
+      case "failed":
+      case "returned":
+        appStatus = "failed";
+        break;
+      case "canceled":
+        appStatus = "canceled";
+        break;
+      case "in_production":
+      case "printed":
+        appStatus = "fulfilled";
+        break;
+    }
+    const updateFields = ["printful_status = $1"];
+    const updateValues = [fulfillmentStatus];
+    let paramIdx = 2;
+    if (appStatus) {
+      updateFields.push(`status = $${paramIdx}`);
+      updateValues.push(appStatus);
+      paramIdx++;
+    }
+    if (orderId) {
+      updateFields.push(`printful_order_id = $${paramIdx}`);
+      updateValues.push(orderId);
+      paramIdx++;
+    }
+    updateValues.push(merchOrderId);
+    await pool.query(
+      `UPDATE merch_orders SET ${updateFields.join(", ")} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+    if (fulfillmentStatus === "shipped" && items?.[0]?.fulfillments?.[0]?.trackingUrl) {
+      const tracking = items[0].fulfillments[0];
+      console.log(`[gelato-webhook] Tracking for order ${merchOrderId}: ${tracking.trackingUrl}`);
+    }
+    console.log(`[gelato-webhook] Updated merch_order ${merchOrderId}: ${fulfillmentStatus} \u2192 ${appStatus || "unchanged"}`);
+    return { status: 200, body: { received: true } };
+  }
+  // --- Printful order status webhook ---
+  static async processPrintfulWebhook(rawBody, signatureHeader) {
+    const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
+    if (printfulSecret) {
+      if (!signatureHeader) {
+        console.warn("[printful-webhook] Missing signature header \u2014 rejecting");
+        return { status: 401, body: { error: "Missing webhook signature" } };
+      }
+      const expected = import_crypto6.default.createHmac("sha256", printfulSecret).update(rawBody).digest("hex");
+      if (!import_crypto6.default.timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected))) {
+        console.warn("[printful-webhook] Invalid signature \u2014 rejecting");
+        return { status: 401, body: { error: "Invalid webhook signature" } };
+      }
+    }
+    const body = JSON.parse(rawBody.toString());
+    const { type, data } = body;
+    console.log(`[printful-webhook] Received event: ${type}`);
+    if (!data?.order?.external_id) {
+      return { status: 200, body: { received: true } };
+    }
+    const merchOrderId = parseInt(data.order.external_id);
+    if (isNaN(merchOrderId)) {
+      return { status: 200, body: { received: true } };
+    }
+    const printfulStatus = data.order.status || type;
+    let appStatus = null;
+    switch (type) {
+      case "package_shipped":
+        appStatus = "shipped";
+        break;
+      case "order_failed":
+        appStatus = "failed";
+        break;
+      case "order_canceled":
+        appStatus = "canceled";
+        break;
+      case "order_created":
+        appStatus = "submitted";
+        break;
+      case "order_updated":
+        break;
+    }
+    const updateFields = ["printful_status = $1"];
+    const updateValues = [printfulStatus];
+    let paramIdx = 2;
+    if (appStatus) {
+      updateFields.push(`status = $${paramIdx}`);
+      updateValues.push(appStatus);
+      paramIdx++;
+    }
+    if (data.order.id) {
+      updateFields.push(`printful_order_id = $${paramIdx}`);
+      updateValues.push(String(data.order.id));
+      paramIdx++;
+    }
+    updateValues.push(merchOrderId);
+    await pool.query(
+      `UPDATE merch_orders SET ${updateFields.join(", ")} WHERE id = $${paramIdx}`,
+      updateValues
+    );
+    console.log(`[printful-webhook] Updated merch_order ${merchOrderId}: ${type} \u2192 ${appStatus || "status unchanged"}`);
+    return { status: 200, body: { received: true } };
+  }
+  // --- Stripe webhook ---
   static async processWebhook(payload, signature) {
     if (!Buffer.isBuffer(payload)) {
       throw new Error(
@@ -9833,7 +11080,7 @@ var WebhookHandlers = class _WebhookHandlers {
           }
         }
         try {
-          const addonPriceId = await stripeService.getAddonPriceId(testMode);
+          const addonPriceId = await stripeService.getOrCreateAddonPriceId(testMode);
           const subItems = data.items?.data || [];
           const addonItem = subItems.find((item) => {
             const priceId = typeof item.price === "string" ? item.price : item.price?.id;
@@ -9874,6 +11121,53 @@ var WebhookHandlers = class _WebhookHandlers {
           await storage.syncOrgCredits(org.id);
           console.log(`[webhook] Synced credits for org ${org.id} on billing cycle`);
         }
+        if (org.referredByOrgId && (data.billing_reason === "subscription_create" || data.billing_reason === "subscription_cycle")) {
+          try {
+            if (!org.referralStartDate) {
+              await storage.updateOrganization(org.id, { referralStartDate: /* @__PURE__ */ new Date() });
+              console.log(`[webhook] Referral start date set for org ${org.id}`);
+            }
+            const startDate = org.referralStartDate || /* @__PURE__ */ new Date();
+            const monthsElapsed = (Date.now() - new Date(startDate).getTime()) / (1e3 * 60 * 60 * 24 * 365 / 12);
+            if (monthsElapsed < 12) {
+              const subscriptionAmount = data.lines?.data?.filter((line) => line.type === "subscription")?.reduce((sum, line) => sum + (line.amount || 0), 0) || data.amount_paid || 0;
+              if (subscriptionAmount > 0) {
+                const commissionCents = Math.round(subscriptionAmount * 0.05);
+                const invoiceId = data.id || `inv_${Date.now()}`;
+                await storage.createReferralCommission({
+                  referrerOrgId: org.referredByOrgId,
+                  referredOrgId: org.id,
+                  stripeInvoiceId: invoiceId,
+                  invoiceAmountCents: subscriptionAmount,
+                  commissionCents
+                });
+                const referrerOrg = await storage.getOrganization(org.referredByOrgId);
+                if (referrerOrg?.stripeCustomerId) {
+                  const testMode = referrerOrg.stripeTestMode;
+                  const stripe = getStripeClient(testMode);
+                  await stripe.customers.createBalanceTransaction(referrerOrg.stripeCustomerId, {
+                    amount: -commissionCents,
+                    // negative = credit
+                    currency: "usd",
+                    description: `Referral credit \u2014 thanks for referring ${org.name}!`
+                  });
+                  const commissions = await storage.getReferralCommissions(org.referredByOrgId);
+                  const latest = commissions.find((c) => c.stripe_invoice_id === invoiceId);
+                  if (latest) {
+                    await storage.markReferralCreditApplied(latest.id);
+                  }
+                  console.log(`[webhook] Referral commission: $${(commissionCents / 100).toFixed(2)} credited to org ${referrerOrg.id} (${referrerOrg.name}) for referring org ${org.id} (${org.name})`);
+                } else {
+                  console.log(`[webhook] Referral commission recorded for org ${org.referredByOrgId} but no Stripe customer to credit`);
+                }
+              }
+            } else {
+              console.log(`[webhook] Referral window expired for org ${org.id} (${monthsElapsed.toFixed(1)} months elapsed)`);
+            }
+          } catch (refErr) {
+            console.error(`[webhook] Referral commission error for org ${org.id}:`, refErr.message);
+          }
+        }
         break;
       }
       case "checkout.session.completed": {
@@ -9894,6 +11188,7 @@ var WebhookHandlers = class _WebhookHandlers {
           `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
           [order.id]
         );
+        await recordMerchEarnings(order.id, order.organization_id);
         const itemsResult = await pool.query(
           `SELECT * FROM merch_order_items WHERE order_id = $1`,
           [order.id]
@@ -9982,6 +11277,7 @@ var import_url = require("url");
 var import_fs2 = __toESM(require("fs"), 1);
 var import_path2 = __toESM(require("path"), 1);
 init_storage();
+init_db();
 var import_meta = {};
 var currentDir = typeof __dirname !== "undefined" ? __dirname : import_path2.default.dirname((0, import_url.fileURLToPath)(import_meta.url));
 var SITE_NAME = "Pawtrait Pros";
@@ -10050,70 +11346,149 @@ function buildOgHtml(template, meta) {
 function getHtmlTemplate() {
   const isProd = process.env.NODE_ENV === "production";
   const templatePath = isProd ? import_path2.default.resolve(currentDir, "public", "index.html") : import_path2.default.resolve(currentDir, "..", "client", "index.html");
+  console.log("[og-meta] getHtmlTemplate isProd:", isProd, "path:", templatePath, "exists:", import_fs2.default.existsSync(templatePath));
   return import_fs2.default.readFileSync(templatePath, "utf-8");
 }
 function setupOgMetaRoutes(app2) {
   app2.get("/business/:slug", async (req, res, next) => {
     const ua = req.headers["user-agent"];
+    console.log("[og-meta] /business/:slug hit, UA:", ua?.substring(0, 50), "isCrawler:", isCrawler(ua));
     if (!isCrawler(ua)) return next();
+    const { slug } = req.params;
+    let title = `Business | ${SITE_NAME}`;
+    let description = `View our pets' stunning portraits!`;
+    let ogImageUrl;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/business/${slug}`;
     try {
-      const { slug } = req.params;
       const org = await storage.getOrganizationBySlug(slug);
       if (!org || !org.isActive) return next();
-      const orgDogs = await storage.getDogsByOrganization(org.id);
-      const availableDogs = orgDogs.filter((d) => d.isAvailable);
-      const baseUrl = getBaseUrl(req);
-      const ogImageUrl = `${baseUrl}/api/business/${slug}/og-image`;
-      const petCount = availableDogs.length;
-      const speciesSet = new Set(availableDogs.map((d) => d.species));
-      const species = availableDogs.length > 0 ? Array.from(speciesSet).join(" and ") : "pets";
-      const description = org.description || `Meet ${petCount} adorable ${species} at ${org.name}! View their beautiful artistic portraits.`;
-      const template = getHtmlTemplate();
-      const html = buildOgHtml(template, {
-        title: `${org.name} - Pet Portraits | ${SITE_NAME}`,
-        description,
-        imageUrl: ogImageUrl,
-        url: `${baseUrl}/business/${slug}`
-      });
-      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+      ogImageUrl = `${baseUrl}/api/business/${slug}/og-image`;
+      let petInfo = "";
+      try {
+        const orgDogs = await storage.getDogsByOrganization(org.id);
+        const availableDogs = orgDogs.filter((d) => d.isAvailable);
+        const petCount = availableDogs.length;
+        const speciesSet = new Set(availableDogs.map((d) => d.species));
+        const species = availableDogs.length > 0 ? Array.from(speciesSet).join(" and ") : "pets";
+        petInfo = `Meet ${petCount} adorable ${species} at ${org.name}! View their beautiful artistic portraits.`;
+      } catch (e) {
+        console.error("[og-meta] dogs lookup failed:", e?.message);
+      }
+      title = `${org.name} - Pet Portraits | ${SITE_NAME}`;
+      description = org.description || petInfo || description;
     } catch (error) {
-      console.error("OG meta error for business:", error);
+      console.error("[og-meta] org lookup failed for business:", error?.message || error);
+    }
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+    } catch (e) {
+      console.error("[og-meta] template render failed:", e?.message);
       next();
     }
   });
   app2.get("/pawfile/:id", async (req, res, next) => {
-    const ua = req.headers["user-agent"];
-    if (!isCrawler(ua)) return next();
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return next();
+    let title = `Pet Portrait | ${SITE_NAME}`;
+    let description = `View this pet's stunning portrait!`;
+    let ogImageUrl;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/pawfile/${id}`;
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return next();
       const dog = await storage.getDog(id);
-      if (!dog) return next();
-      const org = dog.organizationId ? await storage.getOrganization(dog.organizationId) : null;
-      const baseUrl = getBaseUrl(req);
-      const ogImageUrl = `${baseUrl}/api/pawfile/${id}/og-image`;
-      const breedStr = dog.breed ? `${dog.breed} ` : "";
-      const ageStr = dog.age ? `, ${dog.age}` : "";
-      const orgStr = org ? ` at ${org.name}` : "";
-      const speciesLabel = dog.species === "cat" ? "Cat" : "Dog";
-      const title = `${dog.name} - ${breedStr}${speciesLabel} Portrait${orgStr} | ${SITE_NAME}`;
-      const description = dog.description || `Meet ${dog.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgStr}. View ${dog.name}'s stunning artistic portrait!`;
-      const template = getHtmlTemplate();
-      const html = buildOgHtml(template, {
-        title,
-        description,
-        imageUrl: ogImageUrl,
-        url: `${baseUrl}/pawfile/${id}`
-      });
-      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+      if (dog) {
+        let orgName = "";
+        try {
+          if (dog.organizationId) {
+            const org = await storage.getOrganization(dog.organizationId);
+            if (org) orgName = ` at ${org.name}`;
+          }
+        } catch (e) {
+          console.error("[og-meta] org lookup failed:", e?.message);
+        }
+        try {
+          const selectedPortrait = await storage.getSelectedPortraitByDog(dog.id);
+          ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith("https://") ? selectedPortrait.generatedImageUrl : `${baseUrl}/api/pawfile/${id}/og-image`;
+        } catch (e) {
+          console.error("[og-meta] portrait lookup failed:", e?.message);
+          ogImageUrl = `${baseUrl}/api/pawfile/${id}/og-image`;
+        }
+        const breedStr = dog.breed ? `${dog.breed} ` : "";
+        const ageStr = dog.age ? `, ${dog.age}` : "";
+        const speciesLabel = dog.species === "cat" ? "Cat" : "Dog";
+        title = `${dog.name} - ${breedStr}${speciesLabel} Portrait${orgName} | ${SITE_NAME}`;
+        description = dog.description || `Meet ${dog.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgName}. View ${dog.name}'s stunning artistic portrait!`;
+      }
     } catch (error) {
-      console.error("OG meta error for pawfile:", error);
+      console.error("[og-meta] dog lookup failed:", error?.message || error);
+    }
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+    } catch (e) {
+      console.error("[og-meta] template render failed:", e?.message);
+      next();
+    }
+  });
+  app2.get("/pawfile/code/:petCode", async (req, res, next) => {
+    const { petCode } = req.params;
+    console.log("[og-meta] /pawfile/code/:petCode hit, petCode =", petCode);
+    if (!petCode) return next();
+    let title = `Pet Portrait | ${SITE_NAME}`;
+    let description = `View this pet's stunning portrait!`;
+    let ogImageUrl;
+    const baseUrl = getBaseUrl(req);
+    const url = `${baseUrl}/pawfile/code/${petCode}`;
+    try {
+      const result = await pool.query(
+        `SELECT d.id, d.name, d.breed, d.age, d.species, d.description, d.organization_id
+         FROM dogs d WHERE d.pet_code = $1`,
+        [petCode.toUpperCase()]
+      );
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        let orgName = "";
+        try {
+          if (row.organization_id) {
+            const org = await storage.getOrganization(row.organization_id);
+            if (org) orgName = ` at ${org.name}`;
+          }
+        } catch (e) {
+          console.error("[og-meta] org lookup failed:", e?.message);
+        }
+        try {
+          const selectedPortrait = await storage.getSelectedPortraitByDog(row.id);
+          ogImageUrl = selectedPortrait?.generatedImageUrl?.startsWith("https://") ? selectedPortrait.generatedImageUrl : `${baseUrl}/api/pawfile/${row.id}/og-image`;
+        } catch (e) {
+          console.error("[og-meta] portrait lookup failed:", e?.message);
+          ogImageUrl = `${baseUrl}/api/pawfile/${row.id}/og-image`;
+        }
+        const breedStr = row.breed ? `${row.breed} ` : "";
+        const ageStr = row.age ? `, ${row.age}` : "";
+        const speciesLabel = row.species === "cat" ? "Cat" : "Dog";
+        title = `${row.name}'s Portrait${orgName} | ${SITE_NAME}`;
+        description = `Meet ${row.name}, a beautiful ${breedStr}${speciesLabel.toLowerCase()}${ageStr}${orgName}. View ${row.name}'s stunning portrait!`;
+      }
+    } catch (error) {
+      console.error("[og-meta] DB query failed for pawfile/code:", error?.message || error);
+    }
+    try {
+      const template = getHtmlTemplate();
+      const html = buildOgHtml(template, { title, description, imageUrl: ogImageUrl, url });
+      res.status(200).set({ "Content-Type": "text/html" }).end(html);
+    } catch (e) {
+      console.error("[og-meta] template render failed:", e?.message);
       next();
     }
   });
 }
 
 // server/index.ts
+init_websocket();
 var app = (0, import_express2.default)();
 app.use((0, import_helmet.default)({
   contentSecurityPolicy: {
@@ -10131,162 +11506,25 @@ app.use((0, import_helmet.default)({
 }));
 app.disable("x-powered-by");
 var httpServer = (0, import_http.createServer)(app);
-app.post(
-  "/api/webhooks/gelato",
-  import_express2.default.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const gelatoSecret = process.env.GELATO_WEBHOOK_SECRET;
-      if (gelatoSecret) {
-        const signature = req.headers["x-gelato-hmac-sha256"];
-        if (!signature) {
-          console.warn("[gelato-webhook] Missing signature header \u2014 rejecting");
-          return res.status(401).json({ error: "Missing webhook signature" });
-        }
-        const expected = import_crypto4.default.createHmac("sha256", gelatoSecret).update(req.body).digest("hex");
-        if (!import_crypto4.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-          console.warn("[gelato-webhook] Invalid signature \u2014 rejecting");
-          return res.status(401).json({ error: "Invalid webhook signature" });
-        }
-      }
-      const body = JSON.parse(req.body.toString());
-      const { event, orderId, orderReferenceId, fulfillmentStatus, items } = body;
-      console.log(`[gelato-webhook] Received: ${event} for order ${orderReferenceId || orderId}`);
-      if (event !== "order_status_updated" && event !== "order_item_status_updated") {
-        return res.status(200).json({ received: true });
-      }
-      if (!orderReferenceId) {
-        return res.status(200).json({ received: true });
-      }
-      const { pool: pool2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const merchOrderId = orderReferenceId.startsWith("gelato-") ? parseInt(orderReferenceId.replace("gelato-", "")) : null;
-      if (!merchOrderId || isNaN(merchOrderId)) {
-        return res.status(200).json({ received: true });
-      }
-      let appStatus = null;
-      switch (fulfillmentStatus) {
-        case "shipped":
-        case "in_transit":
-          appStatus = "shipped";
-          break;
-        case "delivered":
-          appStatus = "delivered";
-          break;
-        case "failed":
-        case "returned":
-          appStatus = "failed";
-          break;
-        case "canceled":
-          appStatus = "canceled";
-          break;
-        case "in_production":
-        case "printed":
-          appStatus = "fulfilled";
-          break;
-      }
-      const updateFields = ["printful_status = $1"];
-      const updateValues = [fulfillmentStatus];
-      let paramIdx = 2;
-      if (appStatus) {
-        updateFields.push(`status = $${paramIdx}`);
-        updateValues.push(appStatus);
-        paramIdx++;
-      }
-      if (orderId) {
-        updateFields.push(`printful_order_id = $${paramIdx}`);
-        updateValues.push(orderId);
-        paramIdx++;
-      }
-      updateValues.push(merchOrderId);
-      await pool2.query(
-        `UPDATE merch_orders SET ${updateFields.join(", ")} WHERE id = $${paramIdx}`,
-        updateValues
-      );
-      if (fulfillmentStatus === "shipped" && items?.[0]?.fulfillments?.[0]?.trackingUrl) {
-        const tracking = items[0].fulfillments[0];
-        console.log(`[gelato-webhook] Tracking for order ${merchOrderId}: ${tracking.trackingUrl}`);
-      }
-      console.log(`[gelato-webhook] Updated merch_order ${merchOrderId}: ${fulfillmentStatus} \u2192 ${appStatus || "unchanged"}`);
-      res.status(200).json({ received: true });
-    } catch (error) {
-      console.error("[gelato-webhook] Error:", error.message);
-      res.status(200).json({ received: true });
-    }
+setupWebSocket(httpServer);
+app.post("/api/webhooks/gelato", import_express2.default.raw({ type: "application/json" }), async (req, res) => {
+  try {
+    const result = await WebhookHandlers.processGelatoWebhook(req.body, req.headers["x-gelato-hmac-sha256"]);
+    res.status(result.status).json(result.body);
+  } catch (error) {
+    console.error("[gelato-webhook] Error:", error.message);
+    res.status(200).json({ received: true });
   }
-);
-app.post(
-  "/api/webhooks/printful",
-  import_express2.default.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const printfulSecret = process.env.PRINTFUL_WEBHOOK_SECRET;
-      if (printfulSecret) {
-        const signature = req.headers["x-printful-signature"];
-        if (!signature) {
-          console.warn("[printful-webhook] Missing signature header \u2014 rejecting");
-          return res.status(401).json({ error: "Missing webhook signature" });
-        }
-        const expected = import_crypto4.default.createHmac("sha256", printfulSecret).update(req.body).digest("hex");
-        if (!import_crypto4.default.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
-          console.warn("[printful-webhook] Invalid signature \u2014 rejecting");
-          return res.status(401).json({ error: "Invalid webhook signature" });
-        }
-      }
-      const body = JSON.parse(req.body.toString());
-      const { type, data } = body;
-      console.log(`[printful-webhook] Received event: ${type}`);
-      if (!data?.order?.external_id) {
-        return res.status(200).json({ received: true });
-      }
-      const merchOrderId = parseInt(data.order.external_id);
-      if (isNaN(merchOrderId)) {
-        return res.status(200).json({ received: true });
-      }
-      const { pool: pool2 } = await Promise.resolve().then(() => (init_db(), db_exports));
-      const printfulStatus = data.order.status || type;
-      let appStatus = null;
-      switch (type) {
-        case "package_shipped":
-          appStatus = "shipped";
-          break;
-        case "order_failed":
-          appStatus = "failed";
-          break;
-        case "order_canceled":
-          appStatus = "canceled";
-          break;
-        case "order_created":
-          appStatus = "submitted";
-          break;
-        case "order_updated":
-          break;
-      }
-      const updateFields = ["printful_status = $1"];
-      const updateValues = [printfulStatus];
-      let paramIdx = 2;
-      if (appStatus) {
-        updateFields.push(`status = $${paramIdx}`);
-        updateValues.push(appStatus);
-        paramIdx++;
-      }
-      if (data.order.id) {
-        updateFields.push(`printful_order_id = $${paramIdx}`);
-        updateValues.push(String(data.order.id));
-        paramIdx++;
-      }
-      updateValues.push(merchOrderId);
-      await pool2.query(
-        `UPDATE merch_orders SET ${updateFields.join(", ")} WHERE id = $${paramIdx}`,
-        updateValues
-      );
-      console.log(`[printful-webhook] Updated merch_order ${merchOrderId}: ${type} \u2192 ${appStatus || "status unchanged"}`);
-      res.status(200).json({ received: true });
-    } catch (error) {
-      console.error("[printful-webhook] Error:", error.message);
-      res.status(200).json({ received: true });
-    }
+});
+app.post("/api/webhooks/printful", import_express2.default.raw({ type: "application/json" }), async (req, res) => {
+  try {
+    const result = await WebhookHandlers.processPrintfulWebhook(req.body, req.headers["x-printful-signature"]);
+    res.status(result.status).json(result.body);
+  } catch (error) {
+    console.error("[printful-webhook] Error:", error.message);
+    res.status(200).json({ received: true });
   }
-);
+});
 app.post(
   "/api/stripe/webhook",
   import_express2.default.raw({ type: "application/json" }),
@@ -10339,7 +11577,7 @@ function sanitizeLogPayload(obj) {
 }
 app.use((req, res, next) => {
   const start = Date.now();
-  const path5 = req.path;
+  const path6 = req.path;
   let capturedJsonResponse = void 0;
   const originalResJson = res.json;
   res.json = function(bodyJson, ...args) {
@@ -10348,8 +11586,8 @@ app.use((req, res, next) => {
   };
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path5.startsWith("/api")) {
-      let logLine = `${req.method} ${path5} ${res.statusCode} in ${duration}ms`;
+    if (path6.startsWith("/api")) {
+      let logLine = `${req.method} ${path6} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(sanitizeLogPayload(capturedJsonResponse))}`;
       }

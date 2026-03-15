@@ -8,6 +8,7 @@ import { PRINTFUL_PRODUCTS, getProductsByCategory, getProduct, getFrameSizes, ge
 import { createOrder as createPrintfulOrder, confirmOrder as confirmPrintfulOrder, getOrder as getPrintfulOrder, buildOrderItem, estimateShipping, type PrintfulRecipient } from "../printful";
 import { sendEmail, isEmailConfigured, buildOrderConfirmationEmail } from "./email";
 import { ADMIN_EMAIL, publicExpensiveRateLimiter, resolveOrg } from "./helpers";
+import { recordMerchEarnings } from "../merch-payouts";
 import { getGelatoProduct as getGelatoProductConfig, getAllGelatoProducts, sortOccasionsForDisplay, getOccasion } from "../gelato-config";
 import { generateFlatCardArtwork, generateFlatCardBack, generateFoldedOutsideArtwork, generateFoldedInsideArtwork, bufferToDataUri } from "../card-artwork";
 import { uploadToStorage, fetchImageAsBuffer } from "../supabase-storage";
@@ -112,7 +113,7 @@ export function registerMerchRoutes(app: Express): void {
 
       // Validate all items and calculate total (supports both Printful + Gelato products)
       let subtotalCents = 0;
-      const validatedItems: Array<{ productKey: string; variantId: number; quantity: number; priceCents: number; occasion?: string }> = [];
+      const validatedItems: Array<{ productKey: string; variantId: number; quantity: number; priceCents: number; wholesaleCostCents: number; occasion?: string }> = [];
       for (const item of items) {
         const isCard = item.productKey.startsWith("card_");
         const printfulProduct = isCard ? null : getProduct(item.productKey);
@@ -121,6 +122,7 @@ export function registerMerchRoutes(app: Express): void {
           return res.status(400).json({ error: `Unknown product: ${item.productKey}` });
         }
         const priceCents = printfulProduct?.priceCents || gelatoProduct?.priceCents || 0;
+        const wholesaleCostCents = printfulProduct?.wholesaleCostCents || gelatoProduct?.wholesaleCostCents || 0;
         const qty = item.quantity || 1;
         subtotalCents += priceCents * qty;
         validatedItems.push({
@@ -128,6 +130,7 @@ export function registerMerchRoutes(app: Express): void {
           variantId: printfulProduct?.variantId || 0,
           quantity: qty,
           priceCents,
+          wholesaleCostCents,
           occasion: isCard ? (item.occasion || undefined) : undefined,
         });
       }
@@ -178,12 +181,12 @@ export function registerMerchRoutes(app: Express): void {
       );
       const merchOrderId = orderResult.rows[0].id;
 
-      // Insert order items (include occasion for card items)
+      // Insert order items (include occasion for card items + wholesale cost for earnings tracking)
       for (const item of validatedItems) {
         await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, occasion)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.occasion || null]
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, wholesale_cost_cents, occasion)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [merchOrderId, item.productKey, item.variantId, item.quantity, item.priceCents, item.wholesaleCostCents, item.occasion || null]
         );
       }
 
@@ -310,6 +313,9 @@ export function registerMerchRoutes(app: Express): void {
         `UPDATE merch_orders SET status = 'paid' WHERE id = $1`,
         [order.id]
       );
+
+      // Record merch earnings (70/30 split)
+      await recordMerchEarnings(order.id, order.organization_id);
 
       // Get order items
       const itemsResult = await pool.query(
@@ -741,7 +747,7 @@ export function registerMerchRoutes(app: Express): void {
       // Validate items and calculate total
       let subtotalCents = 0;
       const gelatoItems: any[] = [];
-      const dbItems: Array<{ productKey: string; quantity: number; priceCents: number }> = [];
+      const dbItems: Array<{ productKey: string; quantity: number; priceCents: number; wholesaleCostCents: number }> = [];
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -764,6 +770,7 @@ export function registerMerchRoutes(app: Express): void {
           productKey: item.productKey,
           quantity: qty,
           priceCents: product.priceCents,
+          wholesaleCostCents: product.wholesaleCostCents,
         });
       }
 
@@ -791,9 +798,9 @@ export function registerMerchRoutes(app: Express): void {
 
       for (const item of dbItems) {
         await pool.query(
-          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [merchOrderId, item.productKey, 0, item.quantity, item.priceCents]
+          `INSERT INTO merch_order_items (order_id, product_key, variant_id, quantity, price_cents, wholesale_cost_cents)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [merchOrderId, item.productKey, 0, item.quantity, item.priceCents, item.wholesaleCostCents]
         );
       }
 

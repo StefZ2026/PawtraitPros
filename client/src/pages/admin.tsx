@@ -15,7 +15,7 @@ import { Form, FormControl, FormField, FormItem, FormMessage } from "@/component
 import {
   Dog, Cat, Shield, Building2, Image, TrendingUp, DollarSign,
   AlertTriangle, LogOut, Trash2, PawPrint, Plus, Users, X, Mail, ArrowLeft,
-  Scissors, Sun, Handshake, Smartphone, ShoppingBag
+  Scissors, Sun, Handshake, Smartphone, ShoppingBag, Wallet
 } from "lucide-react";
 import {
   Select,
@@ -63,7 +63,18 @@ interface MerchRevenueData {
   totalOrders: number;
 }
 
-type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals" | "merchrevenue";
+type AdminView = "dashboard" | "revenue" | "pastdue" | "referrals" | "merchrevenue" | "payouts";
+
+interface PayoutSummaryOrg {
+  orgId: number;
+  orgName: string;
+  connectAccountId: string | null;
+  connectOnboarded: boolean;
+  totalEarnedCents: number;
+  totalPaidCents: number;
+  pendingBalanceCents: number;
+  totalOrders: number;
+}
 
 interface ReferralRelationship {
   referrerOrgId: number;
@@ -146,6 +157,31 @@ export default function Admin() {
   const { data: merchRevenue } = useQuery<MerchRevenueData>({
     queryKey: ["/api/admin/merch-revenue"],
     enabled: isAuthenticated && isAdmin,
+  });
+
+  const { data: payoutSummary, refetch: refetchPayouts } = useQuery<{ organizations: PayoutSummaryOrg[] }>({
+    queryKey: ["/api/admin/payout-summary"],
+    enabled: isAuthenticated && isAdmin,
+  });
+
+  const { data: payoutHistory } = useQuery<{ payouts: any[] }>({
+    queryKey: ["/api/admin/payouts"],
+    enabled: isAuthenticated && isAdmin && currentView === "payouts",
+  });
+
+  const triggerPayoutMutation = useMutation({
+    mutationFn: async (orgId: number) => {
+      const res = await apiRequest("POST", `/api/admin/payout/${orgId}`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Payout sent", description: `$${(data.amountCents / 100).toFixed(2)} transferred to ${data.orgName}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/payout-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/payouts"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Payout failed", description: err.message, variant: "destructive" });
+    },
   });
 
   const deleteOrgMutation = useMutation({
@@ -581,6 +617,137 @@ export default function Admin() {
     );
   }
 
+  // --- PAYOUTS VIEW ---
+  if (currentView === "payouts") {
+    const payoutOrgs = payoutSummary?.organizations || [];
+    const totalPending = payoutOrgs.reduce((s, o) => s + o.pendingBalanceCents, 0);
+    return (
+      <div className="min-h-screen bg-muted/30">
+        <AdminHeader />
+        <div className="container mx-auto px-4 py-6 max-w-5xl space-y-6">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => setCurrentView("dashboard")}>
+              <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            </Button>
+            <h1 className="text-2xl font-serif font-bold">Merch Payouts</h1>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-sm text-muted-foreground">Total Pending</p>
+                <p className="text-2xl font-bold text-primary">${(totalPending / 100).toFixed(2)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6 text-center">
+                <p className="text-sm text-muted-foreground">Businesses with Earnings</p>
+                <p className="text-2xl font-bold">{payoutOrgs.length}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pending Payouts by Business</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {payoutOrgs.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">No merch earnings recorded yet</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-sm text-muted-foreground">
+                        <th className="pb-3 font-medium text-left">Business</th>
+                        <th className="pb-3 font-medium text-center">Connect</th>
+                        <th className="pb-3 font-medium text-right">Total Earned</th>
+                        <th className="pb-3 font-medium text-right">Total Paid</th>
+                        <th className="pb-3 font-medium text-right">Pending</th>
+                        <th className="pb-3 font-medium text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payoutOrgs.map((org) => (
+                        <tr key={org.orgId} className="border-b last:border-0">
+                          <td className="py-3 font-medium">{org.orgName}</td>
+                          <td className="py-3 text-center">
+                            {org.connectOnboarded ? (
+                              <Badge variant="default" className="bg-green-600">Connected</Badge>
+                            ) : org.connectAccountId ? (
+                              <Badge variant="secondary">Pending</Badge>
+                            ) : (
+                              <Badge variant="outline">Not Set Up</Badge>
+                            )}
+                          </td>
+                          <td className="py-3 text-right">${(org.totalEarnedCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-right">${(org.totalPaidCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-right font-bold">${(org.pendingBalanceCents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-right">
+                            <Button
+                              size="sm"
+                              disabled={!org.connectOnboarded || org.pendingBalanceCents === 0 || triggerPayoutMutation.isPending}
+                              onClick={() => {
+                                if (confirm(`Pay $${(org.pendingBalanceCents / 100).toFixed(2)} to ${org.orgName}?`)) {
+                                  triggerPayoutMutation.mutate(org.orgId);
+                                }
+                              }}
+                            >
+                              <DollarSign className="h-3 w-3 mr-1" />
+                              Pay Now
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {payoutHistory && payoutHistory.payouts.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Payout History</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b text-sm text-muted-foreground">
+                        <th className="pb-3 font-medium text-left">Business</th>
+                        <th className="pb-3 font-medium text-right">Amount</th>
+                        <th className="pb-3 font-medium text-center">Status</th>
+                        <th className="pb-3 font-medium text-right">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payoutHistory.payouts.map((p: any) => (
+                        <tr key={p.id} className="border-b last:border-0">
+                          <td className="py-3 font-medium">{p.org_name}</td>
+                          <td className="py-3 text-right font-bold">${(p.amount_cents / 100).toFixed(2)}</td>
+                          <td className="py-3 text-center">
+                            <Badge variant={p.status === "completed" ? "default" : p.status === "failed" ? "destructive" : "secondary"}>
+                              {p.status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 text-right text-sm text-muted-foreground">
+                            {new Date(p.created_at).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
@@ -692,6 +859,20 @@ export default function Admin() {
                 <div>
                   <p className="text-2xl font-bold">${((merchRevenue?.totalRevenueCents || 0) / 100).toFixed(2)}</p>
                   <p className="text-sm text-muted-foreground underline">Merch Revenue</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-background hover-elevate cursor-pointer" onClick={() => setCurrentView("payouts")}>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                  <Wallet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">${((payoutSummary?.organizations || []).reduce((s, o) => s + o.pendingBalanceCents, 0) / 100).toFixed(2)}</p>
+                  <p className="text-sm text-muted-foreground underline">Pending Payouts</p>
                 </div>
               </div>
             </CardContent>
